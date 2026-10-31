@@ -97,6 +97,26 @@ func TestCommitWrappedLineSurvivesResize(t *testing.T) {
 	}
 }
 
+func TestHeightOnlyResizeKeepsRows(t *testing.T) {
+	for _, screen := range []string{"", "commit", "sequence"} {
+		t.Run(screen, func(t *testing.T) {
+			rows := []row{{path: "one", text: "first"}, {path: "one", text: "second"}}
+			m := model{width: 80, height: 20, screen: screen, rows: rows}
+			if screen == "commit" {
+				m.history.rows = rows
+			}
+			updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+			got := updated.(model)
+			if screen == "commit" {
+				got.rows = got.history.rows
+			}
+			if len(got.rows) != len(rows) || &got.rows[0] != &rows[0] {
+				t.Fatal("height-only resize rebuilt rows")
+			}
+		})
+	}
+}
+
 func TestStartupViewSelection(t *testing.T) {
 	tests := []struct {
 		name     string

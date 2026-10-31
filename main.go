@@ -362,9 +362,17 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applySyntaxDemandLoaded(msg)
 		return m, nil
 	case tea.WindowSizeMsg:
+		widthChanged := m.width != msg.Width
 		m.width, m.height = msg.Width, msg.Height
-		m.rebuild()
-		m.rebuildCommit()
+		if widthChanged {
+			m.rebuild()
+			m.rebuildCommit()
+		} else {
+			m = m.inDiff(func(view *model) {
+				view.clamp()
+				view.viewTop = view.viewportStart(max(1, view.height-2))
+			})
+		}
 		m.revealHistorySelection()
 		if m.modal == "files" {
 			m = m.inDiff(func(view *model) { view.revealPickerSelection() })
