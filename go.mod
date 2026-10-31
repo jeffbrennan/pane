@@ -1,4 +1,4 @@
-module pane
+module github.com/jeffbrennan/pane
 
 go 1.22.0
 
