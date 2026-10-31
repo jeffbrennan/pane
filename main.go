@@ -29,6 +29,7 @@ type tick struct{}
 type completed struct {
 	message       string
 	commitMessage string
+	action        string
 	err           error
 }
 
@@ -46,6 +47,9 @@ type model struct {
 	errorText             string
 	errorPos              int
 	helpPos               int
+	resultAction          string
+	resultText            string
+	resultPos             int
 	screen, viewTitle     string
 	history               historyState
 }
@@ -120,6 +124,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m, refreshCmd = m.refresh()
 			historyModel, historyCmd := m.openHistory()
 			return historyModel, tea.Batch(refreshCmd, historyCmd)
+		} else if msg.action == "push" || msg.action == "pull" {
+			m.message = ""
+			m.modal = "result"
+			m.resultAction = msg.action
+			m.resultText = msg.message
+			m.resultPos = 0
 		} else {
 			m.message = msg.message
 		}
@@ -232,6 +242,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.modal == "result" {
+		switch key.String() {
+		case "esc", "enter", "q", "ctrl+c":
+			m.modal = ""
+		case "j", "down":
+			m.resultPos = min(m.resultPos+1, max(0, len(actionOutputLines(m.resultText, m.width))-actionVisibleRows(m.height)))
+		case "k", "up":
+			m.resultPos = max(0, m.resultPos-1)
+		}
+		return m, nil
+	}
 	if m.modal == "help" {
 		switch key.String() {
 		case "esc", "?", "q":
@@ -306,7 +327,10 @@ func (m model) runAction(args ...string) (tea.Model, tea.Cmd) {
 	m.busy = true
 	m.generation++
 	repo := m.repo
-	return m, func() tea.Msg { output, err := repo.action(args...); return completed{message: output, err: err} }
+	return m, func() tea.Msg {
+		output, err := repo.action(args...)
+		return completed{message: output, action: args[0], err: err}
+	}
 }
 
 func (m *model) rebuild() {
@@ -439,6 +463,9 @@ func (m *model) jump(direction int) {
 func (m model) View() string {
 	if m.width <= 0 || m.height <= 0 {
 		return ""
+	}
+	if m.modal == "push" || m.modal == "pull" || m.modal == "result" {
+		return m.actionDialogView()
 	}
 	if m.modal == "error" {
 		var content []string
