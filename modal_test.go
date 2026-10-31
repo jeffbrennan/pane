@@ -45,3 +45,18 @@ func TestCommitDialogValidation(t *testing.T) {
 		t.Fatal("validation not cleared on edit")
 	}
 }
+
+func TestCommitDialogHidesBackground(t *testing.T) {
+	m := model{width: 60, height: 20, modal: "commit", wrap: true, rows: []row{{text: "first", kind: '+'}, {text: "second", kind: '-'}}}
+	lines := strings.Split(m.View(), "\n")
+	if lines[1] != "" || lines[2] != "" {
+		t.Fatalf("diff is not hidden: %q %q", lines[1], lines[2])
+	}
+	if !strings.Contains(lines[6], "┌") {
+		t.Fatalf("dialog is missing: %q", lines[6])
+	}
+	m.modal = ""
+	if !strings.Contains(m.View(), "first") || !strings.Contains(m.View(), "second") {
+		t.Fatal("diff remains hidden after closing dialog")
+	}
+}

@@ -404,6 +404,11 @@ func (m model) View() string {
 	}
 	lines = append(lines, fit(clean(strings.ReplaceAll(status, "\n", " | ")), m.width))
 	lines = append(lines, fit("j/k scroll  J/K file  space stage  w wrap  c commit  p/P push/pull  q quit", m.width))
+	if m.modal == "commit" {
+		for i := 1; i <= available; i++ {
+			lines[i] = ""
+		}
+	}
 	if m.modal == "commit" && m.width >= 24 && m.height >= 9 {
 		showCommitDialog(lines, m.width, m.input, m.message)
 	}
