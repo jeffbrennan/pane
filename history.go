@@ -14,14 +14,15 @@ type historyState struct {
 	rows                                                []row
 	selected, offset, pos, horizontal, viewTop, request int
 	filter, draft                                       string
-	searching, loading, stale                           bool
+	searching, loading, stale, more, fetching           bool
 	current                                             commitInfo
 }
 
 type historyLoaded struct {
-	commits []commitInfo
-	err     error
-	request int
+	commits     []commitInfo
+	err         error
+	request     int
+	skip, limit int
 }
 type commitLoaded struct {
 	changes []change
@@ -42,20 +43,51 @@ func (m model) openHistory() (tea.Model, tea.Cmd) {
 func (m model) reloadHistory() (model, tea.Cmd) {
 	m.history.loading = true
 	m.history.stale = false
+	m.history.fetching = false
 	m.history.request++
+	return m, m.fetchHistory(0, max(historyPage, len(m.history.commits)))
+}
+
+func (m model) fetchHistory(skip, limit int) tea.Cmd {
 	repo, request := m.repo, m.history.request
-	return m, func() tea.Msg { commits, err := repo.history(); return historyLoaded{commits, err, request} }
+	return func() tea.Msg {
+		commits, err := repo.history(skip, limit)
+		return historyLoaded{commits: commits, err: err, request: request, skip: skip, limit: limit}
+	}
+}
+
+// loadMoreHistory fetches the next page when the selection nears the end of
+// the loaded commits, or continuously while a search is active.
+func (m model) loadMoreHistory() (model, tea.Cmd) {
+	if m.screen != "history" || m.history.loading || m.history.fetching || !m.history.more {
+		return m, nil
+	}
+	if m.historyQuery() == "" && m.history.selected < len(m.history.commits)-historyPage/4 {
+		return m, nil
+	}
+	m.history.fetching = true
+	return m, m.fetchHistory(len(m.history.commits), historyPage)
+}
+
+func (m model) historyQuery() string {
+	if m.history.searching {
+		return m.history.draft
+	}
+	return m.history.filter
 }
 
 func (m model) filteredHistory() []commitInfo {
-	query := m.history.filter
-	if m.history.searching {
-		query = m.history.draft
+	query := strings.ToLower(m.historyQuery())
+	if query == "" {
+		return m.history.commits
 	}
-	query = strings.ToLower(query)
 	var matches []commitInfo
 	for _, c := range m.history.commits {
-		if strings.Contains(strings.ToLower(c.hash+"\n"+c.author+"\n"+c.email+"\n"+c.message+"\n"+c.subject), query) {
+		search := c.search
+		if search == "" {
+			search = strings.ToLower(c.hash + "\n" + c.author + "\n" + c.email + "\n" + c.message + "\n" + c.subject)
+		}
+		if strings.Contains(search, query) {
 			matches = append(matches, c)
 		}
 	}
@@ -165,6 +197,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.history.current = matches[min(m.history.selected, len(matches)-1)]
 		m.history.request++
 		m.history.loading = true
+		m.history.fetching = false
 		m.history.changes, m.history.rows = nil, nil
 		m.history.pos, m.history.horizontal, m.history.viewTop = 0, 0, 0
 		m.screen = "commit"
@@ -186,6 +219,7 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.screen = "history"
 		m.history.request++
 		m.history.loading = false
+		m.history.fetching = false
 		if m.history.stale {
 			return m.reloadHistory()
 		}
@@ -309,6 +343,9 @@ func (m model) historyView() string {
 		status = "/" + clean(m.history.draft) + "_"
 	} else if m.history.filter != "" {
 		status = "/" + clean(m.history.filter)
+	}
+	if m.history.fetching && m.historyQuery() != "" {
+		status += "  searching older commits…"
 	}
 	lines = append(lines, fit(status, m.width))
 	if m.modal == "help" {

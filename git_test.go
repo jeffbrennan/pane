@@ -214,3 +214,42 @@ func TestCommitStagesInitialUntrackedFiles(t *testing.T) {
 		t.Fatalf("remaining changes: %#v", s)
 	}
 }
+
+func TestLoadBatchesDiffsAndFallsBackForQuotedPaths(t *testing.T) {
+	r := testRepo(t)
+	for _, path := range []string{"plain", "a b", `q"t`} {
+		writeFile(t, r, path, "old\n")
+	}
+	if _, err := r.commit("initial"); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"plain", "a b", `q"t`} {
+		writeFile(t, r, path, "staged "+path+"\n")
+		if err := r.stage(path, false); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, r, path, "unstaged "+path+"\n")
+	}
+	writeFile(t, r, "untracked", "new\n")
+	s, err := r.load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.staged) != 3 || len(s.unstaged) != 4 || s.unstaged[3].path != "untracked" {
+		t.Fatalf("snapshot: %#v", s)
+	}
+	for _, c := range s.staged {
+		if strings.Count(c.diff, "diff --git") != 1 || !strings.Contains(c.diff, "+staged "+c.path) {
+			t.Errorf("staged %q: %q", c.path, c.diff)
+		}
+	}
+	for _, c := range s.unstaged[:3] {
+		if strings.Count(c.diff, "diff --git") != 1 || !strings.Contains(c.diff, "+unstaged "+c.path) {
+			t.Errorf("unstaged %q: %q", c.path, c.diff)
+		}
+	}
+	again, err := r.load()
+	if err != nil || !s.equal(again) {
+		t.Fatalf("unchanged snapshots differ: %v", err)
+	}
+}

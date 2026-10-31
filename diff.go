@@ -11,6 +11,13 @@ import (
 
 var hunkHeader = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`)
 
+func matchHunkHeader(line string) []string {
+	if !strings.HasPrefix(line, "@@ ") {
+		return nil
+	}
+	return hunkHeader.FindStringSubmatch(line)
+}
+
 func buildRows(changes []change, width int, wrap bool) []row {
 	var rows []row
 	for i, c := range changes {
@@ -24,7 +31,7 @@ func buildRows(changes []change, width int, wrap bool) []row {
 		inHunk, hasContent := false, false
 		var metadata []string
 		for i, line := range lines {
-			if match := hunkHeader.FindStringSubmatch(line); match != nil {
+			if match := matchHunkHeader(line); match != nil {
 				oldLine, _ = strconv.Atoi(match[1])
 				newLine, _ = strconv.Atoi(match[3])
 				if hunks > 0 {
@@ -119,7 +126,7 @@ func containsBinary(metadata []string) bool {
 func lineNumberWidth(lines []string) int {
 	largest := 0
 	for _, line := range lines {
-		match := hunkHeader.FindStringSubmatch(line)
+		match := matchHunkHeader(line)
 		if match == nil {
 			continue
 		}

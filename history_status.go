@@ -67,6 +67,15 @@ func historyTitle(branch branchStatus, width int) string {
 	return result
 }
 
+// historyHeaderHeight matches len(m.historyHeader()) without rendering it.
+func (m model) historyHeaderHeight() int {
+	status := 2
+	if !m.snapshot.branch.available {
+		status = 1
+	}
+	return 1 + min(min(2, max(0, m.height-4)), status)
+}
+
 func (m model) historyAvailable() int {
-	return max(0, m.height-len(m.historyHeader())-1)
+	return max(0, m.height-m.historyHeaderHeight()-1)
 }

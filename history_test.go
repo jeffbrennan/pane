@@ -9,7 +9,7 @@ import (
 
 func TestHistoryAndCommitChanges(t *testing.T) {
 	r := testRepo(t)
-	if commits, err := r.history(); err != nil || len(commits) != 0 {
+	if commits, err := r.history(0, historyPage); err != nil || len(commits) != 0 {
 		t.Fatalf("empty history: %#v %v", commits, err)
 	}
 	writeFile(t, r, "first file", "initial\n")
@@ -21,7 +21,7 @@ func TestHistoryAndCommitChanges(t *testing.T) {
 	if _, err := r.commit("second commit\n\nDetailed body"); err != nil {
 		t.Fatal(err)
 	}
-	commits, err := r.history()
+	commits, err := r.history(0, historyPage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestHistoryMergeFirstParent(t *testing.T) {
 	if _, err := r.action("merge", "--no-ff", "-m", "merge", "feature"); err != nil {
 		t.Fatal(err)
 	}
-	commits, err := r.history()
+	commits, err := r.history(0, historyPage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestHistoryEmptyAndBinaryCommits(t *testing.T) {
 	if _, err := r.action("commit", "--allow-empty", "-m", "empty"); err != nil {
 		t.Fatal(err)
 	}
-	commits, err := r.history()
+	commits, err := r.history(0, historyPage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,5 +218,92 @@ func TestParagraphHistoryAndCommitJumps(t *testing.T) {
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("{")})
 	if updated.(model).history.pos != 0 {
 		t.Fatal("commit jump back failed")
+	}
+}
+
+func TestCommitChangesBatchesQuotedAndSpacedPaths(t *testing.T) {
+	r := testRepo(t)
+	for _, path := range []string{"plain", "a b", `q"t`} {
+		writeFile(t, r, path, "content "+path+"\n")
+	}
+	if _, err := r.commit("files"); err != nil {
+		t.Fatal(err)
+	}
+	changes, err := r.commitChanges("HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) != 3 {
+		t.Fatalf("changes: %#v", changes)
+	}
+	for _, c := range changes {
+		if strings.Count(c.diff, "diff --git") != 1 || !strings.Contains(c.diff, "+content "+c.path) {
+			t.Errorf("%q: %q", c.path, c.diff)
+		}
+	}
+}
+
+func TestHistoryPaging(t *testing.T) {
+	r := testRepo(t)
+	for _, name := range []string{"one", "two", "three"} {
+		writeFile(t, r, name, name+"\n")
+		if _, err := r.commit(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	page, err := r.history(1, 1)
+	if err != nil || len(page) != 1 || page[0].subject != "two" || page[0].search == "" {
+		t.Fatalf("page: %#v %v", page, err)
+	}
+
+	m := model{height: 20, screen: "history", history: historyState{loading: true, request: 1}}
+	full := make([]commitInfo, historyPage)
+	updated, cmd := m.Update(historyLoaded{commits: full, request: 1, limit: historyPage})
+	m = updated.(model)
+	if cmd != nil || !m.history.more || m.history.fetching {
+		t.Fatal("first page should not fetch more until the selection nears the end")
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	m = updated.(model)
+	if !m.history.fetching {
+		t.Fatal("reaching the end did not fetch more")
+	}
+	updated, _ = m.Update(historyLoaded{commits: full[:3], request: 1, skip: 1, limit: historyPage})
+	if len(updated.(model).history.commits) != historyPage {
+		t.Fatal("misaligned page was appended")
+	}
+	updated, cmd = m.Update(historyLoaded{commits: full[:3], request: 1, skip: historyPage, limit: historyPage})
+	m = updated.(model)
+	if cmd != nil || len(m.history.commits) != historyPage+3 || m.history.more || m.history.fetching {
+		t.Fatalf("final page: %d more=%v", len(m.history.commits), m.history.more)
+	}
+	reloaded, cmd := m.reloadHistory()
+	if cmd == nil || reloaded.history.request != 2 || reloaded.history.fetching {
+		t.Fatal("reload failed")
+	}
+}
+
+func TestSearchFetchesOlderHistory(t *testing.T) {
+	m := model{width: 60, height: 20, screen: "history", history: historyState{commits: make([]commitInfo, historyPage), more: true}}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(model)
+	if cmd != nil {
+		t.Fatal("empty search should not fetch")
+	}
+	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m = updated.(model)
+	if cmd == nil || !m.history.fetching || !strings.Contains(m.historyView(), "searching older commits") {
+		t.Fatal("search did not fetch older commits")
+	}
+}
+
+func TestHistoryHeaderHeight(t *testing.T) {
+	for _, available := range []bool{false, true} {
+		for height := 0; height < 10; height++ {
+			m := model{width: 40, height: height, snapshot: snapshot{branch: branchStatus{available: available}}}
+			if got, want := m.historyHeaderHeight(), len(m.historyHeader()); got != want {
+				t.Errorf("height %d available %v: %d != %d", height, available, got, want)
+			}
+		}
 	}
 }

@@ -13,14 +13,6 @@ type branchStatus struct {
 	available            bool
 }
 
-func (r repository) branchStatus() (branchStatus, error) {
-	out, err := r.command("status", "--porcelain=v2", "-z", "--branch", "--untracked-files=no", "--ahead-behind")
-	if err != nil {
-		return branchStatus{}, gitError(out, err)
-	}
-	return parseBranchStatus(out), nil
-}
-
 func parseBranchStatus(out []byte) branchStatus {
 	status := branchStatus{available: true}
 	for _, record := range bytes.Split(out, []byte{0}) {
