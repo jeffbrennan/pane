@@ -34,3 +34,7 @@ test:
     go test ./...
 
 check: fmt lint typecheck test
+
+perf:
+    mkdir -p .scratch
+    PANE_PERF=1 PANE_PERF_LOG=.scratch/perf-log.tsv go test -run '^TestPerf$' -count=1 -v .
