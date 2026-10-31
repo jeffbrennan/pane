@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -338,6 +339,50 @@ func TestStaleHistoryStatsAreIgnored(t *testing.T) {
 	got := updated.(model)
 	if got.history.commits[0].statsLoaded || !got.history.statsFetching {
 		t.Fatal("stale statistics changed the current history")
+	}
+}
+
+func TestHistoryStatsCachedWhenReopening(t *testing.T) {
+	r := testRepo(t)
+	for _, name := range []string{"one", "two"} {
+		writeFile(t, r, name, name+"\n")
+		if _, err := r.commit(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := model{repo: r, width: 60, height: 10}
+	opened, cmd := m.openHistory()
+	updated, cmd := opened.Update(cmd())
+	updated, _ = updated.Update(cmd())
+	m = updated.(model)
+	if len(m.history.statsCache) != 2 {
+		t.Fatal("loaded statistics were not cached")
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(model)
+	opened, cmd = m.openHistory()
+	updated, cmd = opened.Update(cmd())
+	m = updated.(model)
+	if cmd != nil || !m.history.commits[0].statsLoaded || !m.history.commits[1].statsLoaded || m.history.commits[0].added != 1 {
+		t.Fatal("reopened history did not reuse cached statistics")
+	}
+}
+
+func TestHistoryStatsCacheTracksNewestCommits(t *testing.T) {
+	commits := make([]commitInfo, historyStatsCacheSize+1)
+	for i := range commits {
+		commits[i] = commitInfo{hash: fmt.Sprint(i), statsLoaded: true, added: i}
+	}
+	m := model{screen: "history", history: historyState{commits: commits}}
+	m.cacheHistoryStats()
+	if len(m.history.statsCache) != historyStatsCacheSize {
+		t.Fatal("cache did not respect its size limit")
+	}
+	m.history.request++
+	updated, _ := m.Update(historyLoaded{request: m.history.request, commits: []commitInfo{{hash: "new"}, {hash: "1"}}, limit: historyPage})
+	got := updated.(model)
+	if got.history.commits[0].statsLoaded || !got.history.commits[1].statsLoaded || got.history.commits[1].added != 1 || len(got.history.statsCache) != 1 {
+		t.Fatal("cache did not follow commit hashes after history changed")
 	}
 }
 

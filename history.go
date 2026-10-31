@@ -10,6 +10,7 @@ import (
 
 type historyState struct {
 	commits                                             []commitInfo
+	statsCache                                          map[string]commitInfo
 	changes                                             []change
 	rows                                                []row
 	selected, offset, pos, horizontal, viewTop, request int
@@ -37,7 +38,20 @@ type historyStatsLoaded struct {
 	request int
 }
 
-const historyStatsLookahead = 5
+const (
+	historyStatsLookahead = 5
+	historyStatsCacheSize = 20
+)
+
+func (m *model) cacheHistoryStats() {
+	cache := make(map[string]commitInfo)
+	for _, c := range m.history.commits[:min(len(m.history.commits), historyStatsCacheSize)] {
+		if c.statsLoaded {
+			cache[c.hash] = c
+		}
+	}
+	m.history.statsCache = cache
+}
 
 func (m model) openHistory() (tea.Model, tea.Cmd) {
 	m.screen = "history"

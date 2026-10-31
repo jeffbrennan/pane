@@ -190,7 +190,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.skip > 0 {
 			m.history.commits = append(m.history.commits[:len(m.history.commits):len(m.history.commits)], msg.commits...)
 		} else {
+			for i, c := range msg.commits {
+				if cached, ok := m.history.statsCache[c.hash]; ok {
+					msg.commits[i].added = cached.added
+					msg.commits[i].deleted = cached.deleted
+					msg.commits[i].binary = cached.binary
+					msg.commits[i].statsLoaded = true
+				}
+			}
 			m.history.commits = msg.commits
+			m.cacheHistoryStats()
 		}
 		m.history.more = len(msg.commits) == msg.limit
 		m.history.selected = min(m.history.selected, max(0, len(m.filteredHistory())-1))
@@ -229,6 +238,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.history.commits[i].statsLoaded = true
 			}
 		}
+		m.cacheHistoryStats()
 		return m.loadHistoryStats()
 	case commitLoaded:
 		if m.screen != "commit" || msg.request != m.history.request {
