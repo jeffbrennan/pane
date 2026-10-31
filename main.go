@@ -284,11 +284,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "p":
 			if !m.busy {
-				m.modal = "push"
+				return m.runAction("push")
 			}
 		case "P":
 			if !m.busy {
-				m.modal = "pull"
+				return m.runAction("pull")
 			}
 		}
 	}
@@ -398,14 +398,6 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	}
-	if key.String() == "y" || key.String() == "enter" {
-		action := m.modal
-		m.modal = ""
-		return m.runAction(action)
-	}
-	if key.String() == "n" {
-		m.modal = ""
 	}
 	return m, nil
 }
@@ -548,7 +540,7 @@ func (m model) View() string {
 	if m.width <= 0 || m.height <= 0 {
 		return ""
 	}
-	if m.modal == "push" || m.modal == "pull" || m.modal == "result" {
+	if m.modal == "result" {
 		return m.actionDialogView()
 	}
 	if m.modal == "error" {
@@ -617,9 +609,6 @@ func (m model) View() string {
 		} else {
 			status = "Nothing staged? All changes will be staged."
 		}
-	}
-	if m.modal == "push" || m.modal == "pull" {
-		status = m.modal + "? [y/enter: confirm, n/esc: cancel]"
 	}
 	if m.modal == "help" {
 		status = "j/k scroll  ?/esc close"

@@ -27,16 +27,7 @@ func (m model) actionDialogView() string {
 	for i := 1; i < len(lines)-1; i++ {
 		lines[i] = ""
 	}
-	title, output, hint := "", "", "y/↵ yes  n/esc no"
-	if m.modal == "result" {
-		title = "✓ Pull complete"
-		output = m.resultText
-		hint = "↵/esc close"
-	} else if m.modal == "push" {
-		title, output = "Push changes?", "Push to the configured upstream."
-	} else {
-		title, output = "Pull changes?", "Pull from the configured upstream."
-	}
+	title, output, hint := "✓ Pull complete", m.resultText, "↵/esc close"
 	if m.width < 24 || len(lines) < 8 {
 		lines[len(lines)-1] = fit(title+"  "+hint, m.width)
 		return strings.Join(lines, "\n")
@@ -45,15 +36,13 @@ func (m model) actionDialogView() string {
 	innerWidth := boxWidth - 4
 	body := actionOutputLines(output, m.width)
 	visible := min(len(body), actionVisibleRows(len(lines)))
-	if m.modal == "result" && len(body) > visible {
+	if len(body) > visible {
 		hint = "j/k  ↵/esc close"
 	}
 	start := min(m.resultPos, max(0, len(body)-visible))
 	content := []string{"┌" + strings.Repeat("─", boxWidth-2) + "┐"}
 	titleLine := dialogLine(title, innerWidth)
-	if m.modal == "result" {
-		titleLine = "\x1b[1;32m" + titleLine + "\x1b[0m"
-	}
+	titleLine = "\x1b[1;32m" + titleLine + "\x1b[0m"
 	content = append(content, titleLine, dialogLine("", innerWidth))
 	for _, line := range body[start : start+visible] {
 		content = append(content, dialogLine(line, innerWidth))

@@ -27,7 +27,7 @@ For development, `just b` builds pane, installs it, and runs it in the current r
 | `w` | Toggle line wrapping |
 | `h` / `l`, `zh` / `zl` | Scroll horizontally when wrapping is off |
 | `c` | Commit staged changes |
-| `p` / `P` | Push / pull after confirmation |
+| `p` / `P` | Push / pull |
 | `r` | Refresh |
 | `H` | Open commit history |
 | `?` | Show keyboard shortcuts |

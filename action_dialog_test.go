@@ -8,21 +8,16 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func TestPushConfirmationDialog(t *testing.T) {
-	m := model{width: 70, height: 20, rows: []row{{text: "background diff"}}}
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
-	m = updated.(model)
-	view := m.View()
-	if cmd != nil || m.modal != "push" || !strings.Contains(view, "Push changes?") || !strings.Contains(view, "configured upstream") || strings.Contains(view, "background diff") {
-		t.Fatalf("unexpected push confirmation: %q", view)
-	}
-	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	if cmd != nil || updated.(model).modal != "" {
-		t.Fatal("cancel did not dismiss confirmation")
-	}
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
-	if !updated.(model).busy || updated.(model).modal != "" {
-		t.Fatal("confirmation did not start action")
+func TestPushPullStartImmediately(t *testing.T) {
+	for _, screen := range []string{"", "history"} {
+		for _, key := range []string{"p", "P"} {
+			m := model{screen: screen}
+			updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+			got := updated.(model)
+			if cmd == nil || !got.busy || got.modal != "" {
+				t.Errorf("screen %q key %q did not start action: %#v", screen, key, got)
+			}
+		}
 	}
 }
 
@@ -58,8 +53,8 @@ func TestActionResultScrollAndError(t *testing.T) {
 }
 
 func TestActionDialogOnSmallPane(t *testing.T) {
-	m := model{width: 18, height: 5, modal: "push"}
-	if !strings.Contains(m.View(), "Push changes?") {
+	m := model{width: 18, height: 5, modal: "result"}
+	if !strings.Contains(m.View(), "Pull complete") {
 		t.Fatal("missing small-pane fallback")
 	}
 }

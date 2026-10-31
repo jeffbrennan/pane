@@ -154,11 +154,11 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.helpPos = 0
 	case "p":
 		if !m.busy {
-			m.modal = "push"
+			return m.runAction("push")
 		}
 	case "P":
 		if !m.busy {
-			m.modal = "pull"
+			return m.runAction("pull")
 		}
 	case "r":
 		var refreshCmd, historyCmd tea.Cmd

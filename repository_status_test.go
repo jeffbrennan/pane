@@ -93,12 +93,12 @@ func TestHistoryLandingStatusAndActions(t *testing.T) {
 		t.Fatal("unnecessary history heading is visible")
 	}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
-	if cmd != nil || updated.(model).modal != "push" {
-		t.Fatal("push confirmation unavailable in history")
+	if cmd == nil || !updated.(model).busy || updated.(model).modal != "" {
+		t.Fatal("push did not start in history")
 	}
 	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("P")})
-	if cmd != nil || updated.(model).modal != "pull" {
-		t.Fatal("pull confirmation unavailable in history")
+	if cmd == nil || !updated.(model).busy || updated.(model).modal != "" {
+		t.Fatal("pull did not start in history")
 	}
 	m.width = 24
 	if !strings.Contains(m.View(), "↑2 ↓3 (cached)") {
