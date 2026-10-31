@@ -26,6 +26,26 @@ func TestNavigationAndRefreshAnchor(t *testing.T) {
 	}
 }
 
+func TestFileHeadersSeparateChangesAndFileJumps(t *testing.T) {
+	m := model{width: 24, height: 12, wrap: true, snapshot: snapshot{unstaged: []change{
+		{path: "first.go", diff: "@@ -0,0 +1 @@\n+first\n"},
+		{path: "second.go", diff: "@@ -0,0 +1 @@\n+second\n"},
+	}}}
+	m.rebuild()
+	m.jump(1)
+	if m.rows[m.pos].kind != 'f' || m.rows[m.pos].path != "second.go" || m.rows[m.pos-1].kind != 's' {
+		t.Fatalf("file jump or spacer: %#v", m.rows)
+	}
+	view := m.View()
+	if !strings.Contains(view, "\x1b[1;37;48;5;236m first.go") || !strings.Contains(view, "\x1b[1;37;48;5;236m second.go") {
+		t.Fatalf("missing file header bars: %q", view)
+	}
+	m.jump(-1)
+	if m.pos != 0 || m.rows[m.pos].path != "first.go" {
+		t.Fatal("previous file jump missed header")
+	}
+}
+
 func TestActiveLineShowsContext(t *testing.T) {
 	rows := make([]row, 20)
 	for i := range rows {

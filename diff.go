@@ -13,8 +13,11 @@ var hunkHeader = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@
 
 func buildRows(changes []change, width int, wrap bool) []row {
 	var rows []row
-	for _, c := range changes {
-		rows = append(rows, row{path: c.path, line: -1, text: "── " + clean(c.path) + " ──", kind: 'f'})
+	for i, c := range changes {
+		if i > 0 {
+			rows = append(rows, row{path: c.path, line: -2, kind: 's'})
+		}
+		rows = append(rows, row{path: c.path, line: -1, text: " " + clean(c.path), kind: 'f'})
 		lines := strings.Split(strings.TrimSuffix(c.diff, "\n"), "\n")
 		gutterWidth := lineNumberWidth(lines)
 		oldLine, newLine, hunks := 0, 0, 0

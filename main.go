@@ -439,23 +439,17 @@ func (m *model) jump(direction int) {
 	path := m.rows[m.pos].path
 	if direction > 0 {
 		for i := m.pos + 1; i < len(m.rows); i++ {
-			if m.rows[i].path != path {
+			if m.rows[i].kind == 'f' && m.rows[i].path != path {
 				m.pos = i
 				return
 			}
 		}
 	} else {
-		start := m.pos
-		for start > 0 && m.rows[start-1].path == path {
-			start--
-		}
-		if start > 0 {
-			path = m.rows[start-1].path
-			start--
-			for start > 0 && m.rows[start-1].path == path {
-				start--
+		for i := m.pos - 1; i >= 0; i-- {
+			if m.rows[i].kind == 'f' && m.rows[i].path != path {
+				m.pos = i
+				return
 			}
-			m.pos = start
 		}
 	}
 }
@@ -519,7 +513,9 @@ func (m model) View() string {
 		r := m.rows[index]
 		text := r.text
 		contentWidth := max(0, m.width-margin)
-		if !m.wrap {
+		if r.kind == 'f' {
+			text = fit(text, contentWidth)
+		} else if !m.wrap {
 			text = sliceWidth(text, m.horizontal, max(0, contentWidth-runewidth.StringWidth(r.gutter)))
 		} else {
 			text = fit(text, max(0, contentWidth-runewidth.StringWidth(r.gutter)))
@@ -534,7 +530,8 @@ func (m model) View() string {
 		case '@':
 			color = "\x1b[36m"
 		case 'f':
-			color = "\x1b[1;35m"
+			text += strings.Repeat(" ", max(0, contentWidth-runewidth.StringWidth(text)))
+			color = "\x1b[1;37;48;5;236m"
 		}
 		if color != "" {
 			text = color + text + "\x1b[0m"
