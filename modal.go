@@ -22,6 +22,7 @@ var shortcutSections = []struct {
 		{"d", "Discard hunk / file"},
 		{"c", "Commit changes"},
 		{"p / P", "Push / pull"},
+		{"F", "Fetch remote changes"},
 		{"r", "Refresh"},
 	}},
 	{"Move", []shortcut{

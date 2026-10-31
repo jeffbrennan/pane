@@ -397,6 +397,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			historyModel, historyCmd := m.openHistory()
 			return historyModel, tea.Batch(refreshCmd, historyCmd)
+		} else if msg.action == "fetch" {
+			m.flash = msg.message
+			return m.refresh()
 		} else if msg.stageCursor != nil {
 			m.flash = msg.message
 			m.stageCursor = msg.stageCursor
@@ -542,6 +545,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.flash = ""
 		if m.modal != "" {
 			return m.handleModal(msg)
+		}
+		if msg.String() == "F" && m.pending == "" && !(m.screen == "history" && m.history.searching) {
+			if !m.busy {
+				return m.startFetch()
+			}
+			return m, nil
 		}
 		if msg.String() == "W" && m.pending == "" && (m.screen == "" || m.screen == "commit" || m.screen == "sequence" || m.screen == "base") {
 			return m.toggleWhitespace()

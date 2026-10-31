@@ -58,6 +58,7 @@ For development, `just b` builds pane, installs it, and runs it in the current r
 | Commit input: `←` / `→`, `ctrl-b` / `ctrl-f`, `alt-b` / `alt-f`, `home` / `end`, `ctrl-a` / `ctrl-e` | Move the subject cursor by character, word, or to the start / end |
 | Commit input: `backspace` / `delete`, `ctrl-d`, `ctrl-w` / `alt-backspace`, `ctrl-u` / `ctrl-k` | Delete a character, previous word, or text to the start / end |
 | `p` / `P` | Push / pull |
+| `F` | Fetch remote changes and refresh branch status |
 | `r` | Refresh |
 | `H` | Open commit history |
 | `u` | In history, edit the latest unpublished commit's message |
@@ -78,7 +79,7 @@ In diffs, paragraph boundaries are blank lines, file headers, and hunk separator
 
 While editing a diff or history search, `ctrl-b` / `ctrl-f` move by character, `ctrl-d` deletes the next character, and `ctrl-u` / `ctrl-k` delete to the start / end. In the file picker those keys retain their list-navigation behavior while filtering; use the arrow keys to move the query cursor and the other editing shortcuts above.
 
-The history landing page shows the branch, local changes, and commits ahead of or behind its configured upstream. Ahead/behind counts use locally stored remote-tracking refs and may be stale; pane does not fetch automatically. History reloads when the checked-out commit changes. Push and pull are available from history as well as the diff view. After a successful push, pane returns to history and refreshes its status.
+The history landing page shows the branch, local changes, and commits ahead of or behind its configured upstream. Ahead/behind counts use locally stored remote-tracking refs and may be stale; pane does not fetch automatically. Press `F` to fetch and prune the current branch's upstream remote, or all remotes if it has no upstream. History reloads when the checked-out commit changes. Push and pull are available from history as well as the diff view. After a successful push, pane returns to history and refreshes its status.
 
 In history, `u` edits the latest commit's subject without changing its body, contents, or staged changes; use `ctrl-g` to edit the body as well. Before rewriting, pane checks the current branch and tag tips on every configured remote. It refuses if the commit is reachable from one, if a remote cannot be contacted, or if a remote's history is not available locally; fetch the remote's branches and tags and try again in the latter case. With no configured remotes, pane permits the edit. Remote state can still change between the check and the rewrite.
 
