@@ -2,6 +2,8 @@ module github.com/jeffbrennan/pane
 
 go 1.22.0
 
+toolchain go1.27.3
+
 require (
 	github.com/alecthomas/chroma/v2 v2.15.0
 	github.com/charmbracelet/bubbletea v1.3.4

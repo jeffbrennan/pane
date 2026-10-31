@@ -6,7 +6,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mattn/go-runewidth"
 )
 
 type historyState struct {
@@ -701,7 +700,7 @@ func historyMetadata(c commitInfo, date string, width int, selected bool, accent
 		if part.style != "" {
 			b.WriteString("\x1b[0m")
 		}
-		remaining -= runewidth.StringWidth(text)
+		remaining -= stringWidth(text)
 	}
 	return b.String()
 }

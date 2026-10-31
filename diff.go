@@ -123,7 +123,7 @@ func buildRowsDisplay(changes []change, width int, wrap bool, expanded map[strin
 					}
 					rows = append(rows, header)
 					byteOffset += len(part)
-					offset += max(1, runewidth.StringWidth(part))
+					offset += max(1, stringWidth(part))
 				}
 			}
 		}

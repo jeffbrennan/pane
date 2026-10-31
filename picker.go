@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/mattn/go-runewidth"
 )
 
 type pickerState struct {
@@ -338,9 +337,9 @@ func (m model) showFilesDialog(lines []string) {
 	nameWidth := max(0, innerWidth-numberWidth-1-3-countWidth)
 	columns := func(number, name, counts string) string {
 		name = fit(name, nameWidth)
-		return number + " " + name + strings.Repeat(" ", max(0, nameWidth-runewidth.StringWidth(name))) + " │ " + counts
+		return number + " " + name + strings.Repeat(" ", max(0, nameWidth-stringWidth(name))) + " │ " + counts
 	}
-	query := sliceWidth(clean(m.picker.query), max(0, runewidth.StringWidth(m.picker.query)-innerWidth+2), max(0, innerWidth-2))
+	query := sliceWidth(clean(m.picker.query), max(0, stringWidth(m.picker.query)-innerWidth+2), max(0, innerWidth-2))
 	queryLine := styleDim + "/" + query + styleReset
 	if query == "" {
 		queryLine = styleDim + "/ to filter" + styleReset

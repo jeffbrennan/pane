@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime/pprof"
 	"strings"
 	"time"
 	"unicode"
@@ -75,7 +76,8 @@ type model struct {
 	lightTheme            bool
 	themeAuto             bool
 	themeQuery            func()
-	refreshTick           bool
+	ticks                 int
+	blurred               bool
 	whitespaceRefreshing  bool
 	loading, busy         bool
 	activeAction          string
@@ -142,7 +144,7 @@ func main() {
 			m.lightTheme = light
 		}
 	}
-	options := []tea.ProgramOption{tea.WithAltScreen()}
+	options := []tea.ProgramOption{tea.WithAltScreen(), tea.WithReportFocus()}
 	var tracking themeTracking
 	if theme != "light" && theme != "dark" {
 		tracking = startThemeTracking()
@@ -159,13 +161,36 @@ func main() {
 	if tracking.setHandler != nil {
 		tracking.setHandler(func(light bool) { go program.Send(terminalBackgroundChanged(light)) })
 	}
+	stopProfile := startCPUProfile(os.Getenv("PANE_CPUPROFILE"))
 	final, err := program.Run()
+	stopProfile()
 	if result, ok := final.(model); ok {
 		result.closeHistoryStreams()
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
+	}
+}
+
+// startCPUProfile records a CPU profile to path, for building default.pgo
+// from real sessions. It returns a function that stops recording.
+func startCPUProfile(path string) func() {
+	if path == "" {
+		return func() {}
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	if err := pprof.StartCPUProfile(file); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	return func() {
+		pprof.StopCPUProfile()
+		file.Close()
 	}
 }
 
@@ -269,6 +294,14 @@ func load(repo repository, generation int, cache *refreshCache) tea.Cmd {
 	}
 }
 
+// Refreshes run every refreshTicks ticks while the terminal is focused, and
+// every blurredRefreshTicks while it is not, so a pane left in a background
+// window polls Git less often. Regaining focus refreshes immediately.
+const (
+	refreshTicks        = 2
+	blurredRefreshTicks = 6
+)
+
 func nextTick() tea.Cmd {
 	return tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg { return tick{} })
 }
@@ -294,8 +327,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.loadHistoryBackground()
 	case tick:
 		var cmd tea.Cmd
-		m.refreshTick = !m.refreshTick
-		if !m.refreshTick {
+		m.ticks++
+		interval := refreshTicks
+		if m.blurred {
+			interval = blurredRefreshTicks
+		}
+		if m.ticks%interval == 0 {
 			m, cmd = m.refresh()
 		}
 		var query tea.Cmd
@@ -308,6 +345,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, tea.Batch(cmd, nextTick(), query)
+	case tea.BlurMsg:
+		m.blurred = true
+	case tea.FocusMsg:
+		m.blurred, m.ticks = false, 0
+		return m.refresh()
 	case terminalBackgroundChanged:
 		if m.themeAuto {
 			m.lightTheme = bool(msg)
@@ -1386,9 +1428,9 @@ func (m model) renderDiffRow(r row, active bool) string {
 	if r.kind == 'f' || r.kind == 'F' {
 		text = fit(text, contentWidth)
 	} else if !m.wrap {
-		text = sliceWidth(text, m.horizontal, max(0, contentWidth-runewidth.StringWidth(r.gutter)))
+		text = sliceWidth(text, m.horizontal, max(0, contentWidth-stringWidth(r.gutter)))
 	} else {
-		text = fit(text, max(0, contentWidth-runewidth.StringWidth(r.gutter)))
+		text = fit(text, max(0, contentWidth-stringWidth(r.gutter)))
 	}
 	text = fit(r.gutter+text, contentWidth)
 	query := m.activeSearch()
@@ -1404,7 +1446,7 @@ func (m model) renderDiffRow(r row, active bool) string {
 			color = styleDim
 		}
 	case 'f', 'F':
-		text += strings.Repeat(" ", max(0, contentWidth-runewidth.StringWidth(text)))
+		text += strings.Repeat(" ", max(0, contentWidth-stringWidth(text)))
 		color = renameHeaderDark
 		if m.lightTheme {
 			color = renameHeaderLight
@@ -1427,7 +1469,7 @@ func (m model) renderDiffRow(r row, active bool) string {
 		visible := text[len(r.gutter):]
 		start := 0
 		if !m.wrap {
-			start = sliceStart(r.text, m.horizontal, max(0, contentWidth-runewidth.StringWidth(r.gutter)))
+			start = sliceStart(r.text, m.horizontal, max(0, contentWidth-stringWidth(r.gutter)))
 		}
 		background := ""
 		switch r.kind {
@@ -1444,7 +1486,7 @@ func (m model) renderDiffRow(r row, active bool) string {
 		}
 		padding := ""
 		if background != "" {
-			padding = strings.Repeat(" ", max(0, contentWidth-runewidth.StringWidth(r.gutter+visible)))
+			padding = strings.Repeat(" ", max(0, contentWidth-stringWidth(r.gutter+visible)))
 		}
 		text = background + r.gutter + renderSyntax(visible, r.syntax, r.inline, start, query, background, m.lightTheme) + padding + "\x1b[0m"
 		color = ""
@@ -1461,7 +1503,31 @@ func (m model) renderDiffRow(r row, active bool) string {
 	return prefix + text
 }
 
-func fit(s string, width int) string { return runewidth.Truncate(s, width, "") }
+func fit(s string, width int) string {
+	if printableASCII(s) {
+		return s[:max(0, min(len(s), width))]
+	}
+	return runewidth.Truncate(s, width, "")
+}
+
+// printableASCII reports whether every byte of s is a printable ASCII
+// character, each of which is one cell wide. Most diff text is, and skipping
+// runewidth's grapheme segmentation for it dominates rendering cost.
+func printableASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] > 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
+func stringWidth(s string) int {
+	if printableASCII(s) {
+		return len(s)
+	}
+	return runewidth.StringWidth(s)
+}
 
 func sliceWidth(s string, start, width int) string {
 	var b strings.Builder

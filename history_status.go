@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"strings"
-
-	"github.com/mattn/go-runewidth"
 )
 
 // historyHeader shows the branch on the title row and a one-line summary of
@@ -100,7 +98,7 @@ func (m model) historyTitle(branch branchStatus, width int) string {
 	}
 	name = fit(clean(name), width)
 	result := styleBold + m.accent() + name + styleReset
-	remaining := max(0, width-runewidth.StringWidth(name))
+	remaining := max(0, width-stringWidth(name))
 	if branch.upstream != "" && remaining > 0 {
 		result += styleDim + fit(" → "+clean(branch.upstream), remaining) + styleReset
 	}

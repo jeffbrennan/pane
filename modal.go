@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/mattn/go-runewidth"
 )
 
 type shortcut struct{ keys, action string }
@@ -97,7 +96,7 @@ var shortcutSections = []struct {
 	}},
 }
 
-const helpBoxWidth = 60
+const helpBoxWidth = 76
 
 // helpVisibleRows is the number of shortcut rows shown in a help dialog on a
 // screen of height rows: the title and status bars, the dialog border, title
@@ -106,18 +105,18 @@ func helpVisibleRows(height int) int { return max(1, height-6) }
 
 func shortcutLines(width int, accent string) []string {
 	innerWidth := max(1, min(helpBoxWidth, width-2)-4)
-	keyWidth := 0
-	for _, section := range shortcutSections {
-		for _, s := range section.keys {
-			keyWidth = max(keyWidth, runewidth.StringWidth(s.keys))
-		}
-	}
-	keyWidth += 2
 	var lines []string
 	for i, section := range shortcutSections {
 		if i > 0 {
 			lines = append(lines, "")
 		}
+		// Each section sizes its own key column, so one long key does not
+		// squeeze the descriptions everywhere else.
+		keyWidth := 0
+		for _, s := range section.keys {
+			keyWidth = max(keyWidth, stringWidth(s.keys))
+		}
+		keyWidth += 2
 		lines = append(lines, styleBold+section.title+styleReset)
 		for _, s := range section.keys {
 			if innerWidth < keyWidth+16 {
@@ -134,7 +133,7 @@ func shortcutLines(width int, accent string) []string {
 				if j == 0 {
 					key = s.keys
 				}
-				lines = append(lines, accent+key+styleReset+strings.Repeat(" ", keyWidth-runewidth.StringWidth(key))+part)
+				lines = append(lines, accent+key+styleReset+strings.Repeat(" ", keyWidth-stringWidth(key))+part)
 			}
 		}
 	}
@@ -150,13 +149,13 @@ func wrapWords(s string, width int) []string {
 		switch {
 		case line == "":
 			line = word
-		case runewidth.StringWidth(line)+1+runewidth.StringWidth(word) <= width:
+		case stringWidth(line)+1+stringWidth(word) <= width:
 			line += " " + word
 		default:
 			lines = append(lines, line)
 			line = word
 		}
-		for runewidth.StringWidth(line) > width {
+		for stringWidth(line) > width {
 			parts := wrapLine(line, width)
 			lines = append(lines, parts[:len(parts)-1]...)
 			line = parts[len(parts)-1]
@@ -259,7 +258,7 @@ func (m model) showCommitDialog(lines []string) {
 					content = append(content, fit("  "+clean(commit.subject), boxWidth), styleDim+fit("  "+metadata, boxWidth)+styleReset)
 				} else {
 					metadata = fit(metadata, max(1, boxWidth/2))
-					available := max(0, boxWidth-4-runewidth.StringWidth(metadata))
+					available := max(0, boxWidth-4-stringWidth(metadata))
 					content = append(content, "  "+fit(clean(commit.subject), available)+"  "+styleDim+metadata+styleReset)
 				}
 				if spaced && i < count-1 {
