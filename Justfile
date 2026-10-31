@@ -1,5 +1,6 @@
 b:
     go build -o pane .
+    go install .
     ./pane
 
 fmt:

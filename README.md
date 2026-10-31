@@ -6,7 +6,7 @@ If the working tree and index are clean at startup, pane opens commit history. O
 
 Install with `go install github.com/jeffbrennan/pane@latest`, or run `go install .` from a checkout; either places `pane` in `$(go env GOPATH)/bin`, which must be on your `PATH`. Go and Git must be installed. The initial target is macOS.
 
-For development, `just b` builds and runs pane in the current repository.
+For development, `just b` builds pane, installs it, and runs it in the current repository.
 
 | Key | Action |
 | --- | --- |
