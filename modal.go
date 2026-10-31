@@ -13,11 +13,7 @@ func showCommitDialog(lines []string, width int, input, message string) {
 	fieldWidth := innerWidth - 1
 	start := max(0, runewidth.StringWidth(input)-fieldWidth)
 	visible := sliceWidth(input, start, fieldWidth)
-	info := "No staged changes? Stage all."
-	if message != "" {
-		info = message
-	}
-	infoLines := wrapLine(info, innerWidth)
+	infoLines := wrapLine(message, innerWidth)
 	infoFirst := infoLines[0]
 	infoSecond := ""
 	if len(infoLines) > 1 {

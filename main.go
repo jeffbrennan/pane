@@ -396,8 +396,12 @@ func (m model) View() string {
 		lines = append(lines, text)
 	}
 	status := m.message
-	if m.modal == "commit" && (m.width < 24 || m.height < 9) {
-		status = "Commit message: " + m.input + "_  (enter: commit, esc: cancel)"
+	if m.modal == "commit" {
+		if m.width < 24 || m.height < 9 {
+			status = "Commit message: " + m.input + "_  (enter: commit, esc: cancel)"
+		} else {
+			status = "Nothing staged? All changes will be staged."
+		}
 	}
 	if m.modal == "push" || m.modal == "pull" {
 		status = m.modal + "? [y/enter: confirm, n/esc: cancel]"
