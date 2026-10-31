@@ -28,9 +28,9 @@ func (m model) historyHeader() []string {
 		case !branch.countsKnown:
 			status = append(status, statusLine{"  Upstream counts unavailable", syncStyle})
 		case m.width < 40:
-			status = append(status, statusLine{fmt.Sprintf("  ↑%d ↓%d (cached)", branch.ahead, branch.behind), syncStyle})
+			status = append(status, statusLine{fmt.Sprintf("  ↑%d ↓%d", branch.ahead, branch.behind), syncStyle})
 		default:
-			status = append(status, statusLine{fmt.Sprintf("  ↑%d ahead  ↓%d behind (cached)", branch.ahead, branch.behind), syncStyle})
+			status = append(status, statusLine{fmt.Sprintf("  ↑%d ahead  ↓%d behind", branch.ahead, branch.behind), syncStyle})
 		}
 		changes := fmt.Sprintf("%d unstaged · %d staged", len(m.snapshot.unstaged), len(m.snapshot.staged))
 		changeStyle := "\x1b[2m"

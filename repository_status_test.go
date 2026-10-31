@@ -80,7 +80,7 @@ func TestHistoryLandingStatusAndActions(t *testing.T) {
 		unstaged: []change{{path: "one"}}, staged: []change{{path: "two"}},
 	}, history: historyState{commits: []commitInfo{{subject: "recent commit"}}}}
 	view := m.View()
-	for _, text := range []string{"main", "↑2 ahead", "↓3 behind", "cached", "origin/main", "1 unstaged", "1 staged", "recent commit"} {
+	for _, text := range []string{"main", "↑2 ahead", "↓3 behind", "origin/main", "1 unstaged", "1 staged", "recent commit"} {
 		if !strings.Contains(view, text) {
 			t.Errorf("missing %q in %q", text, view)
 		}
@@ -101,7 +101,7 @@ func TestHistoryLandingStatusAndActions(t *testing.T) {
 		t.Fatal("pull did not start in history")
 	}
 	m.width = 24
-	if !strings.Contains(m.View(), "↑2 ↓3 (cached)") {
+	if !strings.Contains(m.View(), "↑2 ↓3") {
 		t.Fatalf("narrow view: %q", m.View())
 	}
 }
