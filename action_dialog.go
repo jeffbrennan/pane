@@ -34,7 +34,7 @@ func (m model) actionDialogView() string {
 			title = "✓ Pull complete"
 		}
 		output = m.resultText
-		hint = "j/k  ↵/esc close"
+		hint = "↵/esc close"
 	} else if m.modal == "push" {
 		title, output = "Push changes?", "Push to the configured upstream."
 	} else {
@@ -48,6 +48,9 @@ func (m model) actionDialogView() string {
 	innerWidth := boxWidth - 4
 	body := actionOutputLines(output, m.width)
 	visible := min(len(body), actionVisibleRows(len(lines)))
+	if m.modal == "result" && len(body) > visible {
+		hint = "j/k  ↵/esc close"
+	}
 	start := min(m.resultPos, max(0, len(body)-visible))
 	content := []string{"┌" + strings.Repeat("─", boxWidth-2) + "┐"}
 	titleLine := dialogLine(title, innerWidth)
