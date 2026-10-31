@@ -42,7 +42,7 @@ func keys(t *testing.T, m model, input ...string) model {
 func TestFilePickerFiltersAndJumps(t *testing.T) {
 	m := toolModel()
 	m = keys(t, m, "f")
-	if m.modal != "files" || !strings.Contains(m.View(), "Files  3/3") || !strings.Contains(m.View(), "+2 -0") {
+	if m.modal != "files" || !strings.Contains(m.View(), "Files  3/3") || !strings.Contains(m.View(), "+1 -1") {
 		t.Fatalf("picker: %q", m.View())
 	}
 	m = keys(t, m, "/", "t", "y", "p")
@@ -70,8 +70,9 @@ func TestFilePickerNavigationAndSearchModes(t *testing.T) {
 	if !strings.Contains(m.View(), "j/k select") || !strings.Contains(m.View(), "/ search") {
 		t.Fatalf("missing navigation hints: %q", m.View())
 	}
+	initial := m.picker.selected
 	m = keys(t, m, "j", "j", "k")
-	if m.picker.selected != 1 || m.picker.query != "" {
+	if m.picker.selected != initial+1 || m.picker.query != "" {
 		t.Fatalf("j/k did not navigate: %#v", m.picker)
 	}
 	m = keys(t, m, "/", "k", "j", "/")
@@ -90,6 +91,104 @@ func TestFilePickerNavigationAndSearchModes(t *testing.T) {
 	if m.modal != "" {
 		t.Fatal("escape in navigation mode should close the picker")
 	}
+}
+
+func TestFilePickerDirectoryTree(t *testing.T) {
+	m := keys(t, toolModel(), "f")
+	items := m.pickerItems()
+	if len(items) != 7 || items[0].path != "cmd" || !items[0].directory || items[1].path != "cmd/server" || items[2].path != "cmd/server/main.go" {
+		t.Fatalf("unexpected tree: %#v", items)
+	}
+	m.picker.selected = 0
+	m = keys(t, m, "h")
+	items = m.pickerItems()
+	if len(items) != 5 || !items[0].collapsed || items[1].path != "pkg" {
+		t.Fatalf("directory not collapsed: %#v", items)
+	}
+	m = keys(t, m, "enter")
+	if len(m.pickerItems()) != 7 || m.modal != "files" {
+		t.Fatal("enter did not expand the directory")
+	}
+	m.picker.selected = 2
+	m = keys(t, m, "h")
+	if item := m.pickerItems()[m.picker.selected]; item.path != "cmd/server" || !item.collapsed {
+		t.Fatal("h on a file did not collapse its parent")
+	}
+	m.picker.selected = 0
+	m = keys(t, m, "h", "/", "m", "a", "i", "n")
+	if !strings.Contains(m.View(), "main.go") || m.pickerItems()[m.picker.selected].path != "cmd/server/main.go" {
+		t.Fatal("search did not reveal a file in a collapsed directory")
+	}
+	m = keys(t, m, "enter")
+	if m.modal != "" || m.rows[m.pos].path != "cmd/server/main.go" {
+		t.Fatal("search result did not jump to the file")
+	}
+}
+
+func TestFilePickerUsesWiderDialog(t *testing.T) {
+	m := toolModel()
+	m.width, m.height = 130, 20
+	m = keys(t, m, "f")
+	if !strings.Contains(m.View(), "┌"+strings.Repeat("─", 118)+"┐") {
+		t.Fatal("picker did not use its wider available space")
+	}
+}
+
+func TestFilePickerTreeBranchesAndStableExpansion(t *testing.T) {
+	m := toolModel()
+	m.height = 20
+	m = keys(t, m, "f")
+	m.picker.selected = 0
+	m = keys(t, m, "h")
+	before := strings.Split(m.View(), "\n")
+	selectedLine := -1
+	for i, line := range before {
+		if strings.Contains(line, "cmd/") {
+			selectedLine = i
+		}
+	}
+	m = keys(t, m, "l")
+	after := strings.Split(m.View(), "\n")
+	if selectedLine < 0 || !strings.Contains(after[selectedLine], "cmd/") {
+		t.Fatal("expanding a directory moved it on screen")
+	}
+	view := strings.Join(after, "\n")
+	for _, branch := range []string{"Changes │ Files", "├─ ▾ cmd/", "│  └─ ▾ server/", "│     └─   main.go", "└─   README.md"} {
+		if !strings.Contains(view, branch) {
+			t.Errorf("missing tree branch %q in %q", branch, view)
+		}
+	}
+}
+
+func TestCollapsedDirectoryShowsNestedChangeTotals(t *testing.T) {
+	entries := []fileEntry{
+		{path: "src/a.go", added: 12, deleted: 2},
+		{path: "src/nested/b.go", added: 7, deleted: 4},
+		{path: "other/c.go", added: 100, deleted: 10},
+	}
+	items := pickerTree(entries, map[string]bool{"src": true})
+	if len(items) != 3 || items[0].path != "src" || items[0].added != 19 || items[0].deleted != 6 {
+		t.Fatalf("incorrect collapsed totals: %#v", items)
+	}
+	filtered := pickerTree(filterFiles(entries, "b.go"), map[string]bool{"src": true})
+	if len(filtered) != 1 || filtered[0].added != 7 || filtered[0].deleted != 4 {
+		t.Fatalf("totals should reflect matching files: %#v", filtered)
+	}
+
+	m := toolModel()
+	m.height = 20
+	m = keys(t, m, "f")
+	m.picker.selected = 0
+	m = keys(t, m, "h")
+	for _, line := range strings.Split(m.View(), "\n") {
+		if strings.Contains(line, "cmd/") {
+			if !strings.Contains(line, "+1 -1") {
+				t.Fatalf("collapsed directory missing totals: %q", line)
+			}
+			return
+		}
+	}
+	t.Fatal("collapsed directory missing from picker")
 }
 
 func TestDiffSearch(t *testing.T) {

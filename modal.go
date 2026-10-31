@@ -21,7 +21,7 @@ var shortcuts = []string{
 	"w           Toggle line wrapping",
 	"e           Expand / collapse deleted file",
 	"h / l       Scroll horizontally",
-	"f           File picker (j/k, / search)",
+	"f           File tree (j/k, h/l, / search)",
 	"/           Search diff or history",
 	"n / N       Next / previous diff match",
 	"o           Open file in $EDITOR",

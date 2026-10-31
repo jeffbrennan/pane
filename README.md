@@ -18,7 +18,7 @@ For development, `just b` builds pane, installs it, and runs it in the current r
 | `zt` / `zz` / `zb` | Place the active diff line at the top / middle / bottom |
 | `}` / `{` | Jump to the next / previous paragraph boundary, or five commits in history |
 | `J` / `K` | Jump to the next / previous file, placing it at the top |
-| `f` | Open file picker; `j` / `k` navigate, `/` searches |
+| `f` | Open file tree; `j` / `k` navigate, `h` / `l` fold directories, `/` searches |
 | `/`, `n` / `N` | Search the diff; jump to the next / previous match |
 | `o` | Open the current file at the active line in `$VISUAL` / `$EDITOR` |
 | `y` | Copy the current file path, or the commit hash in history |
