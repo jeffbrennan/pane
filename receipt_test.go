@@ -53,3 +53,13 @@ func TestCommitReceiptKeepsRemainingDiffVisible(t *testing.T) {
 		t.Fatal("remaining diff hidden by receipt")
 	}
 }
+
+func TestCommitReceiptColors(t *testing.T) {
+	r := commitReceipt{message: "message", output: "[main abc] message\n 2 files changed, 5 insertions(+), 1 deletion(-)"}
+	view := strings.Join(r.lines(80), "\n")
+	for _, want := range []string{"\x1b[1;32m", "\x1b[1m  message", "\x1b[36m  [main abc]", "\x1b[32m5 insertions(+)", "\x1b[31m1 deletion(-)"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("missing style %q in %q", want, view)
+		}
+	}
+}
