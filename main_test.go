@@ -52,11 +52,12 @@ func TestActiveLineShowsContext(t *testing.T) {
 		rows[i].text = fmt.Sprintf("line %02d", i)
 	}
 	m := model{width: 30, height: 10, wrap: true, rows: rows, pos: 7}
+	m.reveal()
 	view := m.View()
-	if !strings.Contains(view, "line 04") || !strings.Contains(view, "▸ \x1b[0mline 07") || !strings.Contains(view, "line 11") {
+	if !strings.Contains(view, "line 03") || !strings.Contains(view, "▸ \x1b[0mline 07") || !strings.Contains(view, "line 10") {
 		t.Fatalf("active line or context missing: %q", view)
 	}
-	if strings.Contains(view, "line 03") {
+	if strings.Contains(view, "line 02") {
 		t.Fatalf("viewport starts too early: %q", view)
 	}
 }

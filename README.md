@@ -11,12 +11,17 @@ For development, `just b` builds and runs pane in the current repository.
 | Key | Action |
 | --- | --- |
 | `j` / `k` | Scroll one line |
+| `gg` / `G` | Jump to the first / last line or history entry |
+| `ctrl-d` / `ctrl-u` | Move down / up half a page |
+| `ctrl-f` / `ctrl-b` | Move down / up a page |
+| `ctrl-e` / `ctrl-y` | Scroll the diff viewport down / up one line |
+| `zt` / `zz` / `zb` | Place the active diff line at the top / middle / bottom |
 | `}` / `{` | Jump to the next / previous paragraph boundary, or five commits in history |
 | `J` / `K` | Jump to the next / previous file |
 | `tab` | Switch unstaged / staged view |
 | `space` | Stage / unstage the current whole file |
 | `w` | Toggle line wrapping |
-| `h` / `l` | Scroll horizontally when wrapping is off |
+| `h` / `l`, `zh` / `zl` | Scroll horizontally when wrapping is off |
 | `c` | Commit staged changes |
 | `p` / `P` | Push / pull after confirmation |
 | `r` | Refresh |

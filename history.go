@@ -9,13 +9,13 @@ import (
 )
 
 type historyState struct {
-	commits                                    []commitInfo
-	changes                                    []change
-	rows                                       []row
-	selected, offset, pos, horizontal, request int
-	filter, draft                              string
-	searching, loading                         bool
-	current                                    commitInfo
+	commits                                             []commitInfo
+	changes                                             []change
+	rows                                                []row
+	selected, offset, pos, horizontal, viewTop, request int
+	filter, draft                                       string
+	searching, loading                                  bool
+	current                                             commitInfo
 }
 
 type historyLoaded struct {
@@ -35,6 +35,7 @@ func (m model) openHistory() (tea.Model, tea.Cmd) {
 	m.history.commits = nil
 	m.history.filter = ""
 	m.history.selected, m.history.offset = 0, 0
+	m.pending = ""
 	m.history.loading = true
 	repo, request := m.repo, m.history.request
 	return m, func() tea.Msg { commits, err := repo.history(); return historyLoaded{commits, err, request} }
@@ -92,6 +93,18 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	matches := m.filteredHistory()
+	if m.pending != "" {
+		pending := m.pending
+		m.pending = ""
+		if pending == "g" && key.String() == "g" {
+			m.history.selected = 0
+			return m, nil
+		}
+		if key.String() == "esc" {
+			return m, nil
+		}
+	}
+	page := max(1, (m.height-3)/3)
 	switch key.String() {
 	case "esc", "q":
 		m.screen = ""
@@ -104,6 +117,20 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "/":
 		m.history.searching = true
 		m.history.draft = m.history.filter
+	case "g":
+		m.pending = "g"
+	case "G", "end":
+		m.history.selected = max(0, len(matches)-1)
+	case "home":
+		m.history.selected = 0
+	case "ctrl+d":
+		m.history.selected = min(m.history.selected+max(1, page/2), max(0, len(matches)-1))
+	case "ctrl+u":
+		m.history.selected = max(0, m.history.selected-max(1, page/2))
+	case "ctrl+f", "pgdown":
+		m.history.selected = min(m.history.selected+page, max(0, len(matches)-1))
+	case "ctrl+b", "pgup":
+		m.history.selected = max(0, m.history.selected-page)
 	case "j", "down":
 		m.history.selected = min(m.history.selected+1, max(0, len(matches)-1))
 	case "k", "up":
@@ -120,7 +147,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.history.request++
 		m.history.loading = true
 		m.history.changes, m.history.rows = nil, nil
-		m.history.pos, m.history.horizontal = 0, 0
+		m.history.pos, m.history.horizontal, m.history.viewTop = 0, 0, 0
 		m.screen = "commit"
 		repo, hash, request := m.repo, m.history.current.hash, m.history.request
 		return m, func() tea.Msg { changes, err := repo.commitChanges(hash); return commitLoaded{changes, err, request} }
@@ -129,6 +156,13 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	view := m.commitModel()
+	if view.handleDiffNavigation(key.String()) {
+		m.pending = view.pending
+		m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop = view.rows, view.pos, view.horizontal, view.viewTop
+		return m, nil
+	}
+	m.pending = view.pending
 	if key.String() == "esc" || key.String() == "q" {
 		m.screen = "history"
 		m.history.request++
@@ -143,38 +177,17 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.helpPos = 0
 		return m, nil
 	}
-	view := m.commitModel()
 	switch key.String() {
-	case "j", "down":
-		view.move(1)
-	case "k", "up":
-		view.move(-1)
-	case "}":
-		view.paragraphJump(1)
-	case "{":
-		view.paragraphJump(-1)
-	case "J":
-		view.jump(1)
-	case "K":
-		view.jump(-1)
 	case "w":
 		view.wrap = !view.wrap
 		view.horizontal = 0
 		view.rebuild()
-	case "h":
-		if !view.wrap {
-			view.horizontal = max(0, view.horizontal-4)
-		}
-	case "l":
-		if !view.wrap {
-			view.horizontal += 4
-		}
 	}
 	if m.wrap != view.wrap {
 		m.wrap = view.wrap
 		m.rebuild()
 	}
-	m.history.rows, m.history.pos, m.history.horizontal = view.rows, view.pos, view.horizontal
+	m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop = view.rows, view.pos, view.horizontal, view.viewTop
 	return m, nil
 }
 
@@ -183,7 +196,7 @@ func (m model) commitModel() model {
 	view.screen = ""
 	view.snapshot = snapshot{unstaged: m.history.changes}
 	view.staged = false
-	view.rows, view.pos, view.horizontal = m.history.rows, m.history.pos, m.history.horizontal
+	view.rows, view.pos, view.horizontal, view.viewTop = m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop
 	view.viewTitle = " pane  COMMIT " + shortHash(m.history.current.hash) + "  " + clean(m.history.current.subject)
 	view.message = "Read-only · esc/q back"
 	if m.history.loading {
@@ -198,7 +211,7 @@ func (m *model) rebuildCommit() {
 	}
 	view := m.commitModel()
 	view.rebuild()
-	m.history.rows, m.history.pos = view.rows, view.pos
+	m.history.rows, m.history.pos, m.history.viewTop = view.rows, view.pos, view.viewTop
 }
 
 func (m model) commitView() string { return m.commitModel().View() }

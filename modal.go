@@ -8,6 +8,12 @@ import (
 
 var shortcuts = []string{
 	"j / k       Scroll down / up",
+	"gg / G      First / last line",
+	"ctrl-d/u    Half-page down / up",
+	"ctrl-f/b    Page down / up",
+	"ctrl-e/y    Scroll viewport down / up",
+	"zt / zz / zb  Align active line",
+	"zh / zl     Horizontal scroll",
 	"} / {       Paragraph / 5 commits",
 	"J / K       Next / previous file",
 	"tab         Switch staged / unstaged",

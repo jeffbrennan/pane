@@ -39,6 +39,8 @@ type model struct {
 	rows                  []row
 	width, height         int
 	pos, horizontal       int
+	viewTop               int
+	pending               string
 	staged, wrap          bool
 	loading, busy         bool
 	startup               bool
@@ -170,38 +172,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.screen != "" {
 			return m.handleHistoryKey(msg)
 		}
+		if m.handleDiffNavigation(msg.String()) {
+			return m, nil
+		}
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
-		case "j", "down":
-			m.move(1)
-		case "k", "up":
-			m.move(-1)
-		case "}":
-			m.paragraphJump(1)
-		case "{":
-			m.paragraphJump(-1)
-		case "J":
-			m.jump(1)
-		case "K":
-			m.jump(-1)
 		case "tab":
 			m.staged = !m.staged
 			m.pos = 0
+			m.viewTop = 0
 			m.rows = nil
 			m.rebuild()
 		case "w":
 			m.wrap = !m.wrap
 			m.horizontal = 0
 			m.rebuild()
-		case "h":
-			if !m.wrap && m.horizontal > 0 {
-				m.horizontal -= min(4, m.horizontal)
-			}
-		case "l":
-			if !m.wrap {
-				m.horizontal += 4
-			}
 		case "r":
 			return m.refresh()
 		case "?":
@@ -364,6 +350,7 @@ func (m *model) rebuild() {
 		}
 	}
 	m.clamp()
+	m.viewTop = m.viewportStart(max(1, m.height-2))
 }
 
 func clean(s string) string {
@@ -399,7 +386,7 @@ func wrapLine(s string, width int) []string {
 }
 
 func (m *model) clamp()     { m.pos = max(0, min(m.pos, len(m.rows)-1)) }
-func (m *model) move(n int) { m.pos += n; m.clamp() }
+func (m *model) move(n int) { m.pos += n; m.clamp(); m.reveal() }
 
 func (m *model) paragraphJump(direction int) {
 	if len(m.rows) == 0 {
@@ -415,6 +402,7 @@ func (m *model) paragraphJump(direction int) {
 		i += direction
 	}
 	m.pos = max(0, min(i, len(m.rows)-1))
+	m.reveal()
 }
 
 func paragraphBoundary(r row) bool {
@@ -429,13 +417,22 @@ func diffMargin(width int) int {
 }
 
 func (m model) viewportStart(available int) int {
-	return max(0, min(m.pos-3, max(0, len(m.rows)-available)))
+	available = max(1, available)
+	top := max(0, min(m.viewTop, max(0, len(m.rows)-available)))
+	if m.pos < top {
+		top = m.pos
+	}
+	if m.pos >= top+available {
+		top = m.pos - available + 1
+	}
+	return max(0, min(top, max(0, len(m.rows)-available)))
 }
 
 func (m *model) jump(direction int) {
 	if len(m.rows) == 0 {
 		return
 	}
+	defer m.reveal()
 	path := m.rows[m.pos].path
 	if direction > 0 {
 		for i := m.pos + 1; i < len(m.rows); i++ {
