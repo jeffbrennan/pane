@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -16,6 +17,7 @@ func TestPatchReaderMatchesSplitPatch(t *testing.T) {
 		"diff --git a/old b/new\nsimilarity index 100%\nrename from old\nrename to new\n" +
 		"diff --git \"a/quoted file\" \"b/quoted file\"\nBinary files differ\n" +
 		"diff --git a/empty b/empty\nnew file mode 100644\n" +
+		"diff --git a/long b/long\n@@ -0,0 +1 @@\n+" + strings.Repeat("x", 10000) + "\n" +
 		"Submodule space name contains modified content\nSubmodule space name abc1234..def5678:\n  > subject\n" +
 		"Submodule new module 0000000...abcdef0 (new submodule)\n" +
 		"diff --git a/one b/one\n@@ -1 +1 @@\n-again\n+final"
@@ -37,6 +39,29 @@ func TestPatchReaderMatchesSplitPatch(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("streamed sections differ:\ngot %#v\nwant %#v", got, want)
+		}
+	}
+}
+
+func TestStreamShape(t *testing.T) {
+	dir := os.Getenv("PANE_PERF_REPO")
+	if dir == "" || os.Getenv("PANE_PERF") != "1" {
+		t.Skip("set PANE_PERF=1 and PANE_PERF_REPO")
+	}
+	repo := repository{root: dir}
+	revision := os.Getenv("PANE_PERF_COMMIT")
+	if revision == "" {
+		revision = "HEAD"
+	}
+	for chunk := range repo.streamCommit(context.Background(), revision, startupSyntaxLines) {
+		lines, width := 0, 0
+		for _, c := range chunk.changes {
+			lines += strings.Count(c.diff, "\n")
+			width = max(width, lineNumberWidth(strings.Split(c.diff, "\n")))
+		}
+		t.Logf("loaded=%d files=%d lines=%d width=%d done=%t", chunk.loaded, len(chunk.changes), lines, width, chunk.done)
+		if chunk.err != nil {
+			t.Fatal(chunk.err)
 		}
 	}
 }

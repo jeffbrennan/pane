@@ -16,6 +16,7 @@ type pickerState struct {
 	offset       int
 	count        int
 	pending      string
+	pendingPath  string
 	searching    bool
 	collapsed    map[string]bool
 	commitScoped bool
@@ -74,6 +75,21 @@ func (m model) fileEntries() []fileEntry {
 		case r.kind == '-' || r.kind == 'd':
 			entries[len(entries)-1].deleted++
 		}
+	}
+	if m.contextCommit != "" && len(m.history.streamPaths) > 0 && (m.history.streamActive || m.history.streamError == "") {
+		loaded := make(map[string]fileEntry, len(entries))
+		for _, entry := range entries {
+			loaded[entry.path] = entry
+		}
+		ordered := make([]fileEntry, 0, len(m.history.streamPaths))
+		for _, path := range m.history.streamPaths {
+			entry, ok := loaded[path]
+			if !ok {
+				entry = fileEntry{path: path, row: -1}
+			}
+			ordered = append(ordered, entry)
+		}
+		entries = ordered
 	}
 	if m.picker.cache != nil {
 		*m.picker.cache = pickerCache{rows: m.rows, entries: entries, total: len(pickerTree(entries, nil))}
@@ -227,6 +243,11 @@ func (m *model) handlePickerKey(key string, runes []rune) bool {
 		} else {
 			m.modal = ""
 			opened = true
+			if items[selected].file.row < 0 {
+				m.picker.pendingPath = items[selected].path
+				break
+			}
+			m.picker.pendingPath = ""
 			before := m.location()
 			m.pos = items[selected].file.row
 			m.positionViewport("t")
@@ -386,6 +407,9 @@ func (m model) showFilesDialog(lines []string) {
 		hint = keyHints("/", "filter", "↵", "open", "esc", "close")
 	}
 	info := fmt.Sprintf("%d/%d", len(matches), len(entries))
+	if m.contextCommit != "" && m.history.streamActive && len(m.history.streamPaths) > 0 {
+		info = fmt.Sprintf("%d/%d loaded", m.history.streamLoaded, len(m.history.streamPaths))
+	}
 	if m.picker.commitScoped && m.picker.commitIndex >= 0 && m.picker.commitIndex < len(m.sequence.commits) {
 		info = shortHash(m.sequence.commits[m.picker.commitIndex].hash) + " · " + info
 	}
@@ -408,7 +432,11 @@ func (m model) showFilesDialog(lines []string) {
 			}
 			name += arrow + clean(e.name) + "/"
 		} else {
-			counts = changeCounts(addedWidth, e.file.added, deletedWidth, e.file.deleted, i == selected)
+			if e.file.row < 0 {
+				counts = "…"
+			} else {
+				counts = changeCounts(addedWidth, e.file.added, deletedWidth, e.file.deleted, i == selected)
+			}
 			name += "  " + clean(e.name)
 			if e.file.submodule {
 				name += " (submodule)"

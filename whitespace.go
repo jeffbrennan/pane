@@ -27,6 +27,10 @@ func (m model) toggleWhitespace() (tea.Model, tea.Cmd) {
 	case "commit":
 		m.history.request++
 		repo := m.startCommitLoad()
+		m.history.streamActive = !m.stash.viewing
+		m.history.streamPaths, m.history.streamLoaded, m.history.streamGutter = nil, 0, 0
+		m.history.streamError, m.picker.pendingPath = "", ""
+		m.history.streamEndPending = false
 		m.history.loading = true
 		m.history.commitLoadingVisible = false
 		hash, request := m.history.current.hash, m.history.request
@@ -37,10 +41,8 @@ func (m model) toggleWhitespace() (tea.Model, tea.Cmd) {
 			})
 			break
 		}
-		commands = append(commands, func() tea.Msg {
-			changes, err := repo.commitChangesWithoutSyntax(hash)
-			return commitLoaded{changes, err, request}
-		}, commitLoadingTimer(request))
+		m.history.rows, m.history.changes = nil, nil
+		commands = append(commands, startCommitStream(repo, hash, request, m.height), commitLoadingTimer(request))
 	case "sequence":
 		m.sequence.request++
 		m.sequence.rowCache = nil

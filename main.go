@@ -67,6 +67,7 @@ type model struct {
 	snapshot              snapshot
 	rows                  []row
 	width, height         int
+	gutterFloor           int
 	resizeRequest         int
 	pos, horizontal       int
 	viewTop               int
@@ -304,6 +305,7 @@ func initialModel(repo repository, args []string) (model, error) {
 	m.history.loading = true
 	m.history.request++
 	m.history.directCommit = true
+	m.history.streamActive = true
 	m.startCommitLoad()
 	return m, nil
 }
@@ -319,10 +321,7 @@ func (m model) Init() tea.Cmd {
 	}
 	if m.screen == "commit" && m.history.loading && m.history.directCommit {
 		repo, hash, request := m.commitRepository(), m.history.current.hash, m.history.request
-		commands = append(commands, func() tea.Msg {
-			changes, err := repo.commitChangesFirstScreen(hash, "")
-			return commitLoaded{changes, err, request}
-		})
+		commands = append(commands, startCommitStream(repo, hash, request, m.height))
 		commands = append(commands, commitLoadingTimer(request))
 	}
 	if m.screen == "sequence" && m.sequence.loading {
@@ -399,6 +398,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	view, ok := next.(model)
 	if !ok {
 		return next, cmd
+	}
+	if view.screen == "commit" && view.history.streamEndPending {
+		return view, cmd
 	}
 	if load := view.loadVisibleSyntax(); load != nil {
 		return view, tea.Batch(cmd, load)
@@ -718,11 +720,51 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.screen == "commit" && m.history.loading && msg.request == m.history.request {
 			m.history.commitLoadingVisible = true
 		}
+	case commitStreamLoaded:
+		if m.screen != "commit" || !m.history.streamActive || msg.request != m.history.request {
+			break
+		}
+		chunk := msg.chunk
+		m.history.streamPaths, m.history.streamLoaded = chunk.paths, chunk.loaded
+		m.history.commitLoadingVisible = false
+		m.appendCommitChanges(chunk.changes, chunk.done)
+		if m.picker.pendingPath != "" {
+			for i, r := range m.history.rows {
+				if r.kind == 'f' && (r.path == m.picker.pendingPath || r.oldPath == m.picker.pendingPath) {
+					m.history.pos = i
+					m.history.viewTop = i
+					m.picker.pendingPath = ""
+					break
+				}
+			}
+		}
+		if m.history.streamEndPending && len(m.history.rows) > 0 {
+			m.history.pos = len(m.history.rows) - 1
+			m.history.viewTop = max(0, m.history.pos-max(1, m.height-2)+1)
+		}
+		if m.modal == "search" && m.search.draft != "" {
+			m = m.inDiff(func(view *model) { view.updateSearchDraft() })
+		}
+		if chunk.done {
+			m.history.streamActive, m.history.loading, m.history.streamEndPending = false, false, false
+			m.picker.cache = nil
+			if chunk.err != nil {
+				m.history.streamError = "Commit load: " + chunk.err.Error()
+			}
+			if m.picker.pendingPath != "" {
+				m.flash = "File not found: " + m.picker.pendingPath
+				m.picker.pendingPath = ""
+			}
+			break
+		}
+		return m, waitCommitStream(msg.stream, msg.request)
 	case commitLoaded:
 		if m.screen != "commit" || msg.request != m.history.request {
 			break
 		}
 		m.history.loading = false
+		m.history.streamActive = false
+		m.history.streamPaths, m.history.streamGutter, m.history.streamError = nil, 0, ""
 		m.history.commitLoadingVisible = false
 		if msg.err != nil {
 			m.screen = "history"
@@ -995,6 +1037,7 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		})
 		if opened {
+			m.history.streamEndPending = false
 			m.pickerReturn = true
 			m.pickerBackToHistory = false
 		} else if m.modal == "" && m.pickerBackToHistory {
@@ -1108,7 +1151,7 @@ func (m *model) rebuild() {
 		changes = m.snapshot.staged
 	}
 	changes = m.applySyntaxDemand(contextKey{commit: m.contextCommit, staged: m.staged, base: m.contextBase}, changes)
-	m.rows = buildRowsDisplay(changes, m.diffContentWidth(), m.wrap, m.expandedDeleted, 0, m.shortPaths)
+	m.rows = buildRowsDisplay(changes, m.diffContentWidth(), m.wrap, m.expandedDeleted, m.gutterFloor, m.shortPaths)
 	m.rows = m.localContextRows(m.rows, changes)
 	m.rows = m.foldContextFiles(m.rows)
 	m.pos = 0
@@ -1346,6 +1389,8 @@ func (m model) View() string {
 		if index >= len(m.rows) {
 			if index == 0 {
 				lines = append(lines, fit(m.emptyText(), m.width))
+			} else if index == len(m.rows) && m.contextCommit != "" && m.history.streamActive {
+				lines = append(lines, styleDim+"  Loading…"+styleReset)
 			} else {
 				lines = append(lines, "")
 			}

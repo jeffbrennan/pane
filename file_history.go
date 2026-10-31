@@ -84,10 +84,15 @@ func (m model) leaveFileHistory() (tea.Model, tea.Cmd) {
 					return stashDiffLoaded{changes: changes, request: request, err: err}
 				}
 			}
-			return previous, func() tea.Msg {
-				changes, err := repo.commitChangesWithoutSyntax(hash)
-				return commitLoaded{changes: changes, request: request, err: err}
+			previous.history.streamActive = true
+			previous.history.streamPaths, previous.history.streamLoaded, previous.history.streamGutter = nil, 0, 0
+			previous.history.streamError = ""
+			previous.history.streamEndPending = false
+			if previous.history.pos >= 0 && previous.history.pos < len(previous.history.rows) {
+				previous.picker.pendingPath = previous.history.rows[previous.history.pos].path
 			}
+			previous.history.changes, previous.history.rows = nil, nil
+			return previous, startCommitStream(repo, hash, request, previous.height)
 		}
 		previous.startCommitLoad()
 		previous.rebuildCommit()

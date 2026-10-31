@@ -164,33 +164,48 @@ func newPatchReader(reader io.Reader) *patchReader {
 func (p *patchReader) next() (string, string, error) {
 	var section strings.Builder
 	for {
-		line := p.pending
-		p.pending = ""
-		if line == "" && p.err == nil {
-			line, p.err = p.reader.ReadString('\n')
+		var line []byte
+		if p.pending != "" {
+			line = []byte(p.pending)
 		}
-		if line == "" {
+		p.pending = ""
+		if len(line) == 0 && p.err == nil {
+			var err error
+			line, err = p.reader.ReadSlice('\n')
+			if err == bufio.ErrBufferFull {
+				large := append([]byte(nil), line...)
+				for err == bufio.ErrBufferFull {
+					line, err = p.reader.ReadSlice('\n')
+					large = append(large, line...)
+				}
+				line = large
+			}
+			p.err = err
+		}
+		if len(line) == 0 {
 			if section.Len() == 0 {
 				return "", "", p.err
 			}
 			text := section.String()
 			return patchSectionPath(p.path, text), text, nil
 		}
-		header := strings.TrimSuffix(line, "\n")
+		header := bytes.TrimSuffix(line, []byte("\n"))
 		path, boundary := "", false
-		if strings.HasPrefix(header, "diff ") {
-			path, boundary = patchPath(header), true
-		} else if submodulePath, _, ok := submoduleLine(header); ok && p.path != submodulePath {
-			path, boundary = submodulePath, true
+		if bytes.HasPrefix(header, []byte("diff ")) {
+			path, boundary = patchPath(string(header)), true
+		} else if bytes.HasPrefix(header, []byte("Submodule ")) {
+			if submodulePath, _, ok := submoduleLine(string(header)); ok && p.path != submodulePath {
+				path, boundary = submodulePath, true
+			}
 		}
 		if boundary && section.Len() > 0 {
-			p.pending = line
+			p.pending = string(line)
 			text := section.String()
 			return patchSectionPath(p.path, text), text, nil
 		}
 		if boundary {
 			p.path = path
 		}
-		section.WriteString(line)
+		section.Write(line)
 	}
 }

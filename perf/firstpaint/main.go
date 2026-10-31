@@ -23,8 +23,11 @@ func main() {
 	revision := flag.String("revision", "HEAD", "commit to open")
 	idle := flag.Duration("idle", time.Minute, "time to observe after first paint")
 	logPath := flag.String("log", "", "append metrics to this TSV file")
+	content := flag.String("content", os.Getenv("PANE_PERF_CONTENT"), "first diff text to wait for")
+	key := flag.String("key", "", "key to send after the title appears")
+	after := flag.String("after", "", "wait for this text before sending the key")
 	flag.Parse()
-	if err := run(*binary, *repo, *revision, *idle, *logPath); err != nil {
+	if err := run(*binary, *repo, *revision, *idle, *logPath, *content, *key, *after); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -33,10 +36,14 @@ func main() {
 type terminalOutput struct {
 	tail    []byte
 	painted bool
+	content string
+	found   bool
+	after   string
+	ready   bool
 }
 
-func (output *terminalOutput) feed(data []byte, terminal io.Writer) bool {
-	painted := false
+func (output *terminalOutput) feed(data []byte, terminal io.Writer) (bool, bool, bool) {
+	painted, found, ready := false, false, false
 	for _, b := range data {
 		output.tail = append(output.tail, b)
 		switch {
@@ -47,15 +54,22 @@ func (output *terminalOutput) feed(data []byte, terminal io.Writer) bool {
 		case !output.painted && bytes.HasSuffix(output.tail, []byte("read-only")):
 			output.painted, painted = true, true
 		}
-		if len(output.tail) > 64 {
-			copy(output.tail, output.tail[len(output.tail)-64:])
-			output.tail = output.tail[:64]
+		if output.content != "" && !output.found && bytes.HasSuffix(output.tail, []byte(output.content)) {
+			output.found, found = true, true
+		}
+		if output.after != "" && !output.ready && bytes.HasSuffix(output.tail, []byte(output.after)) {
+			output.ready, ready = true, true
+		}
+		limit := max(64, len(output.content), len(output.after))
+		if len(output.tail) > limit {
+			copy(output.tail, output.tail[len(output.tail)-limit:])
+			output.tail = output.tail[:limit]
 		}
 	}
-	return painted
+	return painted, found, ready
 }
 
-func run(binary, repo, revision string, idle time.Duration, logPath string) error {
+func run(binary, repo, revision string, idle time.Duration, logPath, content, key, after string) error {
 	if idle < 0 {
 		return fmt.Errorf("idle duration cannot be negative")
 	}
@@ -79,17 +93,26 @@ func run(binary, repo, revision string, idle time.Duration, logPath string) erro
 	}()
 	var outputBytes atomic.Int64
 	painted := make(chan time.Time, 1)
+	contentPainted := make(chan time.Time, 1)
+	ready := make(chan struct{}, 1)
 	readDone := make(chan struct{})
 	go func() {
 		defer close(readDone)
-		var output terminalOutput
+		output := terminalOutput{content: content, after: after}
 		buffer := make([]byte, 8192)
 		for {
 			n, err := terminal.Read(buffer)
 			if n > 0 {
 				outputBytes.Add(int64(n))
-				if output.feed(buffer[:n], terminal) {
+				first, found, isReady := output.feed(buffer[:n], terminal)
+				if first {
 					painted <- time.Now()
+				}
+				if found {
+					contentPainted <- time.Now()
+				}
+				if isReady {
+					ready <- struct{}{}
 				}
 			}
 			if err != nil {
@@ -104,6 +127,30 @@ func run(binary, repo, revision string, idle time.Duration, logPath string) erro
 		return fmt.Errorf("pane exited before the title appeared")
 	case <-time.After(30 * time.Second):
 		return fmt.Errorf("timed out waiting for the title")
+	}
+	if key != "" {
+		if after != "" {
+			select {
+			case <-ready:
+			case <-readDone:
+				return fmt.Errorf("pane exited before the requested key point")
+			case <-time.After(30 * time.Second):
+				return fmt.Errorf("timed out waiting for %q", after)
+			}
+		}
+		if _, err := io.WriteString(terminal, key); err != nil {
+			return err
+		}
+	}
+	var firstContent time.Time
+	if content != "" {
+		select {
+		case firstContent = <-contentPainted:
+		case <-readDone:
+			return fmt.Errorf("pane exited before the requested content appeared")
+		case <-time.After(30 * time.Second):
+			return fmt.Errorf("timed out waiting for content %q", content)
+		}
 	}
 	bytesAtPaint := outputBytes.Load()
 	time.Sleep(idle)
@@ -124,6 +171,9 @@ func run(binary, repo, revision string, idle time.Duration, logPath string) erro
 		return fmt.Errorf("pane did not exit")
 	}
 	metrics := map[string]int64{"first_paint_ns": first.Sub(start).Nanoseconds(), "idle_terminal_bytes": idleBytes, "idle_duration_ns": idle.Nanoseconds()}
+	if !firstContent.IsZero() {
+		metrics["first_content_ns"] = firstContent.Sub(start).Nanoseconds()
+	}
 	if usage, ok := cmd.ProcessState.SysUsage().(*syscall.Rusage); ok {
 		metrics["process_cpu_ns"] = usage.Utime.Nano() + usage.Stime.Nano()
 		rss := usage.Maxrss

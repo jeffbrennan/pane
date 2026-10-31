@@ -38,8 +38,8 @@ func TestInitialModelOpensCommitRevision(t *testing.T) {
 			if !ok || len(batch) != 4 {
 				t.Fatalf("missing startup commands: %#v", batch)
 			}
-			result, ok := batch[2]().(commitLoaded)
-			if !ok || result.err != nil || len(result.changes) != 1 || !strings.Contains(result.changes[0].diff, "+first") {
+			result, ok := batch[2]().(commitStreamLoaded)
+			if !ok || result.chunk.err != nil || len(result.chunk.changes) != 1 || !strings.Contains(result.chunk.changes[0].diff, "+first") {
 				t.Fatalf("incorrect commit diff: %#v", result)
 			}
 			m.width, m.height = 60, 12

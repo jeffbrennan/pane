@@ -6,7 +6,7 @@ Pane detects terminal background changes when supported, falling back to `COLORF
 
 If the working tree and index are clean at startup, pane opens commit history. Otherwise it opens the unstaged diff view.
 
-Run `pane <commit>` to open a commit's read-only diff directly. A full or abbreviated hash, branch, tag, or other Git commit revision is accepted. Press `Esc` or `q` to return to history.
+Run `pane <commit>` to open a commit's read-only diff directly. A full or abbreviated hash, branch, tag, or other Git commit revision is accepted. Large commits open as soon as the first files load; the rest loads in the background. Until loading finishes, search covers loaded files and picker jumps to unloaded files wait for them. Press `Esc` or `q` to return to history.
 
 Run `pane <start>..<end>` for a continuous review of a Git commit range, for example `pane HEAD~3..HEAD`. Git's usual range semantics apply: the start is excluded and the end is included. Symmetric ranges such as `main...feature` are also supported.
 

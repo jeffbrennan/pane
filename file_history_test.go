@@ -152,8 +152,9 @@ func TestFileHistoryRestoresCommitWithCurrentWhitespaceMode(t *testing.T) {
 	if m.screen != "commit" || !m.repo.ignoreSpace || !m.history.loading || cmd == nil {
 		t.Fatal("original commit was not reloaded with the current whitespace mode")
 	}
-	result, ok := cmd().(commitLoaded)
-	if !ok || result.err != nil {
+	result, ok := cmd().(commitStreamLoaded)
+	if !ok || result.chunk.err != nil {
 		t.Fatalf("reloading commit: %#v", result)
 	}
+	m.cancelCommitLoad()
 }

@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -12,6 +14,10 @@ import (
 type historyState struct {
 	commitContext                                       context.Context
 	commitCancel                                        context.CancelFunc
+	streamPaths                                         []string
+	streamError                                         string
+	streamLoaded, streamGutter                          int
+	streamActive, streamEndPending                      bool
 	stream                                              *historyStream
 	commits                                             []commitInfo
 	statsCache                                          map[string]commitInfo
@@ -52,6 +58,96 @@ func (m *model) cancelCommitLoad() {
 		m.history.commitCancel = nil
 		m.history.commitContext = nil
 	}
+	m.history.streamActive = false
+}
+
+func (m *model) appendCommitChanges(changes []change, done bool) {
+	if len(changes) == 0 {
+		return
+	}
+	width := m.history.streamGutter
+	if width == 0 && !done {
+		width = 4
+		// On very large commits a late wide gutter can force a second build
+		// of hundreds of thousands of wrapped rows.
+		if len(m.history.streamPaths) >= 5000 {
+			width = 5
+		}
+	}
+	for _, c := range changes {
+		width = max(width, lineNumberWidth(strings.Split(c.diff, "\n")))
+	}
+	previousWidth := m.history.streamGutter
+	m.history.streamGutter = width
+	m.history.changes = append(m.history.changes, changes...)
+	if len(m.history.rows) == 0 || width > previousWidth {
+		m.rebuildCommit()
+		return
+	}
+	view := m.commitModel()
+	changes = view.applySyntaxDemand(contextKey{commit: m.history.current.hash}, changes)
+	if len(view.contextFiles) == 0 && len(view.collapsedFiles) == 0 {
+		parts := make([][]row, len(changes))
+		parallelEach(len(changes), func(i int) {
+			parts[i] = changeRows(changes[i], true, view.diffContentWidth(), view.wrap, view.expandedDeleted[changes[i].path], width, view.shortPaths)
+		})
+		total := 0
+		for _, part := range parts {
+			total += len(part)
+		}
+		if cap(m.history.rows) >= 100000 && len(m.history.rows)+total > cap(m.history.rows) {
+			runtime.GC()
+		}
+		rows := m.history.rows
+		required := len(rows) + total
+		if required > cap(rows) && len(m.history.streamPaths) >= 5000 && m.history.streamLoaded >= 500 {
+			estimate := int(min(int64(2000000), int64(required)*int64(len(m.history.streamPaths))/int64(m.history.streamLoaded)))
+			estimate = min(estimate, required*4)
+			if estimate > required+required/4 {
+				grown := make([]row, len(rows), estimate)
+				copy(grown, rows)
+				rows = grown
+			}
+		}
+		rows = slices.Grow(rows, total)
+		header := rows[len(rows)-1].headerIndex
+		if rows[len(rows)-1].kind == 'f' {
+			header = len(rows)
+		}
+		for _, part := range parts {
+			for i := range part {
+				part[i].numberWidth = width
+				if part[i].kind == 'f' {
+					header = len(rows) + i + 1
+				} else {
+					part[i].headerIndex = header
+				}
+			}
+			rows = append(rows, part...)
+		}
+		m.history.rows = rows
+		return
+	}
+	part := buildRowsDisplay(changes, view.diffContentWidth(), view.wrap, view.expandedDeleted, width, view.shortPaths)
+	part = view.localContextRows(part, changes)
+	part = view.foldContextFiles(part)
+	if len(part) == 0 {
+		return
+	}
+	rows := m.history.rows
+	last := rows[len(rows)-1]
+	header := last.headerIndex
+	if last.kind == 'f' {
+		header = len(rows)
+	}
+	rows = append(rows, row{path: changes[0].path, line: -2, kind: 's', numberWidth: width, headerIndex: header})
+	offset := len(rows)
+	for i := range part {
+		if part[i].headerIndex > 0 {
+			part[i].headerIndex += offset
+		}
+	}
+	m.history.rows = append(rows, part...)
 }
 
 type historyLoaded struct {
@@ -73,6 +169,33 @@ type commitSyntaxLoaded struct {
 }
 
 type commitLoadingDelay struct{ request int }
+
+type commitStreamLoaded struct {
+	chunk   commitChunk
+	stream  <-chan commitChunk
+	request int
+}
+
+func startCommitStream(repo repository, hash string, request, height int) tea.Cmd {
+	return func() tea.Msg {
+		ctx := repo.context
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		stream := repo.streamCommit(ctx, hash, max(height, startupSyntaxLines))
+		return waitCommitStream(stream, request)()
+	}
+}
+
+func waitCommitStream(stream <-chan commitChunk, request int) tea.Cmd {
+	return func() tea.Msg {
+		chunk, ok := <-stream
+		if !ok {
+			chunk = commitChunk{done: true, err: fmt.Errorf("commit stream ended unexpectedly")}
+		}
+		return commitStreamLoaded{chunk: chunk, stream: stream, request: request}
+	}
+}
 
 func commitLoadingTimer(request int) tea.Cmd {
 	return tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg {
@@ -472,17 +595,19 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.history.fetching = false
 		m.history.statsFetching = false
 		m.history.changes, m.history.rows = nil, nil
+		m.history.streamActive = true
+		m.history.streamPaths, m.history.streamLoaded, m.history.streamGutter = nil, 0, 0
+		m.history.streamError = ""
+		m.history.streamEndPending = false
+		m.picker.pendingPath = m.history.current.filePath
 		m.history.expandedDeleted = nil
 		m.history.jumps = nil
 		m.history.jumpIndex = 0
 		m.pickerReturn, m.pickerBackToHistory = false, false
 		m.history.pos, m.history.horizontal, m.history.viewTop = 0, 0, 0
 		m.screen = "commit"
-		hash, focus, request := m.history.current.hash, m.history.current.filePath, m.history.request
-		return m, tea.Batch(func() tea.Msg {
-			changes, err := repo.commitChangesFirstScreen(hash, focus)
-			return commitLoaded{changes, err, request}
-		}, commitLoadingTimer(request))
+		hash, request := m.history.current.hash, m.history.request
+		return m, tea.Batch(startCommitStream(repo, hash, request, m.height), commitLoadingTimer(request))
 	}
 	return m, nil
 }
@@ -504,6 +629,15 @@ func (m model) inDiff(f func(*model)) model {
 }
 
 func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	keyString := key.String()
+	pending := m.pending
+	followEnd := m.history.streamActive && m.pending == "" && m.count == 0 && (keyString == "G" || keyString == "end")
+	if m.history.streamActive && (keyString == "J" || (pending == "]" && keyString == "c")) {
+		followEnd = m.streamJumpBeyondEnd(keyString == "J", max(1, m.count))
+	}
+	if keyString != "]" && !(pending == "]" && keyString == "c") {
+		m.history.streamEndPending = false
+	}
 	if m.pending == "" && (key.String() == "h" || key.String() == "l") && m.commitModel().onDiffFile() {
 		return m.changeContext(key.String())
 	}
@@ -512,6 +646,13 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		handled = view.handleDiffNavigation(key.String()) || view.handleDiffTool(key.String())
 	})
 	if handled {
+		if followEnd {
+			m.history.streamEndPending = true
+			if len(m.history.rows) > 0 {
+				m.history.pos = len(m.history.rows) - 1
+				m.history.viewTop = max(0, m.history.pos-max(1, m.height-2)+1)
+			}
+		}
 		return m, nil
 	}
 	view := m.commitModel()
@@ -563,6 +704,45 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) streamJumpBeyondEnd(files bool, count int) bool {
+	rows := m.history.rows
+	if len(rows) == 0 {
+		return true
+	}
+	i := max(0, min(m.history.pos, len(rows)-1))
+	if files {
+		path := rows[i].path
+		for i++; i < len(rows); i++ {
+			if rows[i].kind == 'f' && rows[i].path != path {
+				path = rows[i].path
+				count--
+				if count == 0 {
+					return false
+				}
+			}
+		}
+		return true
+	}
+	for count > 0 {
+		if changedRow(rows[i]) {
+			path := rows[i].path
+			for i < len(rows) && changedRow(rows[i]) && rows[i].path == path {
+				i++
+			}
+		} else {
+			i++
+		}
+		for i < len(rows) && !changedRow(rows[i]) {
+			i++
+		}
+		if i >= len(rows) {
+			return true
+		}
+		count--
+	}
+	return false
+}
+
 func (m model) returnToHistory() (tea.Model, tea.Cmd) {
 	m.cancelCommitLoad()
 	if m.stash.viewing {
@@ -593,6 +773,7 @@ func (m model) commitModel() model {
 	view.screen = ""
 	view.relativeLines = true
 	view.contextCommit = m.history.current.hash
+	view.gutterFloor = m.history.streamGutter
 	if m.screen == "base" {
 		view.contextCommit, view.contextBase = m.base.hash, true
 	}
@@ -603,6 +784,10 @@ func (m model) commitModel() model {
 	view.rows, view.pos, view.horizontal, view.viewTop = m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop
 	view.viewTitle = m.accent() + shortHash(m.history.current.hash) + styleReset + "  " + clean(m.history.current.subject)
 	view.viewBadge = styleDim + "read-only" + styleReset
+	if m.screen == "commit" && m.history.streamActive && len(m.history.streamPaths) > 0 {
+		view.viewBadge = styleDim + fmt.Sprintf("read-only · loading %d/%d files", m.history.streamLoaded, len(m.history.streamPaths)) + styleReset
+		view.searchProgress = "loading"
+	}
 	if m.screen == "base" {
 		view.viewTitle = clean(m.base.revision) + "…working tree"
 		view.viewBadge = styleDim + shortHash(m.base.hash) + " · read-only" + styleReset
@@ -611,6 +796,12 @@ func (m model) commitModel() model {
 	view.message = ""
 	if m.history.loading && m.history.commitLoadingVisible {
 		view.message = "Loading commit…"
+	}
+	if m.picker.pendingPath != "" {
+		view.message = "Loading " + m.picker.pendingPath + "…"
+	}
+	if m.history.streamError != "" {
+		view.message = m.history.streamError
 	}
 	return view
 }
