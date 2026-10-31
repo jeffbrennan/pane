@@ -8,6 +8,7 @@ import (
 	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mattn/go-isatty"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -24,6 +25,7 @@ type row struct {
 	headerIndex  int
 	syntax       []syntaxSpan
 	inline       []syntaxSpan
+	commitIndex  int
 }
 
 type loaded struct {
@@ -82,6 +84,7 @@ type model struct {
 	recentCommitLoading   bool
 	recentCommitError     bool
 	discard               discardRequest
+	sequence              sequenceState
 }
 
 func main() {
@@ -94,12 +97,22 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	m, err := initialModel(repo, os.Args[1:])
+	piped := !isatty.IsTerminal(os.Stdin.Fd()) && !isatty.IsCygwinTerminal(os.Stdin.Fd())
+	var m model
+	if piped && len(os.Args) == 1 {
+		m, err = initialSequence(repo, os.Stdin)
+	} else {
+		m, err = initialModel(repo, os.Args[1:])
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
+	options := []tea.ProgramOption{tea.WithAltScreen()}
+	if piped {
+		options = append(options, tea.WithInputTTY())
+	}
+	if _, err := tea.NewProgram(m, options...).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -132,6 +145,20 @@ func (m model) Init() tea.Cmd {
 		commands = append(commands, func() tea.Msg {
 			changes, err := repo.commitChanges(hash)
 			return commitLoaded{changes, err, request}
+		})
+	}
+	if m.screen == "sequence" && m.sequence.loading {
+		repo, commits, request := m.repo, m.sequence.commits, m.sequence.request
+		commands = append(commands, func() tea.Msg {
+			var changes [][]change
+			for _, commit := range commits {
+				files, err := repo.commitChanges(commit.hash)
+				if err != nil {
+					return sequenceLoaded{request: request, err: fmt.Errorf("%s: %w", shortHash(commit.hash), err)}
+				}
+				changes = append(changes, files)
+			}
+			return sequenceLoaded{request: request, changes: changes}
 		})
 	}
 	return tea.Batch(commands...)
@@ -332,6 +359,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.history.rows = nil
 		m.history.pos = 0
 		m.rebuildCommit()
+	case sequenceLoaded:
+		if m.screen != "sequence" || msg.request != m.sequence.request {
+			break
+		}
+		m.sequence.loading = false
+		if msg.err != nil {
+			m.errorText, m.errorPos, m.modal = msg.err.Error(), 0, "error"
+			break
+		}
+		m.sequence.changes = msg.changes
+		m.rebuildSequence()
 	case flashed:
 		m.flash = msg.text
 	case editorClosed:
@@ -347,6 +385,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleModal(msg)
 		}
 		if m.screen != "" {
+			if m.screen == "sequence" {
+				return m.handleSequenceKey(msg)
+			}
 			updated, cmd := m.handleHistoryKey(msg)
 			next := updated.(model)
 			next.revealHistorySelection()
@@ -586,6 +627,10 @@ func (m model) runAction(args ...string) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) rebuild() {
+	if m.screen == "sequence" {
+		m.rebuildSequence()
+		return
+	}
 	var anchor row
 	if len(m.rows) > 0 && m.pos < len(m.rows) {
 		anchor = m.rows[m.pos]
@@ -737,7 +782,7 @@ func (m *model) jump(direction int) {
 	}
 	path := m.rows[m.pos].path
 	for i := m.pos + direction; i >= 0 && i < len(m.rows); i += direction {
-		if m.rows[i].kind == 'f' && m.rows[i].path != path {
+		if m.rows[i].kind == 'f' && (m.rows[i].path != path || (m.screen == "sequence" && m.rows[i].commitIndex != m.rows[m.pos].commitIndex)) {
 			m.pos = i
 			m.positionViewport("t")
 			return
@@ -775,6 +820,9 @@ func (m model) View() string {
 	}
 	if m.screen == "commit" {
 		return m.commitView()
+	}
+	if m.screen == "sequence" {
+		return m.sequenceView()
 	}
 	mode := "UNSTAGED"
 	if m.staged {

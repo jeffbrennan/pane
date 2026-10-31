@@ -170,6 +170,9 @@ func buildRowsExpanded(changes []change, width int, wrap bool, expanded map[stri
 func indexRowHeaders(rows []row) {
 	headerIndex := 0
 	for i := range rows {
+		if i > 0 && rows[i].commitIndex != rows[i-1].commitIndex {
+			headerIndex = 0
+		}
 		if rows[i].kind == 'f' {
 			headerIndex = i + 1
 		} else {
