@@ -44,14 +44,13 @@ type model struct {
 	pending               string
 	staged, wrap          bool
 	loading, busy         bool
+	activeAction          string
 	startup               bool
 	generation            int
 	modal, input, message string
 	errorText             string
 	errorPos              int
 	helpPos               int
-	resultText            string
-	resultPos             int
 	screen, viewTitle     string
 	history               historyState
 	picker                pickerState
@@ -133,6 +132,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case completed:
 		m.busy = false
+		m.activeAction = ""
 		if msg.err != nil {
 			m.errorText = msg.err.Error()
 			m.errorPos = 0
@@ -155,18 +155,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return historyModel, tea.Batch(refreshCmd, historyCmd)
 		} else if msg.action == "pull" {
 			m.message = ""
-			m.modal = "result"
-			m.resultText = msg.message
-			m.resultPos = 0
-			if m.screen == "commit" {
-				m.history.stale = true
-			}
+			var refreshCmd tea.Cmd
+			m, refreshCmd = m.refresh()
 			if m.screen == "history" {
-				var refreshCmd, historyCmd tea.Cmd
-				m, refreshCmd = m.refresh()
+				var historyCmd tea.Cmd
 				m, historyCmd = m.reloadHistory()
 				return m, tea.Batch(refreshCmd, historyCmd)
 			}
+			historyModel, historyCmd := m.openHistory()
+			return historyModel, tea.Batch(refreshCmd, historyCmd)
 		} else {
 			m.message = msg.message
 		}
@@ -375,17 +372,6 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}), nil
 	}
-	if m.modal == "result" {
-		switch key.String() {
-		case "esc", "enter", "q", "ctrl+c":
-			m.modal = ""
-		case "j", "down":
-			m.resultPos = min(m.resultPos+1, max(0, len(actionOutputLines(m.resultText, m.width))-actionVisibleRows(m.height)))
-		case "k", "up":
-			m.resultPos = max(0, m.resultPos-1)
-		}
-		return m, nil
-	}
 	if m.modal == "help" {
 		switch key.String() {
 		case "esc", "?", "q":
@@ -450,6 +436,7 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m model) runAction(args ...string) (tea.Model, tea.Cmd) {
 	m.busy = true
+	m.activeAction = args[0]
 	m.generation++
 	repo := m.repo
 	return m, func() tea.Msg {
@@ -586,9 +573,6 @@ func (m model) View() string {
 	if m.width <= 0 || m.height <= 0 {
 		return ""
 	}
-	if m.modal == "result" {
-		return m.actionDialogView()
-	}
 	if m.modal == "error" {
 		var content []string
 		for _, line := range strings.Split(m.errorText, "\n") {
@@ -621,7 +605,11 @@ func (m model) View() string {
 		header = m.viewTitle
 	}
 	if m.busy {
-		header += "  working…"
+		if action := m.actionStatus(); action != "" {
+			header += "  " + action
+		} else {
+			header += "  working…"
+		}
 	}
 	var lines []string
 	lines = append(lines, fit(header, m.width))

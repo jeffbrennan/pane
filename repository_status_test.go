@@ -110,7 +110,7 @@ func TestPullRefreshesHistory(t *testing.T) {
 	m := model{width: 60, height: 20, screen: "history", busy: true, history: historyState{selected: 1, filter: "fix"}}
 	updated, cmd := m.Update(completed{action: "pull", message: "Updated"})
 	got := updated.(model)
-	if cmd == nil || got.modal != "result" || !got.history.loading || got.history.filter != "fix" || got.history.selected != 1 {
+	if cmd == nil || got.modal != "" || !got.history.loading || got.history.filter != "fix" || got.history.selected != 1 {
 		t.Fatalf("history not refreshed after pull: %#v", got)
 	}
 }

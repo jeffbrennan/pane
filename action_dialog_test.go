@@ -21,41 +21,39 @@ func TestPushPullStartImmediately(t *testing.T) {
 	}
 }
 
-func TestActionResultDialog(t *testing.T) {
-	m := model{width: 70, height: 20, busy: true}
-	updated, _ := m.Update(completed{action: "pull", message: "From example\n   abc..def  main -> main"})
-	m = updated.(model)
-	view := m.View()
-	if m.modal != "result" || !strings.Contains(view, "Pull complete") || !strings.Contains(view, "From example") || !strings.Contains(view, "abc..def") || strings.Contains(view, " | ") {
-		t.Fatalf("unexpected result dialog: %q", view)
-	}
-	if strings.Contains(view, "j/k") {
-		t.Fatal("scroll hint shown when output fits")
-	}
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if updated.(model).modal != "" {
-		t.Fatal("result did not close")
+func TestPushPullProgressInSummary(t *testing.T) {
+	for _, tt := range []struct{ key, status string }{{"p", "Pushing…"}, {"P", "Pulling…"}} {
+		m := model{width: 60, height: 20, screen: "history", snapshot: snapshot{branch: branchStatus{available: true, upstream: "origin/main", countsKnown: true}}}
+		updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(tt.key)})
+		m = updated.(model)
+		if cmd == nil || !strings.Contains(m.View(), tt.status) {
+			t.Errorf("%q did not show progress in summary", tt.key)
+		}
+		updated, _ = m.Update(completed{action: m.activeAction, err: errors.New("failed")})
+		m = updated.(model)
+		if m.activeAction != "" || m.busy || m.modal != "error" {
+			t.Error("failed action did not clear progress and show an error")
+		}
 	}
 }
 
-func TestActionResultScrollAndError(t *testing.T) {
-	m := model{width: 40, height: 10, modal: "result", resultText: "one\ntwo\nthree\nfour\nfive\nsix"}
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-	m = updated.(model)
-	if m.resultPos != 1 || !strings.Contains(m.View(), "five") || !strings.Contains(m.View(), "j/k") {
-		t.Fatalf("result did not scroll: %q", m.View())
-	}
-	updated, _ = m.Update(completed{action: "pull", err: errors.New("network failed")})
+func TestFailedPullShowsError(t *testing.T) {
+	m := model{width: 40, height: 10, busy: true}
+	updated, _ := m.Update(completed{action: "pull", err: errors.New("network failed")})
 	got := updated.(model)
 	if got.modal != "error" || got.errorText != "network failed" {
 		t.Fatal("errors should remain errors")
 	}
 }
 
-func TestActionDialogOnSmallPane(t *testing.T) {
-	m := model{width: 18, height: 5, modal: "result"}
-	if !strings.Contains(m.View(), "Pull complete") {
-		t.Fatal("missing small-pane fallback")
+func TestSuccessfulPullReturnsToHistory(t *testing.T) {
+	for _, screen := range []string{"", "history", "commit"} {
+		m := model{screen: screen, busy: true}
+		updated, cmd := m.Update(completed{action: "pull", message: "Updated"})
+		got := updated.(model)
+		if cmd == nil || got.screen != "history" || got.modal != "" || got.busy || !got.loading || !got.history.loading {
+			t.Errorf("pull from %q did not refresh the landing page: %#v", screen, got)
+		}
 	}
 }
 

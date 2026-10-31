@@ -11,6 +11,9 @@ func (m model) historyHeader() []string {
 	lines := []string{historyTitle(branch, m.width)}
 	limit := min(2, max(0, m.height-4))
 	if limit == 0 {
+		if action := m.actionStatus(); action != "" {
+			lines[0] = fit(" pane  "+action, m.width)
+		}
 		return lines
 	}
 	type statusLine struct{ text, style string }
@@ -39,6 +42,9 @@ func (m model) historyHeader() []string {
 		}
 		status = append(status, statusLine{"  " + changes, changeStyle})
 	}
+	if action := m.actionStatus(); action != "" {
+		status[0] = statusLine{"  " + action, "\x1b[33m"}
+	}
 	for _, line := range status[:min(limit, len(status))] {
 		text := fit(line.text, m.width)
 		if line.style != "" {
@@ -47,6 +53,20 @@ func (m model) historyHeader() []string {
 		lines = append(lines, text)
 	}
 	return lines
+}
+
+func (m model) actionStatus() string {
+	if !m.busy {
+		return ""
+	}
+	switch m.activeAction {
+	case "push":
+		return "Pushing…"
+	case "pull":
+		return "Pulling…"
+	default:
+		return ""
+	}
 }
 
 func historyTitle(branch branchStatus, width int) string {
