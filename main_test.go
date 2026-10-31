@@ -201,3 +201,24 @@ func TestParagraphDiffJumps(t *testing.T) {
 		t.Fatal("jump to file boundary failed")
 	}
 }
+
+func TestFileJumpPlacesHeaderAtTop(t *testing.T) {
+	long := "@@ -0,0 +1,30 @@\n" + strings.Repeat("+line\n", 30)
+	m := model{width: 40, height: 12, wrap: true, snapshot: snapshot{unstaged: []change{
+		{path: "one", diff: long}, {path: "two", diff: long}, {path: "three", diff: long},
+	}}}
+	m.rebuild()
+	m.jump(1)
+	if m.rows[m.pos].path != "two" || m.viewTop != m.pos {
+		t.Fatalf("next file header not at top: pos %d top %d", m.pos, m.viewTop)
+	}
+	lines := strings.Split(m.View(), "\n")
+	if !strings.Contains(lines[1], "▸") || !strings.Contains(lines[1], "two") {
+		t.Fatalf("first diff line should be the active header: %q", lines[1])
+	}
+	m.jump(1)
+	m.jump(-1)
+	if m.rows[m.pos].path != "two" || m.viewTop != m.pos {
+		t.Fatalf("previous file header not at top: pos %d top %d", m.pos, m.viewTop)
+	}
+}

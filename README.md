@@ -4,7 +4,7 @@ A narrow, keyboard-first terminal viewer for Git changes. Diffs show file header
 
 If the working tree and index are clean at startup, pane opens commit history. Otherwise it opens the unstaged diff view.
 
-Build with `go build -o pane .`. Go and Git must be installed. The initial target is macOS.
+Install with `go install github.com/jeffbrennan/pane@latest`, or run `go install .` from a checkout; either places `pane` in `$(go env GOPATH)/bin`, which must be on your `PATH`. Go and Git must be installed. The initial target is macOS.
 
 For development, `just b` builds and runs pane in the current repository.
 
@@ -17,7 +17,11 @@ For development, `just b` builds and runs pane in the current repository.
 | `ctrl-e` / `ctrl-y` | Scroll the diff viewport down / up one line |
 | `zt` / `zz` / `zb` | Place the active diff line at the top / middle / bottom |
 | `}` / `{` | Jump to the next / previous paragraph boundary, or five commits in history |
-| `J` / `K` | Jump to the next / previous file |
+| `J` / `K` | Jump to the next / previous file, placing it at the top |
+| `f` | Find a file in the current diff by fuzzy name |
+| `/`, `n` / `N` | Search the diff; jump to the next / previous match |
+| `o` | Open the current file at the active line in `$VISUAL` / `$EDITOR` |
+| `y` | Copy the current file path, or the commit hash in history |
 | `tab` | Switch unstaged / staged view |
 | `space` | Stage / unstage the current whole file |
 | `w` | Toggle line wrapping |
@@ -33,7 +37,7 @@ The active line is marked with `▸`; staging applies to the file containing it.
 
 Commits include only staged changes if any are staged. Otherwise, pane stages all non-ignored changes, including untracked files, before committing. If the commit fails, the automatically staged changes remain staged. After a successful commit, pane opens history with the new commit selected.
 
-In diffs, paragraph boundaries are blank lines, file headers, and hunk separators. In history, `j` / `k` select commits, `}` / `{` jump five commits, and `/` searches author name or email, message, and hash. While typing a search, use the arrow keys to select a result; Enter opens the focused commit's read-only diff. Press `Esc` or `q` to go back. Addition and deletion counts omit binary files, which are counted separately. Merge commit counts and diffs are relative to their first parent.
+In diffs, paragraph boundaries are blank lines, file headers, and hunk separators. Diff search is incremental and case-insensitive unless the query contains an uppercase letter; matches are highlighted and `n` / `N` wrap around. `o` opens the working-tree file, so in a historical commit the line may have moved since. Copying uses `pbcopy`, `wl-copy`, `xclip`, or `xsel`. In history, `j` / `k` select commits, `}` / `{` jump five commits, and `/` searches author name or email, message, and hash. While typing a search, use the arrow keys to select a result; Enter opens the focused commit's read-only diff. Press `Esc` or `q` to go back. Addition and deletion counts omit binary files, which are counted separately. Merge commit counts and diffs are relative to their first parent.
 
 The history landing page shows the branch, local changes, and commits ahead of or behind its configured upstream. Ahead/behind counts use locally stored remote-tracking refs and may be stale; pane does not fetch automatically. History reloads when the checked-out commit changes. Push and pull are available from history as well as the diff view. After a successful push, pane returns to history and refreshes its status.
 

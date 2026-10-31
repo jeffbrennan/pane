@@ -35,7 +35,7 @@ func buildRows(changes []change, width int, wrap bool) []row {
 				oldLine, _ = strconv.Atoi(match[1])
 				newLine, _ = strconv.Atoi(match[3])
 				if hunks > 0 {
-					rows = append(rows, row{path: c.path, line: i, text: "  ···", kind: '@'})
+					rows = append(rows, row{path: c.path, line: i, target: newLine, text: "  ···", kind: '@'})
 				}
 				hunks++
 				inHunk = true
@@ -61,13 +61,13 @@ func buildRows(changes []change, width int, wrap bool) []row {
 			}
 			kind := line[0]
 			if kind == '\\' {
-				rows = append(rows, row{path: c.path, line: i, text: "  " + clean(line[2:]), kind: '@'})
+				rows = append(rows, row{path: c.path, line: i, target: max(1, newLine-1), text: "  " + clean(line[2:]), kind: '@'})
 				continue
 			}
 			if kind != ' ' && kind != '+' && kind != '-' {
 				continue
 			}
-			number := newLine
+			number, target := newLine, max(1, newLine)
 			if kind == '-' {
 				number = oldLine
 			}
@@ -89,7 +89,7 @@ func buildRows(changes []change, width int, wrap bool) []row {
 				if partIndex > 0 {
 					prefix = strings.Repeat(" ", len(gutter))
 				}
-				rows = append(rows, row{path: c.path, line: i, offset: offset, gutter: prefix, text: part, kind: kind})
+				rows = append(rows, row{path: c.path, line: i, offset: offset, target: target, gutter: prefix, text: part, kind: kind})
 				for _, r := range part {
 					offset += runewidth.RuneWidth(r)
 				}

@@ -15,6 +15,7 @@ type row struct {
 	path   string
 	line   int
 	offset int
+	target int
 	gutter string
 	text   string
 	kind   byte
@@ -53,6 +54,9 @@ type model struct {
 	resultPos             int
 	screen, viewTitle     string
 	history               historyState
+	picker                pickerState
+	search                searchState
+	flash                 string
 }
 
 func main() {
@@ -209,7 +213,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.history.rows = nil
 		m.history.pos = 0
 		m.rebuildCommit()
+	case flashed:
+		m.flash = msg.text
+	case editorClosed:
+		if msg.err != nil {
+			m.flash = "Editor: " + msg.err.Error()
+		}
+		return m.refresh()
 	case tea.KeyMsg:
+		m.flash = ""
 		if m.modal != "" {
 			return m.handleModal(msg)
 		}
@@ -221,10 +233,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return next, tea.Batch(cmd, more)
 		}
-		if m.handleDiffNavigation(msg.String()) {
+		if m.handleDiffNavigation(msg.String()) || m.handleDiffTool(msg.String()) {
 			return m, nil
 		}
 		switch msg.String() {
+		case "o":
+			return m.openEditor()
+		case "y":
+			if len(m.rows) > 0 {
+				path := m.rows[m.pos].path
+				return m, copyCmd(path, path)
+			}
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "tab":
@@ -276,7 +295,40 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleDiffTool handles the search and file picker keys shared by the
+// working-tree and commit diff views.
+func (m *model) handleDiffTool(key string) bool {
+	switch key {
+	case "/":
+		m.startSearch()
+	case "n":
+		m.searchJump(1)
+	case "N":
+		m.searchJump(-1)
+	case "f":
+		m.openPicker()
+	default:
+		return false
+	}
+	return true
+}
+
 func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.modal == "files" || m.modal == "search" {
+		runes := key.Runes
+		if key.Type == tea.KeySpace {
+			runes = []rune{' '}
+		} else if key.Type != tea.KeyRunes {
+			runes = nil
+		}
+		return m.inDiff(func(view *model) {
+			if view.modal == "files" {
+				view.handlePickerKey(key.String(), runes)
+			} else {
+				view.handleSearchKey(key.String(), runes)
+			}
+		}), nil
+	}
 	if m.modal == "result" {
 		switch key.String() {
 		case "esc", "enter", "q", "ctrl+c":
@@ -481,23 +533,15 @@ func (m *model) jump(direction int) {
 	if len(m.rows) == 0 {
 		return
 	}
-	defer m.reveal()
 	path := m.rows[m.pos].path
-	if direction > 0 {
-		for i := m.pos + 1; i < len(m.rows); i++ {
-			if m.rows[i].kind == 'f' && m.rows[i].path != path {
-				m.pos = i
-				return
-			}
-		}
-	} else {
-		for i := m.pos - 1; i >= 0; i-- {
-			if m.rows[i].kind == 'f' && m.rows[i].path != path {
-				m.pos = i
-				return
-			}
+	for i := m.pos + direction; i >= 0 && i < len(m.rows); i += direction {
+		if m.rows[i].kind == 'f' && m.rows[i].path != path {
+			m.pos = i
+			m.positionViewport("t")
+			return
 		}
 	}
+	m.reveal()
 }
 
 func (m model) View() string {
@@ -561,6 +605,12 @@ func (m model) View() string {
 		lines = append(lines, m.renderDiffRow(m.rows[index], index == m.pos))
 	}
 	status := m.message
+	if m.flash != "" {
+		status = m.flash
+	}
+	if m.modal == "search" {
+		status = "/" + m.search.draft + "_"
+	}
 	if m.modal == "commit" {
 		if m.width < 24 || m.height < 9 {
 			status = "Commit message: " + m.input + "_  (enter: commit, esc: cancel)"
@@ -575,7 +625,7 @@ func (m model) View() string {
 		status = "j/k scroll  ?/esc close"
 	}
 	lines = append(lines, fit(clean(strings.ReplaceAll(status, "\n", " | ")), m.width))
-	if m.modal == "commit" || m.modal == "help" {
+	if m.modal == "commit" || m.modal == "help" || m.modal == "files" {
 		for i := 1; i <= available; i++ {
 			lines[i] = ""
 		}
@@ -585,6 +635,9 @@ func (m model) View() string {
 	}
 	if m.modal == "help" {
 		showHelpDialog(lines, m.width, m.helpPos)
+	}
+	if m.modal == "files" {
+		m.showFilesDialog(lines)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -601,6 +654,7 @@ func (m model) renderDiffRow(r row, active bool) string {
 		text = fit(text, max(0, contentWidth-runewidth.StringWidth(r.gutter)))
 	}
 	text = fit(r.gutter+text, contentWidth)
+	query := m.activeSearch()
 	color := ""
 	switch r.kind {
 	case '+':
@@ -612,6 +666,9 @@ func (m model) renderDiffRow(r row, active bool) string {
 	case 'f':
 		text += strings.Repeat(" ", max(0, contentWidth-runewidth.StringWidth(text)))
 		color = "\x1b[1;37;48;5;236m"
+	}
+	if query != "" && strings.HasPrefix(text, r.gutter) {
+		text = r.gutter + highlightMatches(text[len(r.gutter):], query)
 	}
 	if color != "" {
 		text = color + text + "\x1b[0m"

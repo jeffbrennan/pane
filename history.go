@@ -168,6 +168,11 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "/":
 		m.history.searching = true
 		m.history.draft = m.history.filter
+	case "y":
+		if len(matches) > 0 {
+			hash := matches[min(m.history.selected, len(matches)-1)].hash
+			return m, copyCmd(hash, shortHash(hash))
+		}
 	case "g":
 		m.pending = "g"
 	case "G", "end":
@@ -207,14 +212,37 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+// inDiff applies f to the diff currently on screen: the working tree, or the
+// commit being viewed, whose diff state lives in m.history.
+func (m model) inDiff(f func(*model)) model {
+	if m.screen != "commit" {
+		f(&m)
+		return m
+	}
 	view := m.commitModel()
-	if view.handleDiffNavigation(key.String()) {
-		m.pending = view.pending
-		m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop = view.rows, view.pos, view.horizontal, view.viewTop
+	f(&view)
+	m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop = view.rows, view.pos, view.horizontal, view.viewTop
+	m.pending, m.modal, m.picker, m.search, m.flash = view.pending, view.modal, view.picker, view.search, view.flash
+	return m
+}
+
+func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	handled := false
+	m = m.inDiff(func(view *model) {
+		handled = view.handleDiffNavigation(key.String()) || view.handleDiffTool(key.String())
+	})
+	if handled {
 		return m, nil
 	}
-	m.pending = view.pending
+	view := m.commitModel()
+	switch key.String() {
+	case "o":
+		opened, cmd := view.openEditor()
+		m.flash = opened.flash
+		return m, cmd
+	case "y":
+		return m, copyCmd(m.history.current.hash, shortHash(m.history.current.hash))
+	}
 	if key.String() == "esc" || key.String() == "q" {
 		m.screen = "history"
 		m.history.request++
@@ -343,6 +371,9 @@ func (m model) historyView() string {
 		status = "/" + clean(m.history.draft) + "_"
 	} else if m.history.filter != "" {
 		status = "/" + clean(m.history.filter)
+	}
+	if m.flash != "" {
+		status = m.flash
 	}
 	if m.history.fetching && m.historyQuery() != "" {
 		status += "  searching older commits…"
