@@ -25,11 +25,65 @@ func searchFold(s, query string) string {
 }
 
 func searchMatches(text, query string) bool {
-	return query != "" && strings.Contains(searchFold(text, query), searchFold(query, query))
+	return newSearchMatcher(query).matches(text)
 }
 
 func rowMatches(r row, query string) bool {
-	return searchMatches(r.text, query) || (r.kind == 'f' && (searchMatches(r.path, query) || searchMatches(r.oldPath, query)))
+	return newSearchMatcher(query).rowMatches(r)
+}
+
+type searchMatcher struct {
+	needle string
+	fold   bool
+}
+
+func newSearchMatcher(query string) searchMatcher {
+	for _, r := range query {
+		if unicode.IsUpper(r) {
+			return searchMatcher{needle: query}
+		}
+	}
+	return searchMatcher{needle: strings.ToLower(query), fold: true}
+}
+
+func (s searchMatcher) matches(text string) bool {
+	if s.needle == "" {
+		return false
+	}
+	if !s.fold {
+		return strings.Contains(text, s.needle)
+	}
+	// Preserve strings.ToLower's Unicode semantics whenever either operand is non-ASCII.
+	for i := 0; i < len(s.needle); i++ {
+		if s.needle[i] >= 0x80 {
+			return strings.Contains(strings.ToLower(text), s.needle)
+		}
+	}
+	for i := 0; i < len(text); i++ {
+		if text[i] >= 0x80 {
+			return strings.Contains(strings.ToLower(text), s.needle)
+		}
+	}
+	for i := 0; i+len(s.needle) <= len(text); i++ {
+		j := 0
+		for ; j < len(s.needle); j++ {
+			c := text[i+j]
+			if c >= 'A' && c <= 'Z' {
+				c += 'a' - 'A'
+			}
+			if c != s.needle[j] {
+				break
+			}
+		}
+		if j == len(s.needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s searchMatcher) rowMatches(r row) bool {
+	return s.matches(r.text) || (r.kind == 'f' && (s.matches(r.path) || s.matches(r.oldPath)))
 }
 
 func (m model) activeSearch() string {
@@ -61,11 +115,12 @@ func (m model) searchDirection() int {
 // findMatch returns the next row matching query after from in direction,
 // wrapping around the diff, and whether the search wrapped.
 func (m model) findMatch(query string, from, direction int) (int, bool) {
+	matcher := newSearchMatcher(query)
 	for step := 1; step <= len(m.rows); step++ {
 		i := from + direction*step
 		wrapped := i < 0 || i >= len(m.rows)
 		i = ((i % len(m.rows)) + len(m.rows)) % len(m.rows)
-		if rowMatches(m.rows[i], query) {
+		if matcher.rowMatches(m.rows[i]) {
 			return i, wrapped
 		}
 	}
@@ -115,8 +170,9 @@ func (m *model) searchJump(direction int) {
 	m.showMatch(index)
 	m.recordJump(before)
 	current, total := 0, 0
+	matcher := newSearchMatcher(query)
 	for i, r := range m.rows {
-		if rowMatches(r, query) {
+		if matcher.rowMatches(r) {
 			total++
 			if i <= index {
 				current = total
