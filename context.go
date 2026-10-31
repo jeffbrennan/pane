@@ -83,7 +83,7 @@ func (m model) localContextRows(rows []row, changes []change) []row {
 			}
 		}
 		c.diff = file.diff
-		full := buildRowsExpanded([]change{c}, max(1, m.width-diffMargin(m.width)), m.wrap, m.expandedDeleted)
+		full := buildRowsExpanded([]change{c}, m.diffContentWidth(), m.wrap, m.expandedDeleted)
 		var gap *row
 		for _, r := range full {
 			show := r.kind != ' ' || visible[r.target]

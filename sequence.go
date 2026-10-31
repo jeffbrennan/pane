@@ -112,7 +112,7 @@ func (m *model) rebuildSequence() {
 		anchor = m.rows[m.pos]
 	}
 	oldPos, oldTop := m.pos, m.viewTop
-	width := max(1, m.width-diffMargin(m.width))
+	width := m.diffContentWidth()
 	if len(m.sequence.rowCache) != len(m.sequence.commits) || m.sequence.cacheWidth != width || m.sequence.cacheWrap != m.wrap {
 		m.sequence.rowCache = make([][]row, len(m.sequence.commits))
 		m.sequence.cacheWidth, m.sequence.cacheWrap = width, m.wrap
@@ -181,6 +181,7 @@ func (m *model) rebuildSequence() {
 func (m model) sequenceView() string {
 	view := m
 	view.screen = ""
+	view.relativeLines = true
 	view.viewTitle = " "
 	if len(m.rows) > 0 && len(m.sequence.commits) > 0 {
 		start := m.viewportStart(max(1, m.height-2))

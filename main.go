@@ -59,6 +59,7 @@ type model struct {
 	jumps                 []jumpLocation
 	jumpIndex             int
 	staged, wrap          bool
+	relativeLines         bool
 	loading, busy         bool
 	activeAction          string
 	startup               bool
@@ -649,7 +650,7 @@ func (m *model) rebuild() {
 	if m.staged {
 		changes = m.snapshot.staged
 	}
-	m.rows = buildRowsExpanded(changes, max(1, m.width-diffMargin(m.width)), m.wrap, m.expandedDeleted)
+	m.rows = buildRowsExpanded(changes, m.diffContentWidth(), m.wrap, m.expandedDeleted)
 	m.rows = m.localContextRows(m.rows, changes)
 	m.rows = m.foldContextFiles(m.rows)
 	m.pos = 0
@@ -863,7 +864,7 @@ func (m model) View() string {
 		}
 	}
 	if pinned != nil {
-		lines = append(lines, m.renderDiffRow(*pinned, false))
+		lines = append(lines, m.renderNumberedDiffRow(*pinned, -1))
 	}
 	for i := 0; i < visible; i++ {
 		index := start + i
@@ -875,7 +876,7 @@ func (m model) View() string {
 			}
 			continue
 		}
-		lines = append(lines, m.renderDiffRow(m.rows[index], index == m.pos))
+		lines = append(lines, m.renderNumberedDiffRow(m.rows[index], index))
 	}
 	status := m.message
 	if m.flash != "" {
@@ -914,6 +915,41 @@ func (m model) View() string {
 		m.showFilesDialog(lines)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (m model) relativeGutterWidth() int {
+	if !m.relativeLines && m.screen != "sequence" {
+		return 0
+	}
+	return max(3, len(fmt.Sprint(max(0, m.height-2))))
+}
+
+func (m model) diffContentWidth() int {
+	extra := max(0, m.relativeGutterWidth()-3)
+	return max(1, m.width-diffMargin(m.width)-extra)
+}
+
+func (m model) renderNumberedDiffRow(r row, index int) string {
+	width := m.relativeGutterWidth()
+	if width > 0 {
+		if r.gutter != "" {
+			width = max(width, len(r.gutter)-3)
+		}
+		number := strings.Repeat(" ", width)
+		if index >= 0 {
+			value := max(index-m.pos, m.pos-index)
+			if index == m.pos && r.sourceLine > 0 {
+				value = r.sourceLine
+			}
+			number = fmt.Sprintf("%*d", width, value)
+		}
+		if r.gutter != "" {
+			r.gutter = number + r.gutter[len(r.gutter)-3:]
+		} else {
+			r.gutter = number + " "
+		}
+	}
+	return m.renderDiffRow(r, index >= 0 && index == m.pos)
 }
 
 func (m model) renderDiffRow(r row, active bool) string {

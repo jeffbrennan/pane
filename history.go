@@ -400,6 +400,7 @@ func (m model) returnToHistory() (tea.Model, tea.Cmd) {
 func (m model) commitModel() model {
 	view := m
 	view.screen = ""
+	view.relativeLines = true
 	view.contextCommit = m.history.current.hash
 	view.jumps, view.jumpIndex = m.history.jumps, m.history.jumpIndex
 	view.snapshot = snapshot{unstaged: m.history.changes}
