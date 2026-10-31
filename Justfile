@@ -37,6 +37,6 @@ check: fmt lint typecheck test
 
 perf:
     mkdir -p .scratch
-    PANE_PERF=1 PANE_PERF_LOG=.scratch/perf-log.tsv go test -run '^TestPerf$' -count=1 -v .
+    PANE_PERF=1 PANE_PERF_LOG=.scratch/perf-log.tsv PANE_PERF_PROFILES=.scratch/profiles go test -run '^TestPerf$' -count=1 -v .
     go build -o .scratch/perf-pane .
     go run ./perf/firstpaint -repo "${PANE_PERF_REPO:-.}" -revision "${PANE_PERF_COMMIT:-HEAD}" -idle "${PANE_PERF_IDLE:-60s}" -log .scratch/perf-log.tsv

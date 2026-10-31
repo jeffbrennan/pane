@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
+	"runtime/pprof"
 	"sort"
 	"strings"
 	"testing"
@@ -20,9 +23,32 @@ func TestPerf(t *testing.T) {
 		t.Skip("set PANE_PERF=1 to run")
 	}
 	var changes []change
+	var m model
 	scenario := "synthetic-many"
-	if dir := os.Getenv("PANE_PERF_REPO"); dir != "" {
+	if os.Getenv("PANE_PERF_REPO") != "" {
 		scenario = "commit"
+	}
+	if dir := os.Getenv("PANE_PERF_PROFILES"); dir != "" {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		cpu, err := os.Create(filepath.Join(dir, scenario+".cpu.pprof"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := pprof.StartCPUProfile(cpu); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			pprof.StopCPUProfile()
+			cpu.Close()
+			if err := writeHeapProfile(filepath.Join(dir, scenario+".mem.pprof")); err != nil {
+				t.Error(err)
+			}
+			runtime.KeepAlive(m)
+		})
+	}
+	if dir := os.Getenv("PANE_PERF_REPO"); dir != "" {
 		repo := repository{root: dir}
 		revision := os.Getenv("PANE_PERF_COMMIT")
 		if revision == "" {
@@ -53,8 +79,17 @@ func TestPerf(t *testing.T) {
 			changes = append(changes, change{path: fmt.Sprintf("file-%04d.txt", i), diff: "@@ -0,0 +1,100 @@\n" + strings.Repeat("+a representative line of text\n", 100)})
 		}
 	}
-	m := model{width: 160, height: 50, wrap: true, screen: "commit", history: historyState{changes: changes}}
+	m = model{width: 160, height: 50, wrap: true, screen: "commit", history: historyState{changes: changes}}
 	measurePerf(t, scenario, "build_ns", func() { m.rebuildCommit() })
+	runtime.GC()
+	var memory runtime.MemStats
+	runtime.ReadMemStats(&memory)
+	recordPerf(t, scenario, "heap_after_build_bytes", int64(memory.HeapAlloc))
+	recordPerf(t, scenario, "sys_after_build_bytes", int64(memory.Sys))
+	beforeAlloc := memory.TotalAlloc
+	m.rebuildCommit()
+	runtime.ReadMemStats(&memory)
+	recordPerf(t, scenario, "rebuild_alloc_bytes", int64(memory.TotalAlloc-beforeAlloc))
 	view := m.commitModel()
 	measurePerf(t, scenario, "view_ns", func() { _ = view.View() })
 	measurePerf(t, scenario, "search_miss_ns", func() { _, _ = view.findMatch("unlikelymissingpattern", -1, 1) })

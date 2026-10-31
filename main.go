@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"runtime/pprof"
+	"runtime/trace"
 	"strings"
 	"time"
 	"unicode"
@@ -170,8 +172,15 @@ func main() {
 		tracking.setHandler(func(light bool) { go program.Send(terminalBackgroundChanged(light)) })
 	}
 	stopProfile := startCPUProfile(os.Getenv("PANE_CPUPROFILE"))
+	stopTrace := startTrace(os.Getenv("PANE_TRACE"))
 	final, err := program.Run()
+	stopTrace()
 	stopProfile()
+	if path := os.Getenv("PANE_MEMPROFILE"); path != "" {
+		if profileErr := writeHeapProfile(path); profileErr != nil {
+			fmt.Fprintln(os.Stderr, profileErr)
+		}
+	}
 	if result, ok := final.(model); ok {
 		result.closeHistoryStreams()
 	}
@@ -179,6 +188,36 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func startTrace(path string) func() {
+	if path == "" {
+		return func() {}
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	if err := trace.Start(file); err != nil {
+		file.Close()
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	return func() {
+		trace.Stop()
+		file.Close()
+	}
+}
+
+func writeHeapProfile(path string) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	runtime.GC()
+	return pprof.WriteHeapProfile(file)
 }
 
 // startCPUProfile records a CPU profile to path, for building default.pgo
