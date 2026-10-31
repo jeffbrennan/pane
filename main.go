@@ -60,6 +60,10 @@ type model struct {
 	jumpIndex             int
 	staged, wrap          bool
 	relativeLines         bool
+	lightTheme            bool
+	themeAuto             bool
+	themeQuery            func()
+	refreshTick           bool
 	loading, busy         bool
 	activeAction          string
 	startup               bool
@@ -109,11 +113,31 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	theme, colorFGBG := strings.ToLower(strings.TrimSpace(os.Getenv("PANE_THEME"))), os.Getenv("COLORFGBG")
+	m.lightTheme = lightThemeFromEnv(theme, colorFGBG)
+	if theme != "light" && theme != "dark" {
+		if light, ok := terminalLightBackground(); ok {
+			m.lightTheme = light
+		}
+	}
 	options := []tea.ProgramOption{tea.WithAltScreen()}
-	if piped {
+	var tracking themeTracking
+	if theme != "light" && theme != "dark" {
+		tracking = startThemeTracking()
+		if tracking.input != nil {
+			m.themeAuto, m.themeQuery = true, tracking.query
+			options = append(options, tea.WithInput(tracking.input))
+			defer tracking.close()
+		}
+	}
+	if piped && tracking.input == nil {
 		options = append(options, tea.WithInputTTY())
 	}
-	if _, err := tea.NewProgram(m, options...).Run(); err != nil {
+	program := tea.NewProgram(m, options...)
+	if tracking.setHandler != nil {
+		tracking.setHandler(func(light bool) { go program.Send(terminalBackgroundChanged(light)) })
+	}
+	if _, err := program.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -174,7 +198,7 @@ func load(repo repository, generation int) tea.Cmd {
 }
 
 func nextTick() tea.Cmd {
-	return tea.Tick(1500*time.Millisecond, func(time.Time) tea.Msg { return tick{} })
+	return tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg { return tick{} })
 }
 
 func (m model) refresh() (model, tea.Cmd) {
@@ -198,8 +222,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.loadHistoryBackground()
 	case tick:
 		var cmd tea.Cmd
-		m, cmd = m.refresh()
-		return m, tea.Batch(cmd, nextTick())
+		m.refreshTick = !m.refreshTick
+		if !m.refreshTick {
+			m, cmd = m.refresh()
+		}
+		var query tea.Cmd
+		if m.themeAuto && m.themeQuery != nil {
+			query = func() tea.Msg { m.themeQuery(); return nil }
+		}
+		return m, tea.Batch(cmd, nextTick(), query)
+	case terminalBackgroundChanged:
+		if m.themeAuto {
+			m.lightTheme = bool(msg)
+		}
 	case loaded:
 		m.loading = false
 		if msg.generation != m.generation {
@@ -404,6 +439,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.flash = ""
 		if m.modal != "" {
 			return m.handleModal(msg)
+		}
+		if msg.String() == "T" && m.pending == "" && !(m.screen == "history" && m.history.searching) {
+			m.lightTheme = !m.lightTheme
+			m.themeAuto = false
+			return m, nil
 		}
 		if m.screen != "" {
 			if m.screen == "sequence" {
@@ -996,6 +1036,9 @@ func (m model) renderDiffRow(r row, active bool) string {
 	case 'f':
 		text += strings.Repeat(" ", max(0, contentWidth-runewidth.StringWidth(text)))
 		color = "\x1b[1;37;48;5;236m"
+		if m.lightTheme {
+			color = "\x1b[1;38;2;45;45;45;48;2;222;222;222m"
+		}
 	}
 	if (r.syntax != nil || r.kind == '+' || r.kind == '-' || r.kind == 'd') && strings.HasPrefix(text, r.gutter) {
 		visible := text[len(r.gutter):]
@@ -1007,14 +1050,20 @@ func (m model) renderDiffRow(r row, active bool) string {
 		switch r.kind {
 		case '+':
 			background = "\x1b[48;2;34;40;35m"
+			if m.lightTheme {
+				background = "\x1b[48;2;221;242;224m"
+			}
 		case '-', 'd':
 			background = "\x1b[48;2;43;34;36m"
+			if m.lightTheme {
+				background = "\x1b[48;2;250;225;225m"
+			}
 		}
 		padding := ""
 		if background != "" {
 			padding = strings.Repeat(" ", max(0, contentWidth-runewidth.StringWidth(r.gutter+visible)))
 		}
-		text = background + r.gutter + renderSyntax(visible, r.syntax, r.inline, start, query, background) + padding + "\x1b[0m"
+		text = background + r.gutter + renderSyntax(visible, r.syntax, r.inline, start, query, background, m.lightTheme) + padding + "\x1b[0m"
 		color = ""
 	} else if query != "" && strings.HasPrefix(text, r.gutter) {
 		text = r.gutter + highlightMatches(text[len(r.gutter):], query)

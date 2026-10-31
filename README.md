@@ -2,6 +2,8 @@
 
 A narrow, keyboard-first terminal viewer for Git changes. Diffs show file headers, line numbers, and added and removed lines without Git's patch metadata. Run `pane` anywhere inside a Git working tree.
 
+Pane detects terminal background changes when supported, falling back to `COLORFGBG`. Set `PANE_THEME=light` or `PANE_THEME=dark` to override detection, or press `T` to choose the opposite theme for the current session.
+
 If the working tree and index are clean at startup, pane opens commit history. Otherwise it opens the unstaged diff view.
 
 Run `pane <commit>` to open a commit's read-only diff directly. A full or abbreviated hash, branch, tag, or other Git commit revision is accepted. Press `Esc` or `q` to return to history.

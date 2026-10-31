@@ -27,6 +27,7 @@ var shortcuts = []string{
 	"[c / ]c     Previous / next change",
 	"ctrl-o / gi  Jump back / forward",
 	"w           Toggle line wrapping",
+	"T           Toggle light / dark colors",
 	"e           Expand / collapse deleted file",
 	"f           File tree (j/k, h/l, / search)",
 	"/           Search diff or history",

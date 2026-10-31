@@ -213,11 +213,14 @@ func sliceStart(text string, start, width int) int {
 	return len(text)
 }
 
-func renderSyntax(text string, spans, inline []syntaxSpan, start int, query, background string) string {
+func renderSyntax(text string, spans, inline []syntaxSpan, start int, query, background string, light bool) string {
 	colors := make([]string, len(text))
 	for _, span := range spans {
 		for i := max(0, span.start-start); i < min(len(text), span.end-start); i++ {
 			colors[i] = span.color
+			if light {
+				colors[i] = lightSyntaxColor(span.color)
+			}
 		}
 	}
 	changed := make([]bool, len(text))
@@ -249,7 +252,11 @@ func renderSyntax(text string, spans, inline []syntaxSpan, start int, query, bac
 		if changed[i] != change {
 			change = changed[i]
 			if change {
-				if background == "\x1b[48;2;34;40;35m" {
+				if background == "\x1b[48;2;221;242;224m" {
+					b.WriteString("\x1b[48;2;175;220;181m")
+				} else if background == "\x1b[48;2;250;225;225m" {
+					b.WriteString("\x1b[48;2;239;182;182m")
+				} else if background == "\x1b[48;2;34;40;35m" {
 					b.WriteString("\x1b[48;2;42;83;52m")
 				} else {
 					b.WriteString("\x1b[48;2;100;38;43m")
