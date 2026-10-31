@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestUnifiedDiffPresentation(t *testing.T) {
@@ -25,10 +27,64 @@ func TestUnifiedDiffPresentation(t *testing.T) {
 	}
 }
 
+func TestToggleDeletedFileInDiffViews(t *testing.T) {
+	diff := "diff --git a/x b/x\ndeleted file mode 100644\n--- a/x\n+++ /dev/null\n@@ -1 +0,0 @@\n-old\n"
+	for _, screen := range []string{"", "commit"} {
+		m := model{width: 80, height: 20, screen: screen, snapshot: snapshot{unstaged: []change{{path: "x", diff: diff}}}}
+		if screen == "commit" {
+			m.history.changes = m.snapshot.unstaged
+			m.rebuildCommit()
+		} else {
+			m.rebuild()
+		}
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+		m = updated.(model)
+		view := m.View()
+		if !strings.Contains(view, "old") || !strings.Contains(view, "e collapse") {
+			t.Errorf("screen %q did not expand deletion: %q", screen, view)
+		}
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+		m = updated.(model)
+		if view = m.View(); strings.Contains(view, "old") || !strings.Contains(view, "e expand") {
+			t.Errorf("screen %q did not collapse deletion: %q", screen, view)
+		}
+	}
+}
+
 func TestWrappedLinesKeepGutter(t *testing.T) {
 	rows := buildRows([]change{{path: "x", diff: "@@ -0,0 +1 @@\n+abcdefgh\n"}}, 10, true)
 	if len(rows) != 3 || rows[1].gutter != "  1 + " || rows[1].text != "abcd" || rows[2].gutter != "      " || rows[2].text != "efgh" {
 		t.Fatalf("rows: %#v", rows)
+	}
+}
+
+func TestDeletedFilePresentation(t *testing.T) {
+	diff := "diff --git a/x b/x\ndeleted file mode 100644\n--- a/x\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-first\n-second\n"
+	rows := buildRows([]change{{path: "x", diff: diff}}, 80, true)
+	if len(rows) != 2 || rows[1].text != "  Deleted file · e expand" {
+		t.Fatalf("deleted file rows: %#v", rows)
+	}
+	m := model{width: 80, rows: rows}
+	if m.fileEntries()[0].deleted != 2 {
+		t.Fatal("collapsed deleted file lost its deletion counts")
+	}
+	rows = buildRowsExpanded([]change{{path: "x", diff: diff}}, 80, true, map[string]bool{"x": true})
+	m.rows = rows
+	if len(rows) != 4 || rows[1].text != "  Deleted file · e collapse" || rows[2].kind != 'd' || rows[3].kind != 'd' || strings.Contains(m.renderDiffRow(rows[2], false), "\x1b[31m") || m.fileEntries()[0].deleted != 2 {
+		t.Fatalf("expanded deleted file rows: %#v", rows)
+	}
+
+	modified := buildRows([]change{{path: "x", diff: "diff --git a/x b/x\n@@ -1 +0,0 @@\n-first\n"}}, 80, true)
+	if modified[1].kind != '-' || !strings.Contains(m.renderDiffRow(modified[1], false), "\x1b[31m") {
+		t.Fatal("ordinary line removals should remain red")
+	}
+}
+
+func TestFileTypeChangeIsNotFullRemoval(t *testing.T) {
+	diff := "diff --git a/x b/x\ndeleted file mode 100644\n@@ -1 +0,0 @@\n-old\ndiff --git a/x b/x\nnew file mode 120000\n@@ -0,0 +1 @@\n+new\n"
+	rows := buildRows([]change{{path: "x", diff: diff}}, 80, true)
+	if rows[1].kind != '-' {
+		t.Fatalf("type change treated as deletion: %#v", rows)
 	}
 }
 

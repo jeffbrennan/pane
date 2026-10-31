@@ -19,12 +19,46 @@ func matchHunkHeader(line string) []string {
 }
 
 func buildRows(changes []change, width int, wrap bool) []row {
+	return buildRowsExpanded(changes, width, wrap, nil)
+}
+
+func buildRowsExpanded(changes []change, width int, wrap bool, expanded map[string]bool) []row {
 	var rows []row
 	for i, c := range changes {
 		if i > 0 {
 			rows = append(rows, row{path: c.path, line: -2, kind: 's'})
 		}
-		rows = append(rows, row{path: c.path, line: -1, text: " " + clean(c.path), kind: 'f'})
+		deletedFile := strings.Contains(c.diff, "\ndeleted file mode ") && !strings.Contains(c.diff, "\nnew file mode ")
+		deletedLines := 0
+		if deletedFile {
+			inHunk := false
+			for _, line := range strings.Split(c.diff, "\n") {
+				if matchHunkHeader(line) != nil {
+					inHunk = true
+				} else if inHunk && strings.HasPrefix(line, "-") {
+					deletedLines++
+				}
+			}
+		}
+		header := row{path: c.path, line: -1, text: " " + clean(c.path), kind: 'f'}
+		if deletedFile && !expanded[c.path] {
+			header.deletedLines = deletedLines
+		}
+		rows = append(rows, header)
+		if deletedFile {
+			label := "  Deleted file"
+			if deletedLines > 0 {
+				if expanded[c.path] {
+					label += " · e collapse"
+				} else {
+					label += " · e expand"
+				}
+			}
+			rows = append(rows, row{path: c.path, line: 0, text: label, kind: '@'})
+			if !expanded[c.path] {
+				continue
+			}
+		}
 		lines := strings.Split(strings.TrimSuffix(c.diff, "\n"), "\n")
 		gutterWidth := lineNumberWidth(lines)
 		oldLine, newLine, hunks := 0, 0, 0
@@ -78,6 +112,9 @@ func buildRows(changes []change, width int, wrap bool) []row {
 				newLine++
 			}
 			gutter := fmt.Sprintf("%*d %c ", gutterWidth, number, kind)
+			if deletedFile && kind == '-' {
+				kind = 'd'
+			}
 			text := clean(strings.ReplaceAll(line[1:], "\t", "    "))
 			parts := []string{text}
 			if wrap {
@@ -98,6 +135,9 @@ func buildRows(changes []change, width int, wrap bool) []row {
 		}
 		if !hasContent {
 			for _, text := range metadata {
+				if deletedFile && text == "Deleted empty file" {
+					continue
+				}
 				if (text == "New empty file" || text == "Deleted empty file") && containsBinary(metadata) {
 					continue
 				}

@@ -25,11 +25,11 @@ func (m model) fileEntries() []fileEntry {
 	for i, r := range m.rows {
 		switch {
 		case r.kind == 'f':
-			entries = append(entries, fileEntry{path: r.path, row: i})
+			entries = append(entries, fileEntry{path: r.path, row: i, deleted: r.deletedLines})
 		case len(entries) == 0 || r.offset > 0:
 		case r.kind == '+':
 			entries[len(entries)-1].added++
-		case r.kind == '-':
+		case r.kind == '-' || r.kind == 'd':
 			entries[len(entries)-1].deleted++
 		}
 	}

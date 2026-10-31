@@ -25,6 +25,7 @@ For development, `just b` builds pane, installs it, and runs it in the current r
 | `tab` | Switch unstaged / staged view |
 | `space` | Stage / unstage the current whole file |
 | `w` | Toggle line wrapping |
+| `e` | Expand / collapse a deleted file |
 | `h` / `l`, `zh` / `zl` | Scroll horizontally when wrapping is off |
 | `c` | Commit staged changes |
 | `p` / `P` | Push / pull |

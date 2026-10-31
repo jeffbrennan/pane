@@ -18,6 +18,7 @@ type historyState struct {
 	searching, loading, stale, more, fetching           bool
 	statsFetching                                       bool
 	current                                             commitInfo
+	expandedDeleted                                     map[string]bool
 }
 
 type historyLoaded struct {
@@ -269,6 +270,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.history.fetching = false
 		m.history.statsFetching = false
 		m.history.changes, m.history.rows = nil, nil
+		m.history.expandedDeleted = nil
 		m.history.pos, m.history.horizontal, m.history.viewTop = 0, 0, 0
 		m.screen = "commit"
 		repo, hash, request := m.repo, m.history.current.hash, m.history.request
@@ -287,6 +289,7 @@ func (m model) inDiff(f func(*model)) model {
 	view := m.commitModel()
 	f(&view)
 	m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop = view.rows, view.pos, view.horizontal, view.viewTop
+	m.history.expandedDeleted = view.expandedDeleted
 	m.pending, m.modal, m.picker, m.search, m.flash = view.pending, view.modal, view.picker, view.search, view.flash
 	return m
 }
@@ -344,6 +347,7 @@ func (m model) commitModel() model {
 	view := m
 	view.screen = ""
 	view.snapshot = snapshot{unstaged: m.history.changes}
+	view.expandedDeleted = m.history.expandedDeleted
 	view.staged = false
 	view.rows, view.pos, view.horizontal, view.viewTop = m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop
 	view.viewTitle = " pane  COMMIT " + shortHash(m.history.current.hash) + "  " + clean(m.history.current.subject)

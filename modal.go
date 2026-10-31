@@ -19,6 +19,7 @@ var shortcuts = []string{
 	"tab         Switch staged / unstaged",
 	"space       Stage / unstage file",
 	"w           Toggle line wrapping",
+	"e           Expand / collapse deleted file",
 	"h / l       Scroll horizontally",
 	"f           Find a file in the diff",
 	"/           Search diff or history",

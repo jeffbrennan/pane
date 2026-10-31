@@ -12,13 +12,14 @@ import (
 )
 
 type row struct {
-	path   string
-	line   int
-	offset int
-	target int
-	gutter string
-	text   string
-	kind   byte
+	path         string
+	line         int
+	offset       int
+	target       int
+	gutter       string
+	text         string
+	kind         byte
+	deletedLines int
 }
 
 type loaded struct {
@@ -56,6 +57,7 @@ type model struct {
 	picker                pickerState
 	search                searchState
 	flash                 string
+	expandedDeleted       map[string]bool
 }
 
 func main() {
@@ -350,6 +352,8 @@ func (m *model) handleDiffTool(key string) bool {
 		m.searchJump(-1)
 	case "f":
 		m.openPicker()
+	case "e":
+		m.toggleDeletedFile()
 	default:
 		return false
 	}
@@ -454,7 +458,7 @@ func (m *model) rebuild() {
 	if m.staged {
 		changes = m.snapshot.staged
 	}
-	m.rows = buildRows(changes, max(1, m.width-diffMargin(m.width)), m.wrap)
+	m.rows = buildRowsExpanded(changes, max(1, m.width-diffMargin(m.width)), m.wrap, m.expandedDeleted)
 	m.pos = 0
 	if anchor.path != "" {
 		best := -1
@@ -477,6 +481,28 @@ func (m *model) rebuild() {
 	}
 	m.clamp()
 	m.viewTop = m.viewportStart(max(1, m.height-2))
+}
+
+func (m *model) toggleDeletedFile() {
+	if len(m.rows) == 0 || m.pos >= len(m.rows) {
+		return
+	}
+	path := m.rows[m.pos].path
+	changes := m.snapshot.unstaged
+	if m.staged {
+		changes = m.snapshot.staged
+	}
+	for _, c := range changes {
+		if c.path != path || !strings.Contains(c.diff, "\ndeleted file mode ") || strings.Contains(c.diff, "\nnew file mode ") {
+			continue
+		}
+		if m.expandedDeleted == nil {
+			m.expandedDeleted = make(map[string]bool)
+		}
+		m.expandedDeleted[path] = !m.expandedDeleted[path]
+		m.rebuild()
+		return
+	}
 }
 
 func clean(s string) string {
