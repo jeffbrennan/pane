@@ -309,6 +309,13 @@ func (m model) queryTheme() tea.Cmd {
 	}
 }
 
+func (m model) queryThemeOnTick() tea.Cmd {
+	if m.blurred || m.ticks%10 != 0 {
+		return nil
+	}
+	return m.queryTheme()
+}
+
 func load(repo repository, generation int, cache *refreshCache) tea.Cmd {
 	return loadWith(repo, generation, cache, false)
 }
@@ -409,12 +416,13 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if (m.screen == "" || m.screen == "base" || (m.screen == "history" && m.history.path == "")) && m.ticks%interval == 0 {
 			m, cmd = m.refresh()
 		}
-		return m, tea.Batch(cmd, nextTick(), m.queryTheme())
+		return m, tea.Batch(cmd, nextTick(), m.queryThemeOnTick())
 	case tea.BlurMsg:
 		m.blurred = true
 	case tea.FocusMsg:
 		m.blurred, m.ticks = false, 0
-		return m.refresh()
+		m, cmd := m.refresh()
+		return m, tea.Batch(cmd, m.queryTheme())
 	case terminalBackgroundChanged:
 		if m.themeAuto {
 			m.lightTheme = bool(msg)

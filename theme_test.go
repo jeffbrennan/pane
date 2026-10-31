@@ -101,20 +101,33 @@ func TestAutomaticThemeChangesAndManualOverride(t *testing.T) {
 
 func TestThemeAndRepositoryRefreshCadence(t *testing.T) {
 	queries := 0
-	m := model{themeAuto: true, themeQuery: func() { queries++ }}
-	for i := 1; i <= 2; i++ {
+	m := model{screen: "commit", themeAuto: true, themeQuery: func() { queries++ }}
+	for i := 1; i <= 10; i++ {
 		updated, cmd := m.Update(tick{})
 		m = updated.(model)
-		if m.loading != (i == 2) {
-			t.Fatalf("tick %d: repository loading = %t", i, m.loading)
+		if i == 10 {
+			batch, ok := cmd().(tea.BatchMsg)
+			if !ok || len(batch) != 2 {
+				t.Fatalf("tick %d: missing scheduled theme query", i)
+			}
+			batch[1]()
 		}
-		batch, ok := cmd().(tea.BatchMsg)
-		if !ok || len(batch) < 2 {
-			t.Fatalf("tick %d: missing scheduled commands", i)
+	}
+	if queries != 1 {
+		t.Fatalf("got %d theme queries in 5 seconds", queries)
+	}
+	queries = 0
+	for i := 1; i <= 120; i++ {
+		m.ticks = i
+		if cmd := m.queryThemeOnTick(); cmd != nil {
+			cmd()
 		}
-		batch[len(batch)-1]()
-		if queries != i {
-			t.Fatalf("tick %d: got %d theme queries", i, queries)
-		}
+	}
+	if queries != 12 {
+		t.Fatalf("got %d theme queries per minute, want 12", queries)
+	}
+	m.blurred = true
+	if m.queryThemeOnTick() != nil {
+		t.Fatal("blurred terminal should not be queried")
 	}
 }
