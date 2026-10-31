@@ -133,6 +133,29 @@ func (r repository) action(args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+func (r repository) commit(message string) (string, error) {
+	out, err := r.command("diff", "--cached", "--quiet", "--exit-code")
+	if err != nil {
+		exit, ok := err.(*exec.ExitError)
+		if !ok || exit.ExitCode() != 1 {
+			return "", gitError(out, err)
+		}
+	} else {
+		conflicts, conflictErr := r.command("diff", "--name-only", "--diff-filter=U", "-z")
+		if conflictErr != nil {
+			return "", gitError(conflicts, conflictErr)
+		}
+		if len(conflicts) > 0 {
+			return "", fmt.Errorf("resolve merge conflicts outside diffy before committing")
+		}
+		out, err = r.command("add", "--all")
+		if err != nil {
+			return "", gitError(out, err)
+		}
+	}
+	return r.action("commit", "-m", message)
+}
+
 func gitError(out []byte, err error) error {
 	if msg := strings.TrimSpace(string(out)); msg != "" {
 		return fmt.Errorf("%s", msg)

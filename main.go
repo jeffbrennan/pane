@@ -195,7 +195,13 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			message := m.input
 			m.modal = ""
-			return m.runAction("commit", "-m", message)
+			m.busy = true
+			m.generation++
+			repo := m.repo
+			return m, func() tea.Msg {
+				output, err := repo.commit(message)
+				return completed{message: output, err: err}
+			}
 		case "backspace", "ctrl+h":
 			runes := []rune(m.input)
 			if len(runes) > 0 {
