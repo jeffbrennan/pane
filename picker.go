@@ -10,11 +10,13 @@ import (
 )
 
 type pickerState struct {
-	query     string
-	selected  int
-	offset    int
-	searching bool
-	collapsed map[string]bool
+	query        string
+	selected     int
+	offset       int
+	searching    bool
+	collapsed    map[string]bool
+	commitScoped bool
+	commitIndex  int
 }
 
 func (m *model) restorePicker() {
@@ -33,6 +35,9 @@ type fileEntry struct {
 func (m model) fileEntries() []fileEntry {
 	var entries []fileEntry
 	for i, r := range m.rows {
+		if m.modal == "files" && m.picker.commitScoped && r.commitIndex != m.picker.commitIndex {
+			continue
+		}
 		switch {
 		case r.kind == 'f':
 			entries = append(entries, fileEntry{path: r.path, row: i, deleted: r.deletedLines})
@@ -94,6 +99,10 @@ func (m *model) openPicker() {
 	}
 	m.modal = "files"
 	m.picker = pickerState{}
+	if m.screen == "sequence" {
+		m.picker.commitScoped = true
+		m.picker.commitIndex = m.rows[m.pos].commitIndex
+	}
 	current := m.rows[m.pos].path
 	for i, e := range m.pickerItems() {
 		if !e.directory && e.path == current {
@@ -254,9 +263,13 @@ func (m model) showFilesDialog(lines []string) {
 		queryLine = dialogLineWithCursor("/"+query, innerWidth)
 		hint = "↑↓ select  ↵ jump  esc navigate"
 	}
+	title := fmt.Sprintf("Files  %d/%d", len(matches), len(entries))
+	if m.picker.commitScoped && m.picker.commitIndex >= 0 && m.picker.commitIndex < len(m.sequence.commits) {
+		title += "  · " + shortHash(m.sequence.commits[m.picker.commitIndex].hash)
+	}
 	content := []string{
 		"┌" + strings.Repeat("─", boxWidth-2) + "┐",
-		dialogLine(fmt.Sprintf("Files  %d/%d", len(matches), len(entries)), innerWidth),
+		dialogLine(title, innerWidth),
 		queryLine,
 		dialogLine("  "+fmt.Sprintf("%-*s │ ", countWidth, "Changes")+"Files", innerWidth),
 	}

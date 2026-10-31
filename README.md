@@ -6,7 +6,7 @@ If the working tree and index are clean at startup, pane opens commit history. O
 
 Run `pane <commit>` to open a commit's read-only diff directly. A full or abbreviated hash, branch, tag, or other Git commit revision is accepted. Press `Esc` or `q` to return to history.
 
-Pipe commit lines into pane for a continuous read-only review, for example `git log --oneline -n 10 | pane`. Commits appear in input order with a pinned commit heading and file header. The first field of each nonempty line must be a commit hash. Deleted files are expanded, and the file picker and context expansion are not available in this view; search and normal diff navigation work across commits. Press `Esc` or `q` to return to history.
+Pipe commit lines into pane for a continuous read-only review, for example `git log --oneline -n 10 | pane`. Commits appear in input order with a pinned commit heading and file header. The first field of each nonempty line must be a commit hash. The file picker shows files in the commit containing the active line. Deleted files are expanded, and context expansion is not available in this view; search and normal diff navigation work across commits. Press `Esc` or `q` to return to history.
 
 Install with `go install github.com/jeffbrennan/pane@latest`, or run `go install .` from a checkout; either places `pane` in `$(go env GOPATH)/bin`, which must be on your `PATH`. Go and Git must be installed. The initial target is macOS.
 

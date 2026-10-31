@@ -150,16 +150,26 @@ func (m model) handleSequenceKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "?":
 		m.modal = "help"
 		m.helpPos = 0
-	case "f", "e":
+	case "f":
+		m.openPicker()
+	case "e":
 		m.flash = "Not available in multi-commit review"
 	case "esc", "q":
-		m.screen = ""
-		m.rows = nil
-		m.pos, m.viewTop = 0, 0
-		m.rebuild()
-		return m.openHistory()
+		if m.pickerReturn {
+			m.restorePicker()
+			return m, nil
+		}
+		return m.leaveSequence()
 	case "ctrl+c":
 		return m, tea.Quit
 	}
 	return m, nil
+}
+
+func (m model) leaveSequence() (tea.Model, tea.Cmd) {
+	m.screen = ""
+	m.rows = nil
+	m.pos, m.viewTop = 0, 0
+	m.rebuild()
+	return m.openHistory()
 }

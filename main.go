@@ -549,6 +549,9 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.screen == "commit" {
 				return m.returnToHistory()
 			}
+			if m.screen == "sequence" {
+				return m.leaveSequence()
+			}
 			return m.openHistory()
 		}
 		return m, nil

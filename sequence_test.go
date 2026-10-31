@@ -130,3 +130,62 @@ func TestEmptyCommitDoesNotPinPreviousFile(t *testing.T) {
 		t.Fatalf("empty commit inherited previous file header: %#v", m.rows[last])
 	}
 }
+
+func TestSequencePickerUsesHoveredCommit(t *testing.T) {
+	for _, back := range []string{"esc", "q"} {
+		t.Run(back, func(t *testing.T) {
+			m := model{width: 80, height: 12, wrap: true, screen: "sequence", sequence: sequenceState{
+				commits: []commitInfo{{hash: "11111111", subject: "first"}, {hash: "22222222", subject: "second"}},
+				changes: [][]change{
+					{longFile("shared.go"), longFile("only-first.go")},
+					{longFile("shared.go"), longFile("only-second.go")},
+				},
+			}}
+			m.rebuildSequence()
+			for i, r := range m.rows {
+				if r.commitIndex == 1 && r.path == "shared.go" && r.kind == '+' {
+					m.pos = i
+					break
+				}
+			}
+			m.viewTop = 0
+			m = keys(t, m, "f")
+			if m.modal != "files" || !m.picker.commitScoped || m.picker.commitIndex != 1 {
+				t.Fatalf("picker has wrong scope: %#v", m.picker)
+			}
+			view := m.View()
+			if !strings.Contains(view, "22222222") || !strings.Contains(view, "only-second.go") || strings.Contains(view, "only-first.go") || !strings.Contains(view, "Files  2/2") {
+				t.Fatalf("picker shows wrong files: %q", view)
+			}
+			m = keys(t, m, "/", "o", "n", "l", "y", "-", "s", "e", "c", "o", "n", "d", "enter")
+			if m.modal != "" || m.rows[m.pos].path != "only-second.go" || m.rows[m.pos].commitIndex != 1 {
+				t.Fatalf("selected wrong file: %#v", m.rows[m.pos])
+			}
+			m = keys(t, m, back)
+			if m.modal != "files" || m.picker.query != "only-second" || m.picker.commitIndex != 1 {
+				t.Fatalf("picker context not restored: %#v", m.picker)
+			}
+			m = keys(t, m, back)
+			if m.screen != "history" || m.modal != "" || len(m.rows) != 0 {
+				t.Fatalf("picker back did not restore history and working diff: screen=%q rows=%#v", m.screen, m.rows)
+			}
+		})
+	}
+}
+
+func TestSequencePickerEmptyCommit(t *testing.T) {
+	m := model{width: 60, height: 10, screen: "sequence", sequence: sequenceState{
+		commits: []commitInfo{{hash: "11111111", subject: "first"}, {hash: "22222222", subject: "empty"}},
+		changes: [][]change{{longFile("first.go")}, nil},
+	}}
+	m.rebuildSequence()
+	m.pos = len(m.rows) - 1
+	m = keys(t, m, "f")
+	if view := m.View(); !strings.Contains(view, "No matching files") || strings.Contains(view, "first.go") {
+		t.Fatalf("empty commit picker shows other commits: %q", view)
+	}
+	m = keys(t, m, "esc")
+	if m.screen != "sequence" || m.modal != "" {
+		t.Fatal("closing initial picker should return to sequence")
+	}
+}
