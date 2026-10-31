@@ -280,10 +280,6 @@ func (m model) showFilesDialog(lines []string) {
 	}
 	for i := start; i < min(len(items), start+visible); i++ {
 		e := items[i]
-		marker := "  "
-		if i == selected {
-			marker = "▸ "
-		}
 		counts := ""
 		name := e.branch
 		if e.directory {
@@ -297,10 +293,11 @@ func (m model) showFilesDialog(lines []string) {
 			counts = fileCounts(e.file)
 			name += "  " + clean(e.name)
 		}
-		prefix := marker + fmt.Sprintf("%-*s │ ", countWidth, counts)
-		line := dialogLine(prefix+fit(name, max(0, innerWidth-runewidth.StringWidth(prefix))), innerWidth)
+		prefix := "  " + fmt.Sprintf("%-*s │ ", countWidth, counts)
+		text := fit(prefix+fit(name, max(0, innerWidth-runewidth.StringWidth(prefix))), innerWidth)
+		line := dialogLine(text, innerWidth)
 		if i == selected {
-			line = "\x1b[1m" + line + "\x1b[0m"
+			line = "│ \x1b[7m" + text + strings.Repeat(" ", max(0, innerWidth-runewidth.StringWidth(text))) + "\x1b[0m │"
 		}
 		content = append(content, line)
 		shown++

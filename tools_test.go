@@ -206,6 +206,30 @@ func TestFilePickerUsesWiderDialog(t *testing.T) {
 	}
 }
 
+func TestFilePickerHighlightsEntireSelectedRow(t *testing.T) {
+	m := toolModel()
+	m.height = 20
+	m = keys(t, m, "f")
+	for _, selected := range []int{1, 2} {
+		m.picker.selected = selected
+		item := m.pickerItems()[selected]
+		view := m.View()
+		if strings.Count(view, "\x1b[7m") != 1 {
+			t.Fatalf("expected one highlighted row: %q", view)
+		}
+		for _, line := range strings.Split(view, "\n") {
+			if !strings.Contains(line, "\x1b[7m") {
+				continue
+			}
+			start := strings.Index(line, "\x1b[7m")
+			end := strings.Index(line, "\x1b[0m")
+			if end < start || !strings.Contains(line[start:end], item.name) || !strings.HasSuffix(line, "\x1b[0m │") {
+				t.Fatalf("selection does not span row for %q: %q", item.path, line)
+			}
+		}
+	}
+}
+
 func TestFilePickerTreeBranchesAndStableExpansion(t *testing.T) {
 	m := toolModel()
 	m.height = 20
