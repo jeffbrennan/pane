@@ -142,6 +142,55 @@ func TestFilePickerNavigationAndSearchModes(t *testing.T) {
 	}
 }
 
+func TestFilePickerVimMotions(t *testing.T) {
+	m := keys(t, toolModel(), "f")
+	for _, tc := range []struct {
+		input []string
+		want  int
+	}{
+		{[]string{"G"}, 6},
+		{[]string{"g", "g"}, 0},
+		{[]string{"3", "j"}, 3},
+		{[]string{"2", "k"}, 1},
+		{[]string{"4", "G"}, 3},
+		{[]string{"2", "g", "g"}, 1},
+		{[]string{"}"}, 3},
+		{[]string{"{"}, 1},
+		{[]string{"2", "}"}, 4},
+		{[]string{"2", "{"}, 1},
+	} {
+		m = keys(t, m, tc.input...)
+		if m.picker.selected != tc.want {
+			t.Fatalf("%v selected %d, want %d", tc.input, m.picker.selected, tc.want)
+		}
+	}
+	for _, tc := range []struct {
+		key  string
+		want int
+	}{{"ctrl+d", 3}, {"ctrl+f", 6}, {"ctrl+u", 4}, {"ctrl+b", 0}, {"end", 6}, {"home", 0}} {
+		m.handlePickerKey(tc.key, nil)
+		if m.picker.selected != tc.want {
+			t.Fatalf("%s selected %d, want %d", tc.key, m.picker.selected, tc.want)
+		}
+	}
+	m = keys(t, m, "g", "esc")
+	if m.modal != "files" || m.picker.pending != "" {
+		t.Fatal("escape should cancel a pending motion")
+	}
+	m = keys(t, m, "/", "g", "G", "3")
+	if m.picker.query != "gG3" {
+		t.Fatalf("motion keys were not entered as search text: %q", m.picker.query)
+	}
+	m.handlePickerKey("ctrl+d", nil)
+	if m.picker.selected != 0 {
+		t.Fatal("page motion should be safe with no matches")
+	}
+	m = keys(t, toolModel(), "f", "g", "g", "h", "}")
+	if item := m.pickerItems()[m.picker.selected]; item.path != "pkg" {
+		t.Fatalf("directory jump should skip folded descendants: %#v", item)
+	}
+}
+
 func TestFilePickerDirectoryTree(t *testing.T) {
 	m := keys(t, toolModel(), "f")
 	items := m.pickerItems()

@@ -13,6 +13,8 @@ type pickerState struct {
 	query        string
 	selected     int
 	offset       int
+	count        int
+	pending      string
 	searching    bool
 	collapsed    map[string]bool
 	commitScoped bool
@@ -23,6 +25,8 @@ func (m *model) restorePicker() {
 	m.pickerReturn = false
 	m.pickerBackToHistory = true
 	m.picker.searching = false
+	m.picker.pending = ""
+	m.picker.count = 0
 	m.modal = "files"
 }
 
@@ -141,6 +145,29 @@ func (m *model) setPickerDirectory(item pickerItem, collapsed bool) {
 func (m *model) handlePickerKey(key string, runes []rune) bool {
 	items := m.pickerItems()
 	selected := min(m.picker.selected, max(0, len(items)-1))
+	if !m.picker.searching && m.picker.pending == "" && len(key) == 1 && key[0] >= '0' && key[0] <= '9' {
+		m.picker.count = min(1000000, m.picker.count*10+int(key[0]-'0'))
+		return false
+	}
+	count := max(1, m.picker.count)
+	hadCount := m.picker.count > 0
+	if m.picker.pending != "" {
+		pending := m.picker.pending
+		m.picker.pending = ""
+		m.picker.count = 0
+		if pending == "g" && key == "g" {
+			m.picker.selected = min(count-1, max(0, len(items)-1))
+			m.revealPickerSelection()
+			return false
+		}
+		if key == "esc" {
+			return false
+		}
+	}
+	if key != "g" || m.picker.searching {
+		m.picker.count = 0
+	}
+	_, visible := m.pickerViewport(len(items))
 	opened := false
 	switch key {
 	case "ctrl+c":
@@ -165,9 +192,22 @@ func (m *model) handlePickerKey(key string, runes []rune) bool {
 			m.recordJump(before)
 		}
 	case "up", "ctrl+p", "ctrl+k", "shift+tab":
-		m.picker.selected = max(0, m.picker.selected-1)
+		m.picker.selected = max(0, selected-count)
 	case "down", "ctrl+n", "ctrl+j", "tab":
-		m.picker.selected = min(m.picker.selected+1, max(0, len(items)-1))
+		m.picker.selected = min(selected+count, max(0, len(items)-1))
+	case "ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b":
+		amount := visible
+		if key == "ctrl+d" || key == "ctrl+u" {
+			amount = max(1, visible/2)
+		}
+		if key == "ctrl+u" || key == "ctrl+b" {
+			amount = -amount
+		}
+		m.picker.selected = max(0, min(selected+amount*count, len(items)-1))
+	case "home":
+		m.picker.selected = 0
+	case "end":
+		m.picker.selected = max(0, len(items)-1)
 	case "backspace", "ctrl+h":
 		if m.picker.searching {
 			query := []rune(m.picker.query)
@@ -185,9 +225,30 @@ func (m *model) handlePickerKey(key string, runes []rune) bool {
 			case "/":
 				m.picker.searching = true
 			case "j":
-				m.picker.selected = min(m.picker.selected+1, max(0, len(items)-1))
+				m.picker.selected = min(selected+count, max(0, len(items)-1))
 			case "k":
-				m.picker.selected = max(0, m.picker.selected-1)
+				m.picker.selected = max(0, selected-count)
+			case "g":
+				m.picker.pending = "g"
+			case "G":
+				m.picker.selected = max(0, len(items)-1)
+				if hadCount {
+					m.picker.selected = min(count-1, m.picker.selected)
+				}
+			case "{", "}":
+				direction := 1
+				if key == "{" {
+					direction = -1
+				}
+				for i := selected + direction; i >= 0 && i < len(items); i += direction {
+					if items[i].directory {
+						m.picker.selected = i
+						count--
+						if count == 0 {
+							break
+						}
+					}
+				}
 			case "h", "left":
 				if len(items) > 0 {
 					item := items[selected]

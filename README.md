@@ -29,7 +29,7 @@ For development, `just b` builds pane, installs it, and runs it in the current r
 | `zt` / `zz` / `zb` | Place the active diff line at the top / middle / bottom |
 | `}` / `{` | Jump to the next / previous paragraph boundary, or five commits in history |
 | `J` / `K` | Jump to the next / previous file, placing it at the top |
-| `f` | Open file tree; `j` / `k` navigate, `h` / `l` fold directories, `/` searches |
+| `f` | Open file tree; `j` / `k` navigate, `gg` / `G` jump to first / last, `{` / `}` jump between directories, `ctrl-d` / `ctrl-u` and `ctrl-f` / `ctrl-b` move by half / full pages, `h` / `l` fold directories, `/` searches. Counts work with navigation motions. |
 | `/`, `n` / `N` | Search the diff; jump to the next / previous match |
 | `g?` | Search the diff backward; `n` / `N` follow / reverse the search direction |
 | `o` | Open the current file at the active line in `$VISUAL` / `$EDITOR` |
