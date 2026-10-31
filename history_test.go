@@ -140,3 +140,12 @@ func TestHistorySelectionPresentationAndScrolling(t *testing.T) {
 		t.Fatalf("selected commit not visible: %q", view)
 	}
 }
+
+func TestSuccessfulCommitOpensHistory(t *testing.T) {
+	m := model{width: 60, height: 10, busy: true, history: historyState{selected: 5, filter: "old"}}
+	updated, cmd := m.Update(completed{message: "[main abc] message", commitMessage: "message"})
+	got := updated.(model)
+	if got.screen != "history" || got.history.selected != 0 || got.history.filter != "" || !got.history.loading || cmd == nil {
+		t.Fatalf("history did not open after commit: %#v", got)
+	}
+}
