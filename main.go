@@ -1041,7 +1041,7 @@ func (m model) View() string {
 		if m.search.draftDirection < 0 {
 			prefix = "?"
 		}
-		status, hints = prompt(prefix, m.search.draft), keyHints("↵", "search", "esc", "cancel")
+		status, hints = prefix+renderInput(m.search.draft, m.search.cursor, max(1, m.width-1)), keyHints("↵", "search", "esc", "cancel")
 	case "commit":
 		status, hints = "", ""
 		if m.width < 24 || m.height < 9 {

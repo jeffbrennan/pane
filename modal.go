@@ -58,6 +58,12 @@ var shortcutSections = []struct {
 		{"u", "Edit latest unpublished commit message"},
 		{"esc / q", "Back"},
 	}},
+	{"Search input", []shortcut{
+		{"← / →, home / end", "Move within the query"},
+		{"alt-b / alt-f, ctrl-a / ctrl-e", "Move by word or to start / end"},
+		{"ctrl-w / alt-backspace", "Delete previous word"},
+		{"backspace / delete", "Delete character"},
+	}},
 	{"General", []shortcut{
 		{"o", "Open file in $EDITOR"},
 		{"y", "Copy file path / commit hash"},
@@ -191,20 +197,7 @@ func (m model) commitScope() string {
 func (m model) showCommitDialog(lines []string) {
 	boxWidth := min(64, m.width-2)
 	innerWidth := boxWidth - 4
-	runes := []rune(m.input)
-	pos := max(0, min(m.inputCursor, len(runes)))
-	before := clean(string(runes[:pos]))
-	after := clean(string(runes[pos:]))
-	cell := " "
-	if pos < len(runes) {
-		cell = clean(string(runes[pos]))
-		after = clean(string(runes[pos+1:]))
-	}
-	cellWidth := max(1, runewidth.StringWidth(cell))
-	start := max(0, runewidth.StringWidth(before)+cellWidth-innerWidth)
-	visibleBefore := sliceWidth(before, start, innerWidth-cellWidth)
-	remaining := max(0, innerWidth-runewidth.StringWidth(visibleBefore)-cellWidth)
-	body := []string{"", visibleBefore + "\x1b[7m" + cell + styleReset + sliceWidth(after, 0, remaining)}
+	body := []string{"", renderInput(m.input, m.inputCursor, innerWidth)}
 	if m.inputBody != "" {
 		body = append(body, styleDim+"Body preserved"+styleReset)
 	}

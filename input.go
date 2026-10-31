@@ -4,7 +4,31 @@ import (
 	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mattn/go-runewidth"
 )
+
+func renderInput(text string, cursor, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	runes := []rune(text)
+	pos := max(0, min(cursor, len(runes)))
+	before := clean(string(runes[:pos]))
+	after := ""
+	cell := " "
+	if pos < len(runes) {
+		cell = clean(string(runes[pos]))
+		after = clean(string(runes[pos+1:]))
+	}
+	cellWidth := max(1, runewidth.StringWidth(cell))
+	if cellWidth > width {
+		cell, cellWidth = " ", 1
+	}
+	start := max(0, runewidth.StringWidth(before)+cellWidth-width)
+	visibleBefore := sliceWidth(before, start, width-cellWidth)
+	remaining := max(0, width-runewidth.StringWidth(visibleBefore)-cellWidth)
+	return visibleBefore + "\x1b[7m" + cell + styleReset + sliceWidth(after, 0, remaining)
+}
 
 func inputWord(r rune) bool { return unicode.IsLetter(r) || unicode.IsNumber(r) || r == '_' }
 

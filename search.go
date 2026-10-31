@@ -10,6 +10,7 @@ type searchState struct {
 	query, draft              string
 	origin, originTop         int
 	direction, draftDirection int
+	cursor                    int
 }
 
 // searchFold lowercases s unless the query contains an uppercase letter
@@ -45,6 +46,7 @@ func (m *model) startSearch() {
 func (m *model) startSearchDirection(direction int) {
 	m.modal = "search"
 	m.search.draft = ""
+	m.search.cursor = 0
 	m.search.draftDirection = direction
 	m.search.origin, m.search.originTop = m.pos, m.viewTop
 }
@@ -145,17 +147,17 @@ func (m *model) handleSearchKey(key string, runes []rune) {
 		m.pos, m.viewTop = min(m.search.origin, max(0, len(m.rows)-1)), m.search.originTop
 		m.searchJump(m.searchDirection())
 	case "backspace", "ctrl+h":
-		draft := []rune(m.search.draft)
-		if len(draft) == 0 {
+		if m.search.draft == "" {
 			m.modal = ""
 			m.pos, m.viewTop = min(m.search.origin, max(0, len(m.rows)-1)), m.search.originTop
 			return
 		}
-		m.search.draft = string(draft[:len(draft)-1])
+		m.search.draft, m.search.cursor, _ = editLine(m.search.draft, m.search.cursor, key, runes)
 		m.updateSearchDraft()
 	default:
-		if len(runes) > 0 {
-			m.search.draft += string(runes)
+		var handled bool
+		m.search.draft, m.search.cursor, handled = editLine(m.search.draft, m.search.cursor, key, runes)
+		if handled {
 			m.updateSearchDraft()
 		}
 	}

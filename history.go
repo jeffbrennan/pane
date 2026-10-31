@@ -16,6 +16,7 @@ type historyState struct {
 	rows                                                []row
 	selected, offset, pos, horizontal, viewTop, request int
 	filter, draft                                       string
+	draftCursor                                         int
 	searching, loading, stale, more, fetching           bool
 	commitLoadingVisible                                bool
 	statsFetching                                       bool
@@ -209,16 +210,17 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.history.filter = m.history.draft
 			m.history.searching = false
 			return m.handleHistoryKey(key)
-		case "backspace", "ctrl+h":
-			runes := []rune(m.history.draft)
-			if len(runes) > 0 {
-				m.history.draft = string(runes[:len(runes)-1])
-			}
 		default:
+			var runes []rune
 			if key.Type == tea.KeyRunes {
-				m.history.draft += string(key.Runes)
+				runes = key.Runes
 			} else if key.Type == tea.KeySpace {
-				m.history.draft += " "
+				runes = []rune{' '}
+			}
+			before := m.history.draft
+			m.history.draft, m.history.draftCursor, _ = editLine(before, m.history.draftCursor, key.String(), runes)
+			if before == m.history.draft {
+				return m, nil
 			}
 		}
 		m.history.selected, m.history.offset = 0, 0
@@ -288,6 +290,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "/":
 		m.history.searching = true
 		m.history.draft = m.history.filter
+		m.history.draftCursor = len([]rune(m.history.draft))
 	case "y":
 		if len(matches) > 0 {
 			hash := matches[min(m.history.selected, len(matches)-1)].hash
@@ -532,7 +535,7 @@ func (m model) historyView() string {
 	}
 	status, hints := "", keyHints("↵", "open", "/", "search", "?", "help")
 	if m.history.searching {
-		status, hints = prompt("/", m.history.draft), keyHints("↵", "open", "esc", "cancel")
+		status, hints = "/"+renderInput(m.history.draft, m.history.draftCursor, max(1, m.width-1)), keyHints("↵", "open", "esc", "cancel")
 	} else if m.history.filter != "" {
 		status, hints = "/"+clean(m.history.filter), keyHints("↵", "open", "/", "edit", "esc", "back")
 	}

@@ -12,6 +12,7 @@ import (
 
 type pickerState struct {
 	query        string
+	cursor       int
 	selected     int
 	offset       int
 	count        int
@@ -149,6 +150,17 @@ func (m *model) setPickerDirectory(item pickerItem, collapsed bool) {
 }
 
 func (m *model) handlePickerKey(key string, runes []rune) bool {
+	if m.picker.searching {
+		switch key {
+		case "left", "right", "home", "end", "ctrl+a", "ctrl+e", "alt+b", "alt+f", "ctrl+w", "alt+backspace", "backspace", "ctrl+h", "delete":
+			before := m.picker.query
+			m.picker.query, m.picker.cursor, _ = editLine(before, m.picker.cursor, key, nil)
+			if before != m.picker.query {
+				m.resetPickerSearch()
+			}
+			return false
+		}
+	}
 	items := m.pickerItems()
 	selected := min(m.picker.selected, max(0, len(items)-1))
 	if !m.picker.searching && m.picker.pending == "" && len(key) == 1 && key[0] >= '0' && key[0] <= '9' {
@@ -214,22 +226,15 @@ func (m *model) handlePickerKey(key string, runes []rune) bool {
 		m.picker.selected = 0
 	case "end":
 		m.picker.selected = max(0, len(items)-1)
-	case "backspace", "ctrl+h":
-		if m.picker.searching {
-			query := []rune(m.picker.query)
-			if len(query) > 0 {
-				m.picker.query = string(query[:len(query)-1])
-				m.resetPickerSearch()
-			}
-		}
 	default:
 		if m.picker.searching && len(runes) > 0 {
-			m.picker.query += string(runes)
+			m.picker.query, m.picker.cursor, _ = editLine(m.picker.query, m.picker.cursor, key, runes)
 			m.resetPickerSearch()
 		} else if !m.picker.searching {
 			switch key {
 			case "/":
 				m.picker.searching = true
+				m.picker.cursor = len([]rune(m.picker.query))
 			case "j":
 				m.picker.selected = min(selected+count, max(0, len(items)-1))
 			case "k":
@@ -310,12 +315,12 @@ func (m model) showFilesDialog(lines []string) {
 	if m.width < 20 || len(lines) < 8 {
 		status := "file: /" + clean(m.picker.query)
 		if m.picker.searching {
-			status += "_"
+			status = "file: /" + renderInput(m.picker.query, m.picker.cursor, max(1, m.width-7))
 		}
 		if len(items) > 0 {
 			status += "  " + clean(items[selected].path)
 		}
-		lines[len(lines)-1] = fit(status, m.width)
+		lines[len(lines)-1] = bar(m.width, status, "")
 		return
 	}
 	boxWidth := min(120, m.width-2)
@@ -341,7 +346,7 @@ func (m model) showFilesDialog(lines []string) {
 	}
 	hint := keyHints("j/k", "move", "h/l", "fold", "/", "filter", "↵", "open", "esc", "close")
 	if m.picker.searching {
-		queryLine = "/" + query + cursor
+		queryLine = "/" + renderInput(m.picker.query, m.picker.cursor, max(1, innerWidth-1))
 		hint = keyHints("↑/↓", "move", "↵", "open", "esc", "done")
 	} else if ansi.StringWidth(hint) > innerWidth {
 		hint = keyHints("/", "filter", "↵", "open", "esc", "close")
