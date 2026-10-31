@@ -67,7 +67,7 @@ func (r repository) historyWithPath(skip, limit int, dateFormat, path string) ([
 	if path != "" {
 		args = append(args, "--follow", "--name-status", "-M", "--", path)
 	}
-	out, err = r.command(args...)
+	out, err = r.commandStdout(args...)
 	if err != nil {
 		return nil, gitError(out, err)
 	}
@@ -128,7 +128,7 @@ func (r repository) historyStats(hashes []string) ([]commitInfo, error) {
 	args := []string{"log", "--no-walk=unsorted", "-z", "--numstat", "-M", "--no-ext-diff", "--no-textconv", "--diff-merges=first-parent", "--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00"}
 	args = append(args, hashes...)
 	args = append(args, "--")
-	out, err := r.command(args...)
+	out, err := r.commandStdout(args...)
 	if err != nil {
 		return nil, gitError(out, err)
 	}
@@ -229,10 +229,10 @@ func (r repository) commitChangesWithoutSyntax(hash string) ([]change, error) {
 	go func() {
 		args := append([]string{"show", "--first-parent", "--format="}, r.diffOptions()...)
 		args = append(args, "--src-prefix=a/", "--dst-prefix=b/", hash, "--")
-		out, err := r.command(args...)
+		out, err := r.commandStdout(args...)
 		patchResult <- result{out, err}
 	}()
-	out, err := r.command("show", "--first-parent", "--format=", "--name-status", "-M", "-z", hash, "--")
+	out, err := r.commandStdout("show", "--first-parent", "--format=", "--name-status", "-M", "-z", hash, "--")
 	loadedPatch := <-patchResult
 	if err != nil {
 		return nil, gitError(out, err)
@@ -271,7 +271,7 @@ func (r repository) commitChangesWithoutSyntax(hash string) ([]change, error) {
 			if oldPaths[path] != "" {
 				args = append(args, oldPaths[path])
 			}
-			out, err := r.command(args...)
+			out, err := r.commandStdout(args...)
 			if err != nil {
 				return "", gitError(out, err)
 			}
@@ -287,7 +287,7 @@ func (r repository) commitChangesWithoutSyntax(hash string) ([]change, error) {
 				if oldPaths[path] != "" {
 					args = append(args, oldPaths[path])
 				}
-				out, err := original.command(args...)
+				out, err := original.commandStdout(args...)
 				if err != nil {
 					return "", gitError(out, err)
 				}

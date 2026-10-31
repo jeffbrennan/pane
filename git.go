@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -97,6 +98,17 @@ func statusSettings(config string) repository {
 
 func (r repository) command(args ...string) ([]byte, error) {
 	return r.commandInput(nil, args...)
+}
+
+func (r repository) commandStdout(args ...string) ([]byte, error) {
+	cmd := r.gitCommand(args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, gitError(stderr.Bytes(), err)
+	}
+	return out, nil
 }
 
 func (r repository) commandInput(input io.Reader, args ...string) ([]byte, error) {

@@ -36,7 +36,7 @@ func (r repository) mergeBase(revision string) (string, error) {
 
 func (r repository) baseChanges(hash string) ([]change, error) {
 	args := []string{"diff", "--name-status", "-M", "-z", hash, "--"}
-	out, err := r.command(args...)
+	out, err := r.commandStdout(args...)
 	if err != nil {
 		return nil, gitError(out, err)
 	}
@@ -61,7 +61,7 @@ func (r repository) baseChanges(hash string) ([]change, error) {
 	}
 	args = append([]string{"diff"}, r.diffOptions()...)
 	args = append(args, "--src-prefix=a/", "--dst-prefix=b/", hash, "--")
-	patch, err := r.command(args...)
+	patch, err := r.commandStdout(args...)
 	if err != nil {
 		return nil, gitError(patch, err)
 	}
@@ -81,7 +81,7 @@ func (r repository) baseChanges(hash string) ([]change, error) {
 		if c.oldPath != "" {
 			args = append(args, c.oldPath)
 		}
-		out, err := r.command(args...)
+		out, err := r.commandStdout(args...)
 		if err != nil {
 			return "", gitError(out, err)
 		}

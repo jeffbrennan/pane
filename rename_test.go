@@ -127,6 +127,50 @@ func TestPureRenameAndQuotedPaths(t *testing.T) {
 	}
 }
 
+func TestHistoryAndChangesIgnoreRenameLimitWarning(t *testing.T) {
+	r := testRepo(t)
+	for i := 0; i < 4; i++ {
+		writeFile(t, r, fmt.Sprintf("old%d", i), fmt.Sprintf("old content %d\n", i))
+	}
+	if _, err := r.commit("base"); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 4; i++ {
+		if err := os.Remove(filepath.Join(r.root, fmt.Sprintf("old%d", i))); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, r, fmt.Sprintf("new%d", i), fmt.Sprintf("new content %d\n", i))
+	}
+	if _, err := r.commit("replace"); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := r.command("config", "diff.renameLimit", "1"); err != nil {
+		t.Fatalf("config: %s: %v", out, err)
+	}
+	out, err := r.command("log", "-1", "--numstat", "-M", "--format=", "HEAD")
+	if err != nil || !strings.Contains(string(out), "exhaustive rename detection was skipped") {
+		t.Fatalf("expected rename warning: %q, %v", out, err)
+	}
+	stats, err := r.historyStats([]string{"HEAD"})
+	if err != nil || len(stats) != 1 || stats[0].added != 4 || stats[0].deleted != 4 {
+		t.Fatalf("stats: %#v, %v", stats, err)
+	}
+	for name, load := range map[string]func() ([]change, error){
+		"commit": func() ([]change, error) { return r.commitChangesWithoutSyntax("HEAD") },
+		"base":   func() ([]change, error) { return r.baseChanges("HEAD~1") },
+	} {
+		changes, err := load()
+		if err != nil || len(changes) != 8 {
+			t.Fatalf("%s changes: %#v, %v", name, changes, err)
+		}
+		for _, c := range changes {
+			if strings.Contains(c.diff, "exhaustive rename detection was skipped") {
+				t.Fatalf("%s diff contains warning: %q", name, c.diff)
+			}
+		}
+	}
+}
+
 func TestRenameHeadersWrapAndBehaveAsOneFile(t *testing.T) {
 	c := change{oldPath: "old/a/very/long/filename.go", path: "new/a/very/long/filename.go", diff: "similarity index 100%\n"}
 	m := model{width: 20, height: 8, wrap: true, snapshot: snapshot{unstaged: []change{c}}}
