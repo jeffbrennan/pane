@@ -157,9 +157,20 @@ func main() {
 	if tracking.setHandler != nil {
 		tracking.setHandler(func(light bool) { go program.Send(terminalBackgroundChanged(light)) })
 	}
-	if _, err := program.Run(); err != nil {
+	final, err := program.Run()
+	if result, ok := final.(model); ok {
+		result.closeHistoryStreams()
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
+	}
+}
+
+func (m model) closeHistoryStreams() {
+	m.history.stream.close()
+	if m.fileHistoryReturn != nil {
+		m.fileHistoryReturn.history.stream.close()
 	}
 }
 
@@ -552,6 +563,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errorText = msg.err.Error()
 			m.errorPos = 0
 			m.modal = "error"
+			if m.history.stale {
+				return m.reloadHistory()
+			}
 			break
 		}
 		m.history.changes = msg.changes

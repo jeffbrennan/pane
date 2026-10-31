@@ -570,6 +570,34 @@ func TestSearchFetchesOlderHistory(t *testing.T) {
 	}
 }
 
+func TestHistorySearchUsesLargerPages(t *testing.T) {
+	r := testRepo(t)
+	writeFile(t, r, "file", "content\n")
+	if _, err := r.commit("initial"); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name   string
+		filter string
+		limit  int
+	}{
+		{name: "navigation", limit: historyPage},
+		{name: "search", filter: "initial", limit: 5 * historyPage},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m := model{repo: r, screen: "history", history: historyState{commits: make([]commitInfo, historyPage), selected: historyPage - 1, more: true, filter: tt.filter}}
+			_, cmd := m.loadMoreHistory()
+			if cmd == nil {
+				t.Fatal("expected a page request")
+			}
+			msg := cmd().(historyLoaded)
+			if msg.err != nil || msg.limit != tt.limit || msg.skip != historyPage {
+				t.Fatalf("page request: skip=%d limit=%d err=%v", msg.skip, msg.limit, msg.err)
+			}
+		})
+	}
+}
+
 func TestHistoryHeaderHeight(t *testing.T) {
 	for _, available := range []bool{false, true} {
 		for height := 0; height < 10; height++ {

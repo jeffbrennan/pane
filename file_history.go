@@ -52,11 +52,13 @@ func (m model) openFileHistory() (tea.Model, tea.Cmd) {
 }
 
 func (m model) leaveFileHistory() (tea.Model, tea.Cmd) {
+	m.history.stream.close()
 	if m.fileHistoryReturn == nil {
 		return m, tea.Quit
 	}
 	previous := *m.fileHistoryReturn
 	previous.fileHistoryReturn = nil
+	previous.history.request = max(previous.history.request, m.history.request) + 1
 	whitespaceChanged := previous.repo.ignoreSpace != m.repo.ignoreSpace
 	headChanged := previous.snapshot.branch.available && m.snapshot.branch.available && previous.snapshot.branch.head != m.snapshot.branch.head
 	previous.repo, previous.snapshot, previous.refreshCache = m.repo, m.snapshot, m.refreshCache
@@ -131,7 +133,7 @@ func initialFileHistory(repo repository, path string) (model, error) {
 	if err != nil {
 		return model{}, err
 	}
-	return model{repo: repo, wrap: true, loading: true, startup: true, screen: "history", history: historyState{path: resolved, loading: true, request: 1}}, nil
+	return model{repo: repo, wrap: true, loading: true, startup: true, screen: "history", history: historyState{path: resolved, stream: newHistoryStream(repo, resolved), loading: true, request: 1}}, nil
 }
 
 func fileHistoryUsage() string {

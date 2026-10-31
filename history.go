@@ -10,6 +10,7 @@ import (
 )
 
 type historyState struct {
+	stream                                              *historyStream
 	commits                                             []commitInfo
 	statsCache                                          map[string]commitInfo
 	changes                                             []change
@@ -100,6 +101,8 @@ func (m model) openHistory() (tea.Model, tea.Cmd) {
 }
 
 func (m model) reloadHistory() (model, tea.Cmd) {
+	m.history.stream.close()
+	m.history.stream = newHistoryStream(m.repo, m.history.path)
 	m.history.loading = true
 	m.history.stale = false
 	m.history.fetching = false
@@ -150,8 +153,19 @@ func (m model) loadHistoryBackground() (model, tea.Cmd) {
 
 func (m model) fetchHistory(skip, limit int) tea.Cmd {
 	repo, request, path := m.repo, m.history.request, m.history.path
+	requestStream := m.history.stream
 	return func() tea.Msg {
-		commits, err := repo.historyWithPath(skip, limit, "%aI", path)
+		stream := requestStream
+		if stream == nil {
+			stream = newHistoryStream(repo, path)
+			defer stream.close()
+			if skip > 0 {
+				if _, err := stream.nextPage(skip); err != nil {
+					return historyLoaded{err: err, request: request, skip: skip, limit: limit}
+				}
+			}
+		}
+		commits, err := stream.nextPage(limit)
 		count := 0
 		if skip == 0 {
 			if entries, stashErr := repo.stashes(); stashErr == nil {
@@ -172,7 +186,11 @@ func (m model) loadMoreHistory() (model, tea.Cmd) {
 		return m, nil
 	}
 	m.history.fetching = true
-	return m, m.fetchHistory(len(m.history.commits), historyPage)
+	limit := historyPage
+	if m.historyQuery() != "" {
+		limit = 5 * historyPage
+	}
+	return m, m.fetchHistory(len(m.history.commits), limit)
 }
 
 func (m model) historyQuery() string {
@@ -282,8 +300,11 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.leaveFileHistory()
 		}
 		m.screen = ""
+		m.history.stream.close()
+		m.history.stream = nil
 		m.history.request++
 	case "ctrl+c":
+		m.closeHistoryStreams()
 		return m, tea.Quit
 	case "?":
 		m.modal = "help"
@@ -371,6 +392,10 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.history.current = matches[min(m.history.selected, len(matches)-1)]
+		if m.history.fetching {
+			m.history.stream.close()
+			m.history.stale = true
+		}
 		m.history.request++
 		m.history.loading = true
 		m.history.commitLoadingVisible = false
@@ -439,6 +464,7 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.returnToHistory()
 	}
 	if key.String() == "ctrl+c" {
+		m.closeHistoryStreams()
 		return m, tea.Quit
 	}
 	if key.String() == "?" {

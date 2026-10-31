@@ -61,12 +61,17 @@ func (r repository) command(args ...string) ([]byte, error) {
 }
 
 func (r repository) commandInput(input io.Reader, args ...string) ([]byte, error) {
+	cmd := r.gitCommand(args...)
+	cmd.Stdin = input
+	return cmd.CombinedOutput()
+}
+
+func (r repository) gitCommand(args ...string) *exec.Cmd {
 	if r.commandHook != nil {
 		r.commandHook(args)
 	}
 	cmd := exec.Command("git", args...)
 	cmd.Dir = r.root
-	cmd.Stdin = input
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_LITERAL_PATHSPECS=1", "GIT_PAGER=cat", "GIT_EDITOR=true")
 	if len(args) > 0 && args[0] == "stash" {
 		// Git stash uses its own magic pathspecs when saving untracked files.
@@ -75,7 +80,7 @@ func (r repository) commandInput(input io.Reader, args ...string) ([]byte, error
 	if os.Getenv("GIT_SSH_COMMAND") == "" {
 		cmd.Env = append(cmd.Env, "GIT_SSH_COMMAND=ssh -o BatchMode=yes")
 	}
-	return cmd.CombinedOutput()
+	return cmd
 }
 
 func (r repository) applyPatch(patch string, args ...string) error {

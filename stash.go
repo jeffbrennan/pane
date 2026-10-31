@@ -119,6 +119,10 @@ func (r repository) stashAction(operation string, target stashEntry) (string, er
 }
 
 func (m model) openStashes() (tea.Model, tea.Cmd) {
+	if m.screen == "history" {
+		m.history.stream.close()
+		m.history.stream = nil
+	}
 	m.screen = "stashes"
 	m.stash.viewing = false
 	m.stash.request++
@@ -157,6 +161,7 @@ func (m model) handleStashKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc", "q":
 		return m.openHistory()
 	case "ctrl+c":
+		m.closeHistoryStreams()
 		return m, tea.Quit
 	case "j", "down":
 		m.stash.selected = min(m.stash.selected+1, max(0, count-1))
