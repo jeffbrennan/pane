@@ -181,3 +181,40 @@ func TestInitialModelOpensSymmetricRange(t *testing.T) {
 		t.Fatalf("incorrect symmetric range: %#v", m.sequence.commits)
 	}
 }
+
+func TestCommitFirstScreenIsHighlighted(t *testing.T) {
+	r := testRepo(t)
+	body := func(word string) string {
+		return "package main\n" + strings.Repeat("var "+word+" = 1\n", startupSyntaxLines)
+	}
+	writeFile(t, r, "a.go", body("a"))
+	writeFile(t, r, "b.go", body("b"))
+	if _, err := r.commit("first"); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := r.action("rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	changes, err := r.commitChangesFirstScreen(hash, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) != 2 || changes[0].syntaxDiff == "" || changes[1].syntaxDiff != "" {
+		t.Fatal("only the first screen's file should be highlighted when a commit opens")
+	}
+	focused, err := r.commitChangesFirstScreen(hash, "b.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if focused[0].syntaxDiff != "" || focused[1].syntaxDiff == "" {
+		t.Fatal("the first screen should start at the focused file")
+	}
+	msg, ok := loadCommitSyntax(r, hash, 1, changes)().(commitSyntaxLoaded)
+	if !ok || msg.changes[0].syntaxDiff != changes[0].syntaxDiff || msg.changes[1].syntaxDiff == "" {
+		t.Fatal("follow-up load should highlight the deferred file")
+	}
+	if loadCommitSyntax(r, hash, 1, msg.changes) != nil {
+		t.Fatal("nothing should be left to highlight")
+	}
+}

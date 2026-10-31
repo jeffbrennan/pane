@@ -3,6 +3,7 @@ package main
 import (
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -88,6 +89,15 @@ func syntaxLexer(path string) chroma.Lexer {
 }
 
 func (r repository) loadSyntaxDiffs(changes []change, key contextKey) {
+	for i, diff := range r.syntaxDiffs(changes, key) {
+		changes[i].syntaxDiff = diff
+	}
+}
+
+// syntaxDiffs loads the full-context diffs that highlighting tokenizes. It
+// only needs paths, so callers can run it alongside the display diffs.
+func (r repository) syntaxDiffs(changes []change, key contextKey) []string {
+	diffs := make([]string, len(changes))
 	var wg sync.WaitGroup
 	limit := make(chan struct{}, 8)
 	for i := range changes {
@@ -102,14 +112,17 @@ func (r repository) loadSyntaxDiffs(changes []change, key contextKey) {
 			fileKey.path = changes[i].path
 			diff, err := r.fullContext(fileKey, changes[i].diff, changes[i].oldPath)
 			if err == nil && len(diff) <= 2*1024*1024 {
-				changes[i].syntaxDiff = diff
+				diffs[i] = diff
 			}
 		}(i)
 	}
 	wg.Wait()
+	return diffs
 }
 
-type syntaxKey struct{ path, diff string }
+// syntaxKey identifies tokenized lines: a whole file when display is empty,
+// otherwise only the lines that display shows.
+type syntaxKey struct{ path, diff, display string }
 
 type syntaxResult struct{ old, new map[int]syntaxLine }
 
@@ -123,18 +136,38 @@ var syntaxCache = struct {
 
 const syntaxCacheSize = 512
 
+// syntaxWindowLead is how many lines around each displayed run are tokenized.
+// Lines before let a run that starts inside a comment or string be lexed
+// correctly; lines after let the lexer see where that comment or string
+// closes, since an unterminated one is not recognized.
+const syntaxWindowLead = 50
+
+// syntaxLines tokenizes the old and new sides of a full-context diff.
 func syntaxLines(path, diff string) (map[int]syntaxLine, map[int]syntaxLine) {
+	return syntaxLinesFor(path, diff, "")
+}
+
+// syntaxLinesFor returns tokenized lines for the lines that display shows,
+// using whole-file results once they exist. Tokenizing only displayed lines
+// costs a fraction of a whole file, so the first paint can be highlighted.
+func syntaxLinesFor(path, diff, display string) (map[int]syntaxLine, map[int]syntaxLine) {
 	if diff == "" || syntaxLexer(path) == nil {
 		return nil, nil
 	}
-	key := syntaxKey{path, diff}
+	if display == diff {
+		display = ""
+	}
 	syntaxCache.Lock()
-	cached, ok := syntaxCache.entries[key]
+	cached, ok := syntaxCache.entries[syntaxKey{path, diff, ""}]
+	if !ok && display != "" {
+		cached, ok = syntaxCache.entries[syntaxKey{path, diff, display}]
+	}
 	syntaxCache.Unlock()
 	if ok {
 		return cached.old, cached.new
 	}
-	old, new := tokenizeDiff(path, diff)
+	key := syntaxKey{path, diff, display}
+	old, new := tokenizeDiff(path, diff, display)
 	syntaxCache.Lock()
 	if len(syntaxCache.entries) >= syntaxCacheSize {
 		clear(syntaxCache.entries)
@@ -144,9 +177,16 @@ func syntaxLines(path, diff string) (map[int]syntaxLine, map[int]syntaxLine) {
 	return old, new
 }
 
-// warmSyntax tokenizes changes ahead of time, off the UI goroutine, one
-// file per core.
+// warmSyntax tokenizes the displayed lines of changes ahead of time, off the
+// UI goroutine, one file per core. Whole files follow in the background, for
+// context expansion and for runs whose lead-in missed an opening comment or
+// string; later rebuilds pick them up.
 func warmSyntax(changes []change) {
+	eachSyntax(changes, func(c change) { syntaxLinesFor(c.path, c.syntaxDiff, c.diff) })
+	go eachSyntax(changes, func(c change) { syntaxLines(c.path, c.syntaxDiff) })
+}
+
+func eachSyntax(changes []change, tokenize func(change)) {
 	var wg sync.WaitGroup
 	limit := make(chan struct{}, runtime.GOMAXPROCS(0))
 	for _, c := range changes {
@@ -157,13 +197,72 @@ func warmSyntax(changes []change) {
 		limit <- struct{}{}
 		go func() {
 			defer func() { <-limit; wg.Done() }()
-			syntaxLines(c.path, c.syntaxDiff)
+			tokenize(c)
 		}()
 	}
 	wg.Wait()
 }
 
-func tokenizeDiff(path, diff string) (map[int]syntaxLine, map[int]syntaxLine) {
+// displayedLines returns the new-side and old-side line numbers that display
+// shows: context and added lines are highlighted from the new side, removed
+// lines from the old side.
+func displayedLines(display string) (oldLines, newLines []int) {
+	oldNumber, newNumber, inHunk := 0, 0, false
+	for _, line := range strings.Split(display, "\n") {
+		if match := matchHunkHeader(line); match != nil {
+			oldNumber, _ = strconv.Atoi(match[1])
+			newNumber, _ = strconv.Atoi(match[3])
+			inHunk = true
+			continue
+		}
+		if !inHunk || len(line) == 0 {
+			continue
+		}
+		switch line[0] {
+		case ' ':
+			newLines = append(newLines, newNumber)
+			oldNumber++
+			newNumber++
+		case '-':
+			oldLines = append(oldLines, oldNumber)
+			oldNumber++
+		case '+':
+			newLines = append(newLines, newNumber)
+			newNumber++
+		}
+	}
+	return oldLines, newLines
+}
+
+// tokenizeWindows tokenizes the runs of lines containing wanted, each with
+// syntaxWindowLead lines on either side, keyed like tokenizeLines.
+func tokenizeWindows(lexer chroma.Lexer, lines []string, wanted []int) map[int]syntaxLine {
+	result := make(map[int]syntaxLine, len(wanted))
+	slices.Sort(wanted)
+	for i := 0; i < len(wanted); {
+		first, last := wanted[i], wanted[i]
+		for i++; i < len(wanted) && wanted[i]-last <= syntaxWindowLead; i++ {
+			last = wanted[i]
+		}
+		first, last = max(1, first), min(len(lines), last)
+		if first > last {
+			continue
+		}
+		start, end := max(1, first-syntaxWindowLead), min(len(lines), last+syntaxWindowLead)
+		tokenized := tokenizeLines(lexer, lines[start-1:end])
+		if tokenized == nil {
+			return nil
+		}
+		for number := first; number <= last; number++ {
+			result[number] = tokenized[number-start+1]
+		}
+	}
+	return result
+}
+
+// tokenizeDiff tokenizes a full-context diff, every line when display is
+// empty and otherwise only the lines that display shows.
+func tokenizeDiff(path, diff, display string) (map[int]syntaxLine, map[int]syntaxLine) {
 	lexer := syntaxLexer(path)
 	if lexer == nil || diff == "" {
 		return nil, nil
@@ -194,7 +293,11 @@ func tokenizeDiff(path, diff string) (map[int]syntaxLine, map[int]syntaxLine) {
 			new = append(new, text)
 		}
 	}
-	return tokenizeLines(lexer, old), tokenizeLines(lexer, new)
+	if display == "" {
+		return tokenizeLines(lexer, old), tokenizeLines(lexer, new)
+	}
+	oldLines, newLines := displayedLines(display)
+	return tokenizeWindows(lexer, old, oldLines), tokenizeWindows(lexer, new, newLines)
 }
 
 func tokenizeLines(lexer chroma.Lexer, lines []string) map[int]syntaxLine {

@@ -68,7 +68,7 @@ func buildRowsDisplay(changes []change, width int, wrap bool, expanded map[strin
 		gutterWidth = max(gutterWidth, lineNumberWidth(strings.Split(c.diff, "\n")))
 	}
 	for i, c := range changes {
-		oldSyntax, newSyntax := syntaxLines(c.path, c.syntaxDiff)
+		oldSyntax, newSyntax := syntaxLinesFor(c.path, c.syntaxDiff, c.diff)
 		if i > 0 {
 			rows = append(rows, row{path: c.path, line: -2, kind: 's'})
 		}

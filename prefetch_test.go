@@ -3,7 +3,11 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/alecthomas/chroma/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func commitFile(t *testing.T, r repository, path, content, message string) {
@@ -86,5 +90,59 @@ func TestDirtyStartupDiscardsPrefetchedHistory(t *testing.T) {
 	m = updated.(model)
 	if m.screen != "" || m.prefetch != nil || len(m.snapshot.unstaged) != 1 {
 		t.Fatalf("dirty startup should show the diff and drop the prefetch; screen %q", m.screen)
+	}
+}
+
+func TestDirtyStartupFirstScreenIsHighlighted(t *testing.T) {
+	r := testRepo(t)
+	commitFile(t, r, "main.go", "package main\n", "first")
+	writeFile(t, r, "main.go", "package main\n\nfunc main() {}\n")
+	m, err := initialModel(r, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.width, m.height = 80, 24
+	m.prefetch = startPrefetch(r)
+	updated, _ := m.Update(m.prefetch.loadStatus()())
+	m = updated.(model)
+	defer m.closeHistoryStreams()
+	if len(m.snapshot.unstaged) != 1 || m.snapshot.unstaged[0].syntaxDiff == "" {
+		t.Fatal("first load should include highlighting")
+	}
+	view := m.View()
+	if !strings.Contains(ansi.Strip(view), "func main") || !strings.Contains(view, tokenColor(chroma.KeywordDeclaration)+"func") {
+		t.Fatalf("first screen should be highlighted: %q", view)
+	}
+}
+
+func TestStartupDefersOffscreenHighlighting(t *testing.T) {
+	r := testRepo(t)
+	body := func(word string) string {
+		return "package main\n" + strings.Repeat("var "+word+" = 1\n", startupSyntaxLines)
+	}
+	commitFile(t, r, "a.go", body("a"), "first")
+	writeFile(t, r, "b.go", body("b"))
+	if out, err := r.command("add", "b.go"); err != nil {
+		t.Fatalf("%s: %v", out, err)
+	}
+	if out, err := r.command("commit", "-m", "second"); err != nil {
+		t.Fatalf("%s: %v", out, err)
+	}
+	writeFile(t, r, "a.go", body("x"))
+	writeFile(t, r, "b.go", body("y"))
+	first, _, err := r.loadChanges(nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unstaged := first.snapshot.unstaged
+	if !first.plain || unstaged[0].syntaxDiff == "" || unstaged[1].syntaxDiff != "" {
+		t.Fatal("only the first screen's file should be highlighted at startup")
+	}
+	next, unchanged, err := r.loadCached(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged || next.plain || next.snapshot.unstaged[1].syntaxDiff == "" {
+		t.Fatal("follow-up load should highlight the deferred file")
 	}
 }

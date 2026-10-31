@@ -193,14 +193,51 @@ func (r repository) commitChanges(hash string) ([]change, error) {
 	return changes, err
 }
 
+// commitChangesFirstScreen loads a commit's changes with the files on its
+// first screen highlighted, so opening it paints in color. The first screen
+// starts at focus when a change has that path. Later files start plain for
+// loadCommitSyntax; see startupSyntaxLines.
+func (r repository) commitChangesFirstScreen(hash, focus string) ([]change, error) {
+	changes, err := r.commitChangesWithoutSyntax(hash)
+	if err != nil {
+		return changes, err
+	}
+	start := 0
+	for i, c := range changes {
+		if focus != "" && (c.path == focus || c.oldPath == focus) {
+			start = i
+			break
+		}
+	}
+	end, shown := start, 0
+	for ; end < len(changes) && shown < startupSyntaxLines; end++ {
+		shown += strings.Count(changes[end].diff, "\n")
+	}
+	first := changes[start:end]
+	r.loadSyntaxDiffs(first, contextKey{commit: hash})
+	warmSyntax(first)
+	return changes, nil
+}
+
 func (r repository) commitChangesWithoutSyntax(hash string) ([]change, error) {
+	// The patch does not depend on the name status, so both load at once.
+	type result struct {
+		out []byte
+		err error
+	}
+	patchResult := make(chan result, 1)
+	go func() {
+		args := append([]string{"show", "--first-parent", "--format="}, r.diffOptions()...)
+		args = append(args, "--src-prefix=a/", "--dst-prefix=b/", hash, "--")
+		out, err := r.command(args...)
+		patchResult <- result{out, err}
+	}()
 	out, err := r.command("show", "--first-parent", "--format=", "--name-status", "-M", "-z", hash, "--")
+	loadedPatch := <-patchResult
 	if err != nil {
 		return nil, gitError(out, err)
 	}
-	args := append([]string{"show", "--first-parent", "--format="}, r.diffOptions()...)
-	args = append(args, "--src-prefix=a/", "--dst-prefix=b/", hash, "--")
-	patch, err := r.command(args...)
+	patch, err := loadedPatch.out, loadedPatch.err
 	if err != nil {
 		return nil, gitError(patch, err)
 	}

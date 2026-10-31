@@ -55,11 +55,27 @@ func commitLoadingTimer(request int) tea.Cmd {
 	})
 }
 
+// loadCommitSyntax highlights the changes that commitChangesFirstScreen left
+// plain.
 func loadCommitSyntax(repo repository, hash string, request int, changes []change) tea.Cmd {
 	changes = append([]change(nil), changes...)
+	var indexes []int
+	var plain []change
+	for i, c := range changes {
+		if c.syntaxDiff == "" && syntaxLexer(c.path) != nil {
+			indexes = append(indexes, i)
+			plain = append(plain, c)
+		}
+	}
+	if len(plain) == 0 {
+		return nil
+	}
 	return func() tea.Msg {
-		repo.loadSyntaxDiffs(changes, contextKey{commit: hash})
-		warmSyntax(changes)
+		repo.loadSyntaxDiffs(plain, contextKey{commit: hash})
+		warmSyntax(plain)
+		for i, c := range plain {
+			changes[indexes[i]] = c
+		}
 		return commitSyntaxLoaded{changes: changes, request: request}
 	}
 }
@@ -435,9 +451,9 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pickerReturn, m.pickerBackToHistory = false, false
 		m.history.pos, m.history.horizontal, m.history.viewTop = 0, 0, 0
 		m.screen = "commit"
-		repo, hash, request := m.repo, m.history.current.hash, m.history.request
+		repo, hash, focus, request := m.repo, m.history.current.hash, m.history.current.filePath, m.history.request
 		return m, tea.Batch(func() tea.Msg {
-			changes, err := repo.commitChangesWithoutSyntax(hash)
+			changes, err := repo.commitChangesFirstScreen(hash, focus)
 			return commitLoaded{changes, err, request}
 		}, commitLoadingTimer(request))
 	}

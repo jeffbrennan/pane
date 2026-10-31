@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -303,5 +305,49 @@ func assertStringRows(t *testing.T, changes []change, texts ...string) {
 		if !found {
 			t.Errorf("missing row %q", text)
 		}
+	}
+}
+
+func TestWindowedSyntaxMatchesWholeFile(t *testing.T) {
+	source, err := os.ReadFile("syntax.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(source), "\n")
+	r := testRepo(t)
+	writeFile(t, r, "file.go", string(source))
+	if err := r.stage("file.go", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.action("commit", "-m", "initial"); err != nil {
+		t.Fatal(err)
+	}
+	for _, i := range []int{20, len(lines) / 2, len(lines) - 10} {
+		lines[i] = "// edited " + lines[i]
+	}
+	writeFile(t, r, "file.go", strings.Join(lines, "\n"))
+	s, err := r.load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := s.unstaged[0]
+	fullOld, fullNew := tokenizeDiff(c.path, c.syntaxDiff, "")
+	windowOld, windowNew := tokenizeDiff(c.path, c.syntaxDiff, c.diff)
+	oldLines, newLines := displayedLines(c.diff)
+	if len(oldLines) == 0 || len(newLines) == 0 {
+		t.Fatal("no displayed lines")
+	}
+	for _, side := range []struct {
+		full, window map[int]syntaxLine
+		lines        []int
+	}{{fullOld, windowOld, oldLines}, {fullNew, windowNew, newLines}} {
+		for _, n := range side.lines {
+			if !reflect.DeepEqual(side.full[n], side.window[n]) {
+				t.Errorf("line %d: windowed %+v, whole file %+v", n, side.window[n], side.full[n])
+			}
+		}
+	}
+	if len(windowNew) >= len(fullNew) {
+		t.Errorf("windowed tokenized %d lines, whole file %d", len(windowNew), len(fullNew))
 	}
 }

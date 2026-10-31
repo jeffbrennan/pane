@@ -276,7 +276,7 @@ func (m model) Init() tea.Cmd {
 	if m.screen == "commit" && m.history.loading && m.history.directCommit {
 		repo, hash, request := m.repo, m.history.current.hash, m.history.request
 		commands = append(commands, func() tea.Msg {
-			changes, err := repo.commitChangesWithoutSyntax(hash)
+			changes, err := repo.commitChangesFirstScreen(hash, "")
 			return commitLoaded{changes, err, request}
 		})
 		commands = append(commands, commitLoadingTimer(request))
@@ -307,8 +307,12 @@ func (m model) queryTheme() tea.Cmd {
 }
 
 func load(repo repository, generation int, cache *refreshCache) tea.Cmd {
+	return loadWith(repo, generation, cache, false)
+}
+
+func loadWith(repo repository, generation int, cache *refreshCache, deferOffscreen bool) tea.Cmd {
 	return func() tea.Msg {
-		next, unchanged, err := repo.loadCached(cache)
+		next, unchanged, err := repo.loadChanges(cache, deferOffscreen)
 		if err != nil {
 			return loaded{err: err, generation: generation}
 		}
@@ -419,6 +423,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.prefetch.close()
 		m.prefetch = nil
+		if msg.cache != nil && msg.cache.plain {
+			// Highlight the files that started plain right away.
+			return m.refresh()
+		}
 		if m.screen == "base" {
 			return m.refreshBase(changed)
 		}

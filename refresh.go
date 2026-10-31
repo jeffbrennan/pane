@@ -32,6 +32,9 @@ type cachedChange struct {
 	entry    statusEntry
 	change   change
 	loadedAt time.Time
+	// plain marks a change loaded without highlighting; the next load
+	// reloads it with highlighting.
+	plain bool
 }
 
 type refreshCache struct {
@@ -39,6 +42,34 @@ type refreshCache struct {
 	ignoreSpace bool
 	changes     map[changeKey]cachedChange
 	snapshot    snapshot
+	plain       bool
+}
+
+// startupSyntaxLines is how many diff lines of each view are highlighted
+// before the first screen appears: more than a tall terminal shows. Files
+// past it start plain and are highlighted by an immediate second load, before
+// they can be scrolled into view.
+const startupSyntaxLines = 120
+
+// deferOffscreenSyntax drops highlighting from changes past the first
+// startupSyntaxLines lines of each view, in display order.
+func deferOffscreenSyntax(cache *refreshCache, entries []statusEntry) {
+	for _, staged := range []bool{false, true} {
+		shown := 0
+		for _, entry := range entries {
+			if (staged && !entry.staged) || (!staged && !entry.unstaged) {
+				continue
+			}
+			key := changeKey{entry.path, staged}
+			cached := cache.changes[key]
+			if shown >= startupSyntaxLines && cached.change.syntaxDiff != "" {
+				cached.change.syntaxDiff, cached.plain = "", true
+				cache.changes[key] = cached
+				cache.plain = true
+			}
+			shown += strings.Count(cached.change.diff, "\n")
+		}
+	}
 }
 
 func (r repository) status() (branchStatus, []statusEntry, error) {
@@ -91,6 +122,13 @@ func (r repository) status() (branchStatus, []statusEntry, error) {
 }
 
 func (r repository) loadCached(previous *refreshCache) (*refreshCache, bool, error) {
+	return r.loadChanges(previous, false)
+}
+
+// loadChanges loads the working tree status and diffs, reusing unchanged
+// entries from previous. deferOffscreen is for the first screen at startup;
+// see startupSyntaxLines.
+func (r repository) loadChanges(previous *refreshCache, deferOffscreen bool) (*refreshCache, bool, error) {
 	started := time.Now()
 	branch, entries, err := r.status()
 	if err != nil {
@@ -109,7 +147,7 @@ func (r repository) loadCached(previous *refreshCache) (*refreshCache, bool, err
 			}
 			key := changeKey{entry.path, isStaged}
 			if previous != nil {
-				if cached, ok := previous.changes[key]; ok && cached.entry == entry && !entry.submodule && !entry.fingerprint.statError && (isStaged || entry.conflict || entry.fingerprint.missing || entry.fingerprint.modified.Before(cached.loadedAt.Add(-time.Second))) {
+				if cached, ok := previous.changes[key]; ok && cached.entry == entry && !cached.plain && !entry.submodule && !entry.fingerprint.statError && (isStaged || entry.conflict || entry.fingerprint.missing || entry.fingerprint.modified.Before(cached.loadedAt.Add(-time.Second))) {
 					next.changes[key] = cached
 					continue
 				}
@@ -144,13 +182,26 @@ func (r repository) loadCached(previous *refreshCache) (*refreshCache, bool, err
 		go func() {
 			defer wg.Done()
 			var changes []change
+			syntaxKey := contextKey{staged: group.staged}
 			if group.untracked {
 				changes, group.err = parallelDiffs(untracked, r.untrackedDiff)
+				if group.err != nil {
+					return
+				}
+				r.loadSyntaxDiffs(changes, syntaxKey)
 			} else {
+				// Full-context diffs for highlighting need only paths, so
+				// they load alongside the display diffs.
+				syntaxDiffs := make(chan []string, 1)
+				go func() { syntaxDiffs <- r.syntaxDiffs(group.paths, syntaxKey) }()
 				changes, group.err = r.diffsForChanges(group.paths, group.staged)
-			}
-			if group.err != nil {
-				return
+				diffs := <-syntaxDiffs
+				if group.err != nil {
+					return
+				}
+				for i := range changes {
+					changes[i].syntaxDiff = diffs[i]
+				}
 			}
 			for i := range changes {
 				if group.untracked {
@@ -160,8 +211,6 @@ func (r repository) loadCached(previous *refreshCache) (*refreshCache, bool, err
 					}
 				}
 			}
-			r.loadSyntaxDiffs(changes, contextKey{staged: group.staged})
-			warmSyntax(changes)
 			group.changes = changes
 		}()
 	}
@@ -177,6 +226,18 @@ func (r repository) loadCached(previous *refreshCache) (*refreshCache, bool, err
 			next.changes[key] = cached
 		}
 	}
+	if deferOffscreen {
+		deferOffscreenSyntax(next, entries)
+	}
+	var highlight []change
+	for _, group := range groups {
+		for _, c := range group.changes {
+			if cached := next.changes[changeKey{c.path, group.staged}]; !cached.plain {
+				highlight = append(highlight, cached.change)
+			}
+		}
+	}
+	warmSyntax(highlight)
 	for _, entry := range entries {
 		if entry.unstaged {
 			next.snapshot.unstaged = append(next.snapshot.unstaged, next.changes[changeKey{entry.path, false}].change)
