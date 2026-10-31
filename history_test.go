@@ -297,7 +297,7 @@ func TestHistoryPaging(t *testing.T) {
 
 func TestHistoryStatsLoadForViewportAndFollowScrolling(t *testing.T) {
 	r := testRepo(t)
-	for _, name := range []string{"one", "two", "three", "four"} {
+	for _, name := range []string{"one", "two", "three", "four", "five", "six", "seven", "eight"} {
 		writeFile(t, r, name, name+"\n")
 		if _, err := r.commit(name); err != nil {
 			t.Fatal(err)
@@ -313,13 +313,13 @@ func TestHistoryStatsLoadForViewportAndFollowScrolling(t *testing.T) {
 		t.Fatal("visible statistics were not requested")
 	}
 	msg := cmd().(historyStatsLoaded)
-	if len(msg.hashes) != 1 {
-		t.Fatalf("loaded %d commits, expected only the visible commit", len(msg.hashes))
+	if len(msg.hashes) != 1+historyStatsLookahead {
+		t.Fatalf("loaded %d commits, expected the visible commit and lookahead", len(msg.hashes))
 	}
 	updated, cmd := m.Update(msg)
 	m = updated.(model)
-	if cmd != nil || !m.history.commits[0].statsLoaded || m.history.commits[1].statsLoaded {
-		t.Fatal("statistics loaded outside the viewport")
+	if cmd != nil || !m.history.commits[0].statsLoaded || !m.history.commits[5].statsLoaded || m.history.commits[6].statsLoaded {
+		t.Fatal("statistics did not load for the viewport and lookahead")
 	}
 	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m = updated.(model)
@@ -327,8 +327,8 @@ func TestHistoryStatsLoadForViewportAndFollowScrolling(t *testing.T) {
 		t.Fatal("scrolling did not request newly visible statistics")
 	}
 	updated, _ = m.Update(cmd())
-	if !updated.(model).history.commits[1].statsLoaded {
-		t.Fatal("newly visible statistics were not applied")
+	if !updated.(model).history.commits[6].statsLoaded {
+		t.Fatal("new lookahead statistics were not applied")
 	}
 }
 

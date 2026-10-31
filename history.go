@@ -37,6 +37,8 @@ type historyStatsLoaded struct {
 	request int
 }
 
+const historyStatsLookahead = 5
+
 func (m model) openHistory() (tea.Model, tea.Cmd) {
 	m.screen = "history"
 	m.history.commits = nil
@@ -67,7 +69,7 @@ func (m model) loadHistoryStats() (model, tea.Cmd) {
 		visible++
 	}
 	var hashes []string
-	for _, c := range matches[start:min(len(matches), start+visible)] {
+	for _, c := range matches[start:min(len(matches), start+visible+historyStatsLookahead)] {
 		if !c.statsLoaded && c.hash != "" {
 			hashes = append(hashes, c.hash)
 		}
