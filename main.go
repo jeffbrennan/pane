@@ -33,6 +33,11 @@ type loaded struct {
 	snapshot   snapshot
 	err        error
 	generation int
+	cache      *refreshCache
+}
+type loadedUnchanged struct {
+	generation int
+	cache      *refreshCache
 }
 type tick struct{}
 type completed struct {
@@ -50,6 +55,7 @@ type recentCommitsLoaded struct {
 
 type model struct {
 	repo                  repository
+	refreshCache          *refreshCache
 	snapshot              snapshot
 	rows                  []row
 	width, height         int
@@ -176,7 +182,7 @@ func initialModel(repo repository, args []string) (model, error) {
 }
 
 func (m model) Init() tea.Cmd {
-	commands := []tea.Cmd{load(m.repo, m.generation), nextTick()}
+	commands := []tea.Cmd{load(m.repo, m.generation, m.refreshCache), nextTick()}
 	if m.screen == "commit" && m.history.loading && m.history.directCommit {
 		repo, hash, request := m.repo, m.history.current.hash, m.history.request
 		commands = append(commands, func() tea.Msg {
@@ -195,14 +201,16 @@ func (m model) Init() tea.Cmd {
 	return tea.Batch(commands...)
 }
 
-func load(repo repository, generation int) tea.Cmd {
+func load(repo repository, generation int, cache *refreshCache) tea.Cmd {
 	return func() tea.Msg {
-		s, err := repo.load()
-		if err == nil {
-			warmSyntax(s.unstaged)
-			warmSyntax(s.staged)
+		next, unchanged, err := repo.loadCached(cache)
+		if err != nil {
+			return loaded{err: err, generation: generation}
 		}
-		return loaded{s, err, generation}
+		if unchanged {
+			return loadedUnchanged{generation: generation, cache: next}
+		}
+		return loaded{snapshot: next.snapshot, generation: generation, cache: next}
 	}
 }
 
@@ -215,7 +223,7 @@ func (m model) refresh() (model, tea.Cmd) {
 		return m, nil
 	}
 	m.loading = true
-	return m, load(m.repo, m.generation)
+	return m, load(m.repo, m.generation, m.refreshCache)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -249,6 +257,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.themeAuto {
 			m.lightTheme = bool(msg)
 		}
+	case loadedUnchanged:
+		m.loading = false
+		if msg.generation != m.generation {
+			return m.refresh()
+		}
+		m.refreshCache = msg.cache
 	case loaded:
 		m.loading = false
 		if msg.generation != m.generation {
@@ -258,6 +272,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.message = msg.err.Error()
 			break
 		}
+		m.refreshCache = msg.cache
 		headChanged := m.snapshot.branch.available && msg.snapshot.branch.available && m.snapshot.branch.head != msg.snapshot.branch.head
 		if !m.snapshot.equal(msg.snapshot) {
 			m.snapshot = msg.snapshot
@@ -518,6 +533,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.flash = wrapFlash(m.wrap)
 			m.rebuild()
 		case "r":
+			m.refreshCache = nil
+			m.generation++
 			return m.refresh()
 		case "d":
 			return m.startDiscard()

@@ -33,7 +33,10 @@ func (s snapshot) equal(other snapshot) bool {
 	return s.branch == other.branch && slices.Equal(s.unstaged, other.unstaged) && slices.Equal(s.staged, other.staged)
 }
 
-type repository struct{ root string }
+type repository struct {
+	root        string
+	commandHook func([]string)
+}
 
 func openRepository() (repository, error) {
 	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
@@ -45,6 +48,9 @@ func openRepository() (repository, error) {
 }
 
 func (r repository) command(args ...string) ([]byte, error) {
+	if r.commandHook != nil {
+		r.commandHook(args)
+	}
 	cmd := exec.Command("git", args...)
 	cmd.Dir = r.root
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_LITERAL_PATHSPECS=1", "GIT_PAGER=cat", "GIT_EDITOR=true")
@@ -154,6 +160,8 @@ func (r repository) diffs(paths []string, staged bool) ([]change, error) {
 	if staged {
 		args = append(args, "--cached")
 	}
+	args = append(args, "--")
+	args = append(args, paths...)
 	out, err := r.command(args...)
 	if err != nil {
 		return nil, gitError(out, err)
