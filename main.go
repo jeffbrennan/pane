@@ -351,6 +351,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "c":
 			if !m.busy {
+				if len(m.snapshot.staged) == 0 && len(m.snapshot.unstaged) == 0 {
+					m.message = "Nothing to commit"
+					return m, nil
+				}
 				m.modal = "commit"
 				m.input = ""
 				m.message = ""
