@@ -1,8 +1,7 @@
 package main
 
 func (m *model) reveal() {
-	available := max(1, m.height-2)
-	top := m.viewportStart(available)
+	top, available, _ := m.diffViewport(max(1, m.height-2))
 	margin := min(3, (available-1)/2)
 	if m.pos < top+margin {
 		top = m.pos - margin
@@ -16,8 +15,7 @@ func (m *model) scrollViewport(amount int) {
 	if len(m.rows) == 0 {
 		return
 	}
-	available := max(1, m.height-2)
-	top := m.viewportStart(available)
+	top, available, _ := m.diffViewport(max(1, m.height-2))
 	m.viewTop = max(0, min(top+amount, max(0, len(m.rows)-available)))
 	m.pos = max(m.viewTop, min(m.pos, m.viewTop+available-1))
 	m.clamp()
@@ -34,6 +32,19 @@ func (m *model) positionViewport(position string) {
 		top -= available / 2
 	case "b":
 		top -= available - 1
+	}
+	preview := *m
+	preview.viewTop = top
+	_, visible, _ := preview.diffViewport(available)
+	if visible != available {
+		available = visible
+		top = m.pos
+		switch position {
+		case "z":
+			top -= available / 2
+		case "b":
+			top -= available - 1
+		}
 	}
 	m.viewTop = max(0, min(top, max(0, len(m.rows)-available)))
 }
@@ -75,7 +86,7 @@ func (m *model) handleDiffNavigation(key string) bool {
 			}
 		}
 	}
-	page := max(1, m.height-2)
+	_, page, _ := m.diffViewport(max(1, m.height-2))
 	switch key {
 	case "g", "z":
 		m.pending = key

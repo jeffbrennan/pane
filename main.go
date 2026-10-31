@@ -518,9 +518,11 @@ func (m model) View() string {
 	var lines []string
 	lines = append(lines, fit(header, m.width))
 	available := max(0, m.height-2)
-	start := m.viewportStart(available)
-	margin := diffMargin(m.width)
-	for i := 0; i < available; i++ {
+	start, visible, pinned := m.diffViewport(available)
+	if pinned != nil {
+		lines = append(lines, m.renderDiffRow(*pinned, false))
+	}
+	for i := 0; i < visible; i++ {
 		index := start + i
 		if index >= len(m.rows) {
 			if index == 0 {
@@ -530,38 +532,7 @@ func (m model) View() string {
 			}
 			continue
 		}
-		r := m.rows[index]
-		text := r.text
-		contentWidth := max(0, m.width-margin)
-		if r.kind == 'f' {
-			text = fit(text, contentWidth)
-		} else if !m.wrap {
-			text = sliceWidth(text, m.horizontal, max(0, contentWidth-runewidth.StringWidth(r.gutter)))
-		} else {
-			text = fit(text, max(0, contentWidth-runewidth.StringWidth(r.gutter)))
-		}
-		text = fit(r.gutter+text, contentWidth)
-		color := ""
-		switch r.kind {
-		case '+':
-			color = "\x1b[32m"
-		case '-':
-			color = "\x1b[31m"
-		case '@':
-			color = "\x1b[36m"
-		case 'f':
-			text += strings.Repeat(" ", max(0, contentWidth-runewidth.StringWidth(text)))
-			color = "\x1b[1;37;48;5;236m"
-		}
-		if color != "" {
-			text = color + text + "\x1b[0m"
-		}
-		prefix := strings.Repeat(" ", margin)
-		if index == m.pos {
-			prefix = "\x1b[1;36m▸" + strings.Repeat(" ", margin-1) + "\x1b[0m"
-		}
-		text = prefix + text
-		lines = append(lines, text)
+		lines = append(lines, m.renderDiffRow(m.rows[index], index == m.pos))
 	}
 	status := m.message
 	if m.modal == "commit" {
@@ -590,6 +561,40 @@ func (m model) View() string {
 		showHelpDialog(lines, m.width, m.helpPos)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (m model) renderDiffRow(r row, active bool) string {
+	margin := diffMargin(m.width)
+	text := r.text
+	contentWidth := max(0, m.width-margin)
+	if r.kind == 'f' {
+		text = fit(text, contentWidth)
+	} else if !m.wrap {
+		text = sliceWidth(text, m.horizontal, max(0, contentWidth-runewidth.StringWidth(r.gutter)))
+	} else {
+		text = fit(text, max(0, contentWidth-runewidth.StringWidth(r.gutter)))
+	}
+	text = fit(r.gutter+text, contentWidth)
+	color := ""
+	switch r.kind {
+	case '+':
+		color = "\x1b[32m"
+	case '-':
+		color = "\x1b[31m"
+	case '@':
+		color = "\x1b[36m"
+	case 'f':
+		text += strings.Repeat(" ", max(0, contentWidth-runewidth.StringWidth(text)))
+		color = "\x1b[1;37;48;5;236m"
+	}
+	if color != "" {
+		text = color + text + "\x1b[0m"
+	}
+	prefix := strings.Repeat(" ", margin)
+	if active {
+		prefix = "\x1b[1;36m▸" + strings.Repeat(" ", margin-1) + "\x1b[0m"
+	}
+	return prefix + text
 }
 
 func fit(s string, width int) string { return runewidth.Truncate(s, width, "") }
