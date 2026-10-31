@@ -18,6 +18,7 @@ var shortcutSections = []struct {
 	{"Changes", []shortcut{
 		{"tab", "Switch unstaged / staged"},
 		{"space", "Stage / unstage file"},
+		{"s", "Stage / unstage hunk"},
 		{"d", "Discard hunk / file"},
 		{"c", "Commit changes"},
 		{"p / P", "Push / pull"},

@@ -38,6 +38,7 @@ For development, `just b` builds pane, installs it, and runs it in the current r
 | `y` | Copy the current file path, or the commit hash in history |
 | `tab` | Switch unstaged / staged view |
 | `space` | Stage / unstage the current whole file |
+| `s` | Stage / unstage the current hunk, or the whole file on its header |
 | `d` | Discard the current unstaged hunk, or the whole file on its header (confirmation required) |
 | `w` | Toggle line wrapping |
 | `e` | Expand / collapse a deleted file |
@@ -50,7 +51,7 @@ For development, `just b` builds pane, installs it, and runs it in the current r
 | `?` | Show keyboard shortcuts |
 | `q` | Quit |
 
-The active line is marked with `▸`; staging applies to the file containing it. The viewport keeps surrounding lines visible as you navigate and pins a file header when its diff scrolls beyond the viewport. Changes are refreshed by background polling approximately every 1.5 seconds, preserving the current file and approximate position. Syntax highlighting uses the terminal's color palette for Go, Python, SQL, Rust, Scala, Java, Kotlin, R, Julia, Groovy, JavaScript, TypeScript, shell scripts, PowerShell, JSON (including notebooks and Avro schemas), YAML, TOML, INI, properties, HCL, Terraform, XML, Protocol Buffers, Dockerfiles, and Makefiles. Added and removed lines use subtle dark-background tints, with stronger highlights for changes within paired lines. Git operations use the repository's existing configuration; authentication failures and conflicts must be handled outside pane. Partial staging and conflict resolution are not supported.
+The active line is marked with `▸`. Use `s` to stage or unstage its hunk; untracked and deleted files are staged or unstaged as whole files. The viewport keeps surrounding lines visible as you navigate and pins a file header when its diff scrolls beyond the viewport. Changes are refreshed by background polling approximately every 1.5 seconds, preserving the current file and approximate position. Syntax highlighting uses the terminal's color palette for Go, Python, SQL, Rust, Scala, Java, Kotlin, R, Julia, Groovy, JavaScript, TypeScript, shell scripts, PowerShell, JSON (including notebooks and Avro schemas), YAML, TOML, INI, properties, HCL, Terraform, XML, Protocol Buffers, Dockerfiles, and Makefiles. Added and removed lines use subtle dark-background tints, with stronger highlights for changes within paired lines. Git operations use the repository's existing configuration; authentication failures and conflicts must be handled outside pane. Line-level staging and conflict resolution are not supported.
 
 Commits include only staged changes if any are staged. Otherwise, pane stages all non-ignored changes, including untracked files, before committing. If the commit fails, the automatically staged changes remain staged. After a successful commit, pane opens history with the new commit selected.
 

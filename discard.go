@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -133,15 +131,7 @@ func (r repository) discard(request discardRequest) error {
 		}
 		return nil
 	}
-	cmd := exec.Command("git", "apply", "--reverse", "--whitespace=nowarn", "-")
-	cmd.Dir = r.root
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_LITERAL_PATHSPECS=1")
-	cmd.Stdin = strings.NewReader(request.patch)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return gitError(bytes.TrimSpace(out), err)
-	}
-	return nil
+	return r.applyPatch(request.patch, "--reverse")
 }
 
 func (m model) discardView() string {

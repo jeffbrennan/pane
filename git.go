@@ -48,16 +48,31 @@ func openRepository() (repository, error) {
 }
 
 func (r repository) command(args ...string) ([]byte, error) {
+	return r.commandInput(nil, args...)
+}
+
+func (r repository) commandInput(input io.Reader, args ...string) ([]byte, error) {
 	if r.commandHook != nil {
 		r.commandHook(args)
 	}
 	cmd := exec.Command("git", args...)
 	cmd.Dir = r.root
+	cmd.Stdin = input
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_LITERAL_PATHSPECS=1", "GIT_PAGER=cat", "GIT_EDITOR=true")
 	if os.Getenv("GIT_SSH_COMMAND") == "" {
 		cmd.Env = append(cmd.Env, "GIT_SSH_COMMAND=ssh -o BatchMode=yes")
 	}
 	return cmd.CombinedOutput()
+}
+
+func (r repository) applyPatch(patch string, args ...string) error {
+	args = append([]string{"apply"}, args...)
+	args = append(args, "--whitespace=nowarn", "-")
+	out, err := r.commandInput(strings.NewReader(patch), args...)
+	if err != nil {
+		return gitError(out, err)
+	}
+	return nil
 }
 
 func (r repository) load() (snapshot, error) {

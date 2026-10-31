@@ -45,6 +45,7 @@ type completed struct {
 	commitMessage string
 	action        string
 	err           error
+	stageCursor   *stagingCursor
 }
 
 type recentCommitsLoaded struct {
@@ -97,6 +98,7 @@ type model struct {
 	recentCommitLoading   bool
 	recentCommitError     bool
 	discard               discardRequest
+	stageCursor           *stagingCursor
 	sequence              sequenceState
 }
 
@@ -263,6 +265,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.refresh()
 		}
 		m.refreshCache = msg.cache
+		m.restoreStagingCursor()
 	case loaded:
 		m.loading = false
 		if msg.generation != m.generation {
@@ -278,6 +281,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.snapshot = msg.snapshot
 			m.rebuild()
 		}
+		m.restoreStagingCursor()
 		if headChanged && m.screen == "commit" {
 			m.history.stale = true
 		}
@@ -328,6 +332,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			historyModel, historyCmd := m.openHistory()
 			return historyModel, tea.Batch(refreshCmd, historyCmd)
+		} else if msg.stageCursor != nil {
+			m.flash = msg.message
+			m.stageCursor = msg.stageCursor
 		} else {
 			m.message = msg.message
 		}
@@ -543,19 +550,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.helpPos = 0
 		case "H":
 			return m.openHistory()
-		case " ":
-			if !m.busy && len(m.rows) > 0 {
-				path, staged, repo := m.rows[m.pos].path, m.staged, m.repo
-				for _, c := range m.snapshot.unstaged {
-					if c.path == path && c.conflict {
-						m.message = "Resolve conflicts outside pane"
-						return m, nil
-					}
-				}
-				m.busy = true
-				m.generation++
-				return m, func() tea.Msg { return completed{message: "Updated staging", err: repo.stage(path, staged)} }
-			}
+		case " ", "s":
+			return m.stageSelection(msg.String() == "s")
 		case "c":
 			if !m.busy {
 				if len(m.snapshot.staged) == 0 && len(m.snapshot.unstaged) == 0 {
