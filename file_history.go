@@ -42,6 +42,7 @@ func (m model) openFileHistory() (tea.Model, tea.Cmd) {
 	}
 	path := view.rows[view.pos].path
 	previous := m
+	previous.cancelCommitLoad()
 	previous.fileHistoryReturn = nil
 	m.fileHistoryReturn = &previous
 	m.history = historyState{path: path, request: m.history.request}
@@ -75,7 +76,8 @@ func (m model) leaveFileHistory() (tea.Model, tea.Cmd) {
 		}
 		if previous.history.loading {
 			previous.history.request++
-			repo, hash, request := previous.repo, previous.history.current.hash, previous.history.request
+			repo := previous.startCommitLoad()
+			hash, request := previous.history.current.hash, previous.history.request
 			if previous.stash.viewing {
 				return previous, func() tea.Msg {
 					changes, err := repo.stashChanges(hash)
@@ -87,6 +89,7 @@ func (m model) leaveFileHistory() (tea.Model, tea.Cmd) {
 				return commitLoaded{changes: changes, request: request, err: err}
 			}
 		}
+		previous.startCommitLoad()
 		previous.rebuildCommit()
 	case "base":
 		previous.base.request++

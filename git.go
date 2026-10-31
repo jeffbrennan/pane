@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -40,6 +41,7 @@ func (s snapshot) equal(other snapshot) bool {
 type repository struct {
 	root        string
 	commandHook func([]string)
+	context     context.Context
 	ignoreSpace bool
 	stats       *statsStore
 	// untrackedCache turns on Git's untracked cache for status, which
@@ -124,7 +126,11 @@ func (r repository) gitCommand(args ...string) *exec.Cmd {
 	if r.commandHook != nil {
 		r.commandHook(args)
 	}
-	cmd := exec.Command("git", args...)
+	ctx := r.context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = r.root
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_LITERAL_PATHSPECS=1", "GIT_PAGER=cat", "GIT_EDITOR=true")
 	if len(args) > 0 && args[0] == "stash" {

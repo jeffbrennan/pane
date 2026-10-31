@@ -30,6 +30,7 @@ type demandResult struct {
 	key              contextKey
 	commitIndex      int
 	diff, syntaxDiff string
+	cancelled        bool
 }
 
 func (d *syntaxDemand) store(key contextKey, entry demandSyntax) {
@@ -170,12 +171,19 @@ func (m model) loadSyntaxTargets(targets []syntaxTarget) tea.Cmd {
 		return nil
 	}
 	repo := m.repo
+	if m.screen == "commit" {
+		repo = m.commitRepository()
+	}
 	return func() tea.Msg {
 		results := make([]demandResult, len(targets))
 		parallelEach(len(targets), func(i int) {
 			t := targets[i]
 			results[i] = demandResult{key: t.key, commitIndex: t.commitIndex, diff: t.change.diff}
 			diff, err := repo.fullContext(t.key, t.change.diff, t.change.oldPath)
+			if repo.context != nil && repo.context.Err() != nil {
+				results[i].cancelled = true
+				return
+			}
 			if err != nil || len(diff) > 2*1024*1024 {
 				return
 			}
@@ -197,6 +205,9 @@ func (m *model) applySyntaxDemandLoaded(msg syntaxDemandLoaded) {
 	}
 	for _, result := range msg.results {
 		delete(m.syntaxDemand.pending, result.key)
+		if result.cancelled {
+			continue
+		}
 		m.syntaxDemand.store(result.key, demandSyntax{result.diff, result.syntaxDiff})
 		if result.syntaxDiff == "" {
 			continue

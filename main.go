@@ -203,6 +203,7 @@ func startCPUProfile(path string) func() {
 }
 
 func (m model) closeHistoryStreams() {
+	m.cancelCommitLoad()
 	m.prefetch.close()
 	m.history.stream.close()
 	if m.fileHistoryReturn != nil {
@@ -264,6 +265,7 @@ func initialModel(repo repository, args []string) (model, error) {
 	m.history.loading = true
 	m.history.request++
 	m.history.directCommit = true
+	m.startCommitLoad()
 	return m, nil
 }
 
@@ -277,7 +279,7 @@ func (m model) Init() tea.Cmd {
 		commands = append(commands, m.fetchHistory(0, historyPage))
 	}
 	if m.screen == "commit" && m.history.loading && m.history.directCommit {
-		repo, hash, request := m.repo, m.history.current.hash, m.history.request
+		repo, hash, request := m.commitRepository(), m.history.current.hash, m.history.request
 		commands = append(commands, func() tea.Msg {
 			changes, err := repo.commitChangesFirstScreen(hash, "")
 			return commitLoaded{changes, err, request}
@@ -698,7 +700,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.history.pos = 0
 		m.rebuildCommit()
 		m.jumpToHistoryFile()
-		return m, loadCommitSyntax(m.repo, m.history.current.hash, m.history.request, m.history.changes)
+		return m, loadCommitSyntax(m.commitRepository(), m.history.current.hash, m.history.request, m.history.changes)
 	case commitSyntaxLoaded:
 		if m.screen != "commit" || msg.request != m.history.request {
 			break

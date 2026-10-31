@@ -242,6 +242,9 @@ func (r repository) commitChangesWithoutSyntax(hash string) ([]change, error) {
 	}()
 	out, err := r.commandStdout("show", "--first-parent", "--format=", "--name-status", "-M", "-z", hash, "--")
 	loadedPatch := <-patchResult
+	if r.context != nil && r.context.Err() != nil {
+		return nil, r.context.Err()
+	}
 	if err != nil {
 		return nil, gitError(out, err)
 	}
@@ -272,6 +275,9 @@ func (r repository) commitChangesWithoutSyntax(hash string) ([]change, error) {
 		paths = append(paths, path)
 	}
 	changes, err := parallelDiffs(paths, func(path string) (string, error) {
+		if r.context != nil && r.context.Err() != nil {
+			return "", r.context.Err()
+		}
 		diff, ok := patches[path]
 		if !ok {
 			args := append([]string{"show", "--first-parent", "--format="}, r.diffOptions()...)

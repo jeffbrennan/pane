@@ -26,9 +26,10 @@ func (m model) toggleWhitespace() (tea.Model, tea.Cmd) {
 		commands = append(commands, cmd)
 	case "commit":
 		m.history.request++
+		repo := m.startCommitLoad()
 		m.history.loading = true
 		m.history.commitLoadingVisible = false
-		repo, hash, request := m.repo, m.history.current.hash, m.history.request
+		hash, request := m.history.current.hash, m.history.request
 		if m.stash.viewing {
 			commands = append(commands, func() tea.Msg {
 				changes, err := repo.stashChanges(hash)

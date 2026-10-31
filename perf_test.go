@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -33,6 +34,19 @@ func TestPerf(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+		})
+		measurePerf(t, scenario, "cancel_load_after_30ms_ns", func() {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancelRepo := repo
+			cancelRepo.context = ctx
+			done := make(chan struct{})
+			go func() {
+				_, _ = cancelRepo.commitChangesWithoutSyntax(revision)
+				close(done)
+			}()
+			time.Sleep(30 * time.Millisecond)
+			cancel()
+			<-done
 		})
 	} else {
 		for i := 0; i < 500; i++ {

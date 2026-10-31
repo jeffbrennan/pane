@@ -180,13 +180,14 @@ func (m model) handleStashKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.screen = "commit"
 		m.history.current = commitInfo{hash: entry.hash, subject: entry.ref + " · " + entry.message}
 		m.history.request++
+		repo := m.startCommitLoad()
 		m.history.loading = true
 		m.history.rows, m.history.changes = nil, nil
 		m.history.pos, m.history.horizontal, m.history.viewTop = 0, 0, 0
 		m.history.expandedDeleted, m.history.jumps = nil, nil
 		m.history.jumpIndex = 0
 		m.pickerReturn, m.pickerBackToHistory = false, false
-		repo, hash, request := m.repo, entry.hash, m.history.request
+		hash, request := entry.hash, m.history.request
 		return m, func() tea.Msg {
 			changes, err := repo.stashChanges(hash)
 			return stashDiffLoaded{changes: changes, request: request, err: err}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -9,6 +10,8 @@ import (
 )
 
 type historyState struct {
+	commitContext                                       context.Context
+	commitCancel                                        context.CancelFunc
 	stream                                              *historyStream
 	commits                                             []commitInfo
 	statsCache                                          map[string]commitInfo
@@ -27,6 +30,28 @@ type historyState struct {
 	expandedDeleted                                     map[string]bool
 	jumps                                               []jumpLocation
 	jumpIndex                                           int
+}
+
+func (m *model) startCommitLoad() repository {
+	if m.history.commitCancel != nil {
+		m.history.commitCancel()
+	}
+	m.history.commitContext, m.history.commitCancel = context.WithCancel(context.Background())
+	return m.commitRepository()
+}
+
+func (m model) commitRepository() repository {
+	repo := m.repo
+	repo.context = m.history.commitContext
+	return repo
+}
+
+func (m *model) cancelCommitLoad() {
+	if m.history.commitCancel != nil {
+		m.history.commitCancel()
+		m.history.commitCancel = nil
+		m.history.commitContext = nil
+	}
 }
 
 type historyLoaded struct {
@@ -441,6 +466,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.history.stale = true
 		}
 		m.history.request++
+		repo := m.startCommitLoad()
 		m.history.loading = true
 		m.history.commitLoadingVisible = false
 		m.history.fetching = false
@@ -452,7 +478,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pickerReturn, m.pickerBackToHistory = false, false
 		m.history.pos, m.history.horizontal, m.history.viewTop = 0, 0, 0
 		m.screen = "commit"
-		repo, hash, focus, request := m.repo, m.history.current.hash, m.history.current.filePath, m.history.request
+		hash, focus, request := m.history.current.hash, m.history.current.filePath, m.history.request
 		return m, tea.Batch(func() tea.Msg {
 			changes, err := repo.commitChangesFirstScreen(hash, focus)
 			return commitLoaded{changes, err, request}
@@ -538,6 +564,7 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) returnToHistory() (tea.Model, tea.Cmd) {
+	m.cancelCommitLoad()
 	if m.stash.viewing {
 		return m.openStashes()
 	}
