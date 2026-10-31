@@ -35,6 +35,7 @@ func (m *model) restorePicker() {
 type fileEntry struct {
 	path           string
 	oldPath        string
+	submodule      bool
 	row            int
 	added, deleted int
 }
@@ -47,7 +48,7 @@ func (m model) fileEntries() []fileEntry {
 		}
 		switch {
 		case r.kind == 'f':
-			entries = append(entries, fileEntry{path: r.path, oldPath: r.oldPath, row: i, deleted: r.deletedLines})
+			entries = append(entries, fileEntry{path: r.path, oldPath: r.oldPath, row: i, deleted: r.deletedLines, submodule: r.submodule})
 		case len(entries) == 0 || r.offset > 0:
 		case r.kind == '+':
 			entries[len(entries)-1].added++
@@ -376,6 +377,9 @@ func (m model) showFilesDialog(lines []string) {
 		} else {
 			counts = changeCounts(addedWidth, e.file.added, deletedWidth, e.file.deleted, i == selected)
 			name += "  " + clean(e.name)
+			if e.file.submodule {
+				name += " (submodule)"
+			}
 		}
 		distance := max(i-selected, selected-i)
 		number := styleDim + fmt.Sprintf("%*d", numberWidth, distance) + styleReset

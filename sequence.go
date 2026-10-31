@@ -109,6 +109,11 @@ func (m *model) nextSequenceLoad() tea.Cmd {
 
 func (m *model) rebuildSequence() {
 	var anchor row
+	var searchAnchor row
+	hasSearchAnchor := m.modal == "search" && m.search.origin >= 0 && m.search.origin < len(m.rows)
+	if hasSearchAnchor {
+		searchAnchor = m.rows[m.search.origin]
+	}
 	hasAnchor := m.pos >= 0 && m.pos < len(m.rows)
 	if hasAnchor {
 		anchor = m.rows[m.pos]
@@ -149,6 +154,24 @@ func (m *model) rebuildSequence() {
 	}
 	indexRowHeaders(rows)
 	m.rows = rows
+	if hasSearchAnchor {
+		found := false
+		for i, r := range rows {
+			if r.commitIndex == searchAnchor.commitIndex && r.path == searchAnchor.path && r.kind == searchAnchor.kind && r.line == searchAnchor.line && r.offset == searchAnchor.offset {
+				m.search.origin = i
+				found = true
+				break
+			}
+		}
+		if !found && searchAnchor.kind == '@' {
+			for i, r := range rows {
+				if r.commitIndex == searchAnchor.commitIndex {
+					m.search.origin = i
+					break
+				}
+			}
+		}
+	}
 	m.pos = 0
 	if hasAnchor {
 		best := -1
@@ -199,6 +222,13 @@ func (m model) sequenceView() string {
 	view.message = ""
 	if m.sequence.loading {
 		view.message = "Loading commits…"
+		loaded := 0
+		for _, state := range m.sequence.states {
+			if state == sequenceReady {
+				loaded++
+			}
+		}
+		view.searchProgress = fmt.Sprintf("searching %d/%d loaded", loaded, len(m.sequence.commits))
 	}
 	return view.View()
 }
@@ -224,6 +254,13 @@ func (m model) handleSequenceKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if index >= 0 && index < len(m.sequence.commits) {
 				hash := m.sequence.commits[index].hash
 				return m, copyCmd(hash, shortHash(hash))
+			}
+		}
+	case "Y":
+		if m.pos >= 0 && m.pos < len(m.rows) {
+			index := m.rows[m.pos].commitIndex
+			if index >= 0 && index < len(m.sequence.commits) {
+				return m, m.copyDiffLocation(m.sequence.commits[index].hash)
 			}
 		}
 	case "w":

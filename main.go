@@ -16,6 +16,7 @@ type row struct {
 	path         string
 	oldPath      string
 	renameAdded  bool
+	submodule    bool
 	line         int
 	offset       int
 	target       int
@@ -97,6 +98,7 @@ type model struct {
 	pickerReturn          bool
 	pickerBackToHistory   bool
 	search                searchState
+	searchProgress        string
 	flash                 string
 	expandedDeleted       map[string]bool
 	contextFiles          map[contextKey]contextFile
@@ -593,6 +595,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sequence.changes[msg.index] = msg.changes
 		}
 		m.rebuildSequence()
+		if query := m.activeSearch(); query != "" && (len(m.rows) == 0 || !rowMatches(m.rows[m.pos], query)) {
+			if m.modal == "search" {
+				m.updateSearchDraft()
+			} else if len(m.rows) > 0 {
+				if index, _ := m.findMatch(query, m.pos-m.searchDirection(), m.searchDirection()); index >= 0 {
+					m.showMatch(index)
+					m.flash = ""
+				}
+			}
+		}
 		cmd := m.nextSequenceLoad()
 		return m, cmd
 	case flashed:
@@ -678,6 +690,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				path := m.rows[m.pos].path
 				return m, copyCmd(path, path)
 			}
+		case "Y":
+			return m, m.copyDiffLocation("")
 		case "esc", "q":
 			if m.pickerReturn {
 				m.restorePicker()
@@ -1208,6 +1222,12 @@ func (m model) View() string {
 	case "help", "files":
 		status, hints = "", ""
 	}
+	if m.searchProgress != "" && m.activeSearch() != "" && (m.modal == "" || m.modal == "search") {
+		if m.modal == "" && m.flash == "" {
+			status = "/" + clean(m.search.query)
+		}
+		status += styleDim + "  · " + m.searchProgress + styleReset
+	}
 	lines = append(lines, m.statusBar(status, hints))
 	if m.modal == "commit" || m.modal == "help" || m.modal == "files" {
 		clearBody(lines)
@@ -1380,6 +1400,9 @@ func (m model) renderDiffRow(r row, active bool) string {
 		color = "\x1b[31m"
 	case '@':
 		color = "\x1b[36m"
+		if r.submodule && (strings.HasPrefix(r.text, "  > ") || strings.HasPrefix(r.text, "  < ")) {
+			color = styleDim
+		}
 	case 'f', 'F':
 		text += strings.Repeat(" ", max(0, contentWidth-runewidth.StringWidth(text)))
 		color = renameHeaderDark

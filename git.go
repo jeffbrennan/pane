@@ -40,7 +40,7 @@ type repository struct {
 }
 
 func (r repository) diffOptions() []string {
-	args := []string{"--no-ext-diff", "--no-textconv", "--no-color", "-M"}
+	args := []string{"--no-ext-diff", "--no-textconv", "--no-color", "--submodule=log", "-M"}
 	if r.ignoreSpace {
 		args = append(args, "-w")
 	}
@@ -215,6 +215,11 @@ func splitPatch(patch string) map[string]string {
 		if strings.HasPrefix(line, "diff ") {
 			flush()
 			path = patchPath(strings.TrimSuffix(line, "\n"))
+		} else if submodulePath, _, ok := submoduleLine(strings.TrimSuffix(line, "\n")); ok {
+			if path != submodulePath {
+				flush()
+				path = submodulePath
+			}
 		}
 		section.WriteString(line)
 	}

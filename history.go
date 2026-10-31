@@ -339,6 +339,14 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			hash := matches[min(m.history.selected, len(matches)-1)].hash
 			return m, copyCmd(hash, shortHash(hash))
 		}
+	case "Y":
+		if len(matches) > 0 {
+			commit := matches[min(m.history.selected, len(matches)-1)]
+			if commit.filePath != "" {
+				return m, copyLocationCmd(m.repo, commit.hash, commit.filePath, 0)
+			}
+			return m, copyCmd(commit.hash, shortHash(commit.hash))
+		}
 	case "u":
 		if m.history.path != "" {
 			m.flash = "Return to history to edit the latest commit"
@@ -455,6 +463,12 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, copyCmd(m.base.hash, shortHash(m.base.hash))
 		}
 		return m, copyCmd(m.history.current.hash, shortHash(m.history.current.hash))
+	case "Y":
+		hash := m.history.current.hash
+		if m.screen == "base" || m.stash.viewing {
+			hash = ""
+		}
+		return m, view.copyDiffLocation(hash)
 	}
 	if key.String() == "esc" || key.String() == "q" {
 		if m.pickerReturn {

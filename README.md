@@ -43,6 +43,7 @@ For development, `just b` builds pane, installs it, and runs it in the current r
 | `g?` | Search the diff backward; `n` / `N` follow / reverse the search direction |
 | `o` | Open the current file at the active line in `$VISUAL` / `$EDITOR` |
 | `y` | Copy the current file path, or the commit hash in history |
+| `Y` | Copy the current path and line; in commit or file-history views, use a GitHub or GitLab permalink when available |
 | `tab` | Switch unstaged / staged view |
 | `space` | Stage / unstage the current whole file |
 | `s` | Stage / unstage the current hunk, or the whole file on its header |
@@ -77,6 +78,10 @@ Commits include only staged changes if any are staged. Otherwise, pane stages al
 Press `ctrl-g` in the commit dialog to edit the full message in `$VISUAL` or `$EDITOR`. Saving and closing the editor submits the commit; lines beginning with `#` are ignored, and an empty message aborts. This also works when editing the latest commit's message from history, subject to the same remote checks.
 
 Detected renames show the old and new paths on separate lines in staged changes and commit views, with removed path text highlighted in red and added text in green. Press `B` to shorten displayed paths to the parent directory and filename; an ellipsis indicates omitted directories and is highlighted when they differ. The file picker displays the new path and can search either full name. Unstaged moves appear as a deletion and an untracked file, as in Git status.
+
+Submodule changes show the old and new revisions, available commit subjects, and dirty-state notices. The file picker labels submodules. In multi-commit review, search shows how many commits have loaded and includes new matches as loading continues.
+
+`Y` copies the new-side `path:line` in working-tree and base diffs; on a deleted line it uses the nearest new-side line. In commit and multi-commit diffs, it instead copies a permalink when the origin is a recognized GitHub or GitLab remote, falling back to `path:line`. File history copies a link to the historical path when available; ordinary history copies the selected hash. File headers copy a path without a line number.
 
 Press `W` to ignore whitespace differences in working-tree, commit, and multi-commit diffs. The setting lasts for the session. Hunk staging and discarding are disabled while it is on, because the displayed patch may omit changes; whole-file staging remains available.
 

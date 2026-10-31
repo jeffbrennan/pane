@@ -10,6 +10,23 @@ import (
 )
 
 var hunkHeader = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`)
+var submoduleHeader = regexp.MustCompile(`^Submodule (.+) ([0-9a-f]+)\.\.\.?([0-9a-f]+)(?: \(([^)]*)\))?:?$`)
+
+func submoduleLine(line string) (string, string, bool) {
+	if match := submoduleHeader.FindStringSubmatch(line); match != nil {
+		text := "Submodule " + match[2] + " → " + match[3]
+		if match[4] != "" {
+			text += " (" + match[4] + ")"
+		}
+		return match[1], text, true
+	}
+	for _, suffix := range []string{" contains modified content", " contains untracked content"} {
+		if path, ok := strings.CutSuffix(strings.TrimPrefix(line, "Submodule "), suffix); ok && strings.HasPrefix(line, "Submodule ") {
+			return path, "Submodule" + suffix, true
+		}
+	}
+	return "", "", false
+}
 
 func matchHunkHeader(line string) []string {
 	if !strings.HasPrefix(line, "@@ ") {
@@ -72,7 +89,8 @@ func buildRowsDisplay(changes []change, width int, wrap bool, expanded map[strin
 		if c.oldPath != "" {
 			name = displayPath(c.oldPath, shortPaths)
 		}
-		header := row{path: c.path, oldPath: c.oldPath, line: -1, text: " " + name, kind: 'f', numberWidth: gutterWidth}
+		_, _, submodule := submoduleLine(strings.SplitN(c.diff, "\n", 2)[0])
+		header := row{path: c.path, oldPath: c.oldPath, line: -1, text: " " + name, kind: 'f', numberWidth: gutterWidth, submodule: submodule}
 		if deletedFile && !expanded[c.path] {
 			header.deletedLines = deletedLines
 		}
@@ -140,6 +158,12 @@ func buildRowsDisplay(changes []change, width int, wrap bool, expanded map[strin
 			}
 			if !inHunk {
 				switch {
+				case submodule:
+					if _, text, ok := submoduleLine(line); ok {
+						metadata = append(metadata, clean(text))
+					} else if strings.TrimSpace(line) != "" {
+						metadata = append(metadata, clean(strings.TrimSpace(line)))
+					}
 				case strings.HasPrefix(line, "Binary files ") || strings.HasPrefix(line, "GIT binary patch"):
 					metadata = append(metadata, "Binary file changed")
 				case strings.HasPrefix(line, "old mode "), strings.HasPrefix(line, "new mode "):
@@ -217,7 +241,7 @@ func buildRowsDisplay(changes []change, width int, wrap bool, expanded map[strin
 				if (text == "New empty file" || text == "Deleted empty file") && containsBinary(metadata) {
 					continue
 				}
-				rows = append(rows, row{path: c.path, line: len(lines), text: "  " + text, kind: '@'})
+				rows = append(rows, row{path: c.path, line: len(lines), text: "  " + text, kind: '@', submodule: submodule})
 			}
 		} else {
 			for _, text := range metadata {

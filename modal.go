@@ -78,6 +78,7 @@ var shortcutSections = []struct {
 	{"General", []shortcut{
 		{"o", "Open file in $EDITOR"},
 		{"y", "Copy file path / commit hash"},
+		{"Y", "Copy path:line / commit permalink"},
 		{"?", "Show shortcuts"},
 		{"q", "Quit"},
 	}},
