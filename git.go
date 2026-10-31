@@ -249,25 +249,7 @@ func splitPatch(patch string) map[string]string {
 	// splitting a large patch copies nothing.
 	flush := func(end int) {
 		section := patch[start:end]
-		for rest := section; rest != ""; {
-			line, next, _ := strings.Cut(rest, "\n")
-			rest = next
-			if strings.HasPrefix(line, "@@ ") {
-				break
-			}
-			if value, ok := strings.CutPrefix(line, "rename to "); ok {
-				if strings.HasPrefix(value, `"`) {
-					decoded, err := strconv.Unquote(value)
-					if err != nil {
-						path = ""
-						break
-					}
-					value = decoded
-				}
-				path = value
-				break
-			}
-		}
+		path = patchSectionPath(path, section)
 		if path != "" {
 			patches[path] += section
 		}
@@ -292,6 +274,27 @@ func splitPatch(patch string) map[string]string {
 	}
 	flush(len(patch))
 	return patches
+}
+
+func patchSectionPath(path, section string) string {
+	for rest := section; rest != ""; {
+		line, next, _ := strings.Cut(rest, "\n")
+		rest = next
+		if strings.HasPrefix(line, "@@ ") {
+			break
+		}
+		if value, ok := strings.CutPrefix(line, "rename to "); ok {
+			if strings.HasPrefix(value, `"`) {
+				decoded, err := strconv.Unquote(value)
+				if err != nil {
+					return ""
+				}
+				value = decoded
+			}
+			return value
+		}
+	}
+	return path
 }
 
 func patchPath(header string) string {
