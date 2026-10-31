@@ -26,12 +26,12 @@ func TestShortcutDialog(t *testing.T) {
 
 func TestShortcutDialogScrollsInNarrowPane(t *testing.T) {
 	m := model{width: 20, height: 8, modal: "help"}
-	for i := 0; i < 100; i++ {
+	for i := 0; i < len(shortcutLines(m.width, "")); i++ {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 		m = updated.(model)
 	}
-	if !strings.Contains(m.View(), "Quit") {
-		t.Fatalf("last shortcut not visible: %q", m.View())
+	if want := len(shortcutLines(m.width, "")) - helpVisibleRows(m.height); m.helpPos != want {
+		t.Fatalf("help stopped at %d, want %d", m.helpPos, want)
 	}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
 	if updated.(model).helpPos != m.helpPos-1 {

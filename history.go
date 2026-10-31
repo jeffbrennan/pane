@@ -293,6 +293,25 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			hash := matches[min(m.history.selected, len(matches)-1)].hash
 			return m, copyCmd(hash, shortHash(hash))
 		}
+	case "u":
+		if m.busy || m.history.loading || len(matches) == 0 || len(m.history.commits) == 0 {
+			break
+		}
+		selected := matches[min(m.history.selected, len(matches)-1)]
+		if selected.hash != m.history.commits[0].hash {
+			m.flash = "Only the latest commit message can be edited"
+			break
+		}
+		m.modal, m.amendHash, m.message, m.flash = "commit", selected.hash, "", ""
+		m.input, m.inputBody, _ = strings.Cut(strings.TrimRight(selected.message, "\n"), "\n")
+		if m.inputBody != "" {
+			m.inputBody = "\n" + m.inputBody
+		}
+		m.inputCursor = len([]rune(m.input))
+		m.inputNormal, m.inputPending = false, ""
+		m.recentCommits, m.recentCommitLoading, m.recentCommitError = nil, false, false
+		m.recentCommitRequest++
+		return m, nil
 	case "g":
 		m.pending = "g"
 	case "G", "end":
@@ -523,13 +542,21 @@ func (m model) historyView() string {
 	if m.history.fetching && m.historyQuery() != "" {
 		status += styleDim + "  searching older commits…" + styleReset
 	}
-	if m.modal == "help" {
+	if m.modal == "help" || m.modal == "commit" {
 		status, hints = "", ""
+		if m.modal == "commit" && (m.width < 24 || m.height < 9) {
+			status = prompt("Commit message: ", m.input)
+		}
 	}
 	lines = append(lines, m.statusBar(status, hints))
 	if m.modal == "help" {
 		clearBody(lines)
 		m.showHelpDialog(lines)
+	} else if m.modal == "commit" {
+		clearBody(lines)
+		if m.width >= 24 && m.height >= 9 {
+			m.showCommitDialog(lines)
+		}
 	}
 	return strings.Join(lines, "\n")
 }

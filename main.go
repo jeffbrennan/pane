@@ -84,6 +84,7 @@ type model struct {
 	inputBody             string
 	inputNormal           bool
 	inputPending          string
+	amendHash             string
 	errorText             string
 	errorPos              int
 	helpPos               int
@@ -584,6 +585,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.inputBody = ""
 				m.inputNormal = false
 				m.inputPending = ""
+				m.amendHash = ""
 				m.message = ""
 				m.recentCommits = nil
 				m.recentCommitLoading = true
@@ -720,11 +722,19 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			message := m.input + m.inputBody
+			amendHash := m.amendHash
 			m.modal = ""
 			m.busy = true
+			if amendHash != "" {
+				m.activeAction = "amend"
+			}
 			m.generation++
 			repo := m.repo
 			return m, func() tea.Msg {
+				if amendHash != "" {
+					output, err := repo.amendMessage(amendHash, message)
+					return completed{message: output, commitMessage: message, err: err}
+				}
 				output, err := repo.commit(message)
 				return completed{message: output, commitMessage: message, err: err}
 			}

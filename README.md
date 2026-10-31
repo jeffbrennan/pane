@@ -54,6 +54,7 @@ For development, `just b` builds pane, installs it, and runs it in the current r
 | `p` / `P` | Push / pull |
 | `r` | Refresh |
 | `H` | Open commit history |
+| `u` | In history, edit the latest unpublished commit's message |
 | `?` | Show keyboard shortcuts |
 | `q` | Quit |
 
@@ -66,6 +67,8 @@ Detected renames show the old and new paths on separate lines in staged changes 
 In diffs, paragraph boundaries are blank lines, file headers, and hunk separators. On a file header, `h` collapses the file and `l` reopens its standard diff. On a diff line or `···`, `l` reveals nearby unchanged lines in chunks; repeat to see more, or use `h` to undo a nearby expansion. This also works for staged changes and historical commits. In the unstaged view, `d` discards the Git hunk containing the selected line, or all unstaged changes in the selected file when on its header. Discarding an untracked file deletes it from disk. Pane asks for confirmation; staged changes must be unstaged first. Diff search is incremental and case-insensitive unless the query contains an uppercase letter; matches are highlighted and `n` / `N` wrap around. The diff jump list tracks searches and larger jumps within the current view. `gi` is used for jump-forward because terminals commonly send `ctrl-i` as Tab, which switches staged views. `o` opens the working-tree file, so in a historical commit the line may have moved since. Copying uses `pbcopy`, `wl-copy`, `xclip`, or `xsel`. In history, `j` / `k` select commits, `}` / `{` jump five commits, and `/` searches author name or email, message, and hash. Enter or Space opens the selected commit's read-only diff. While typing a search, use the arrow keys to select a result and Enter to open it. Press `Esc` or `q` to go back. If you opened a file from a diff's file picker, back returns to the picker first; back again returns to history. Addition and deletion counts omit binary files, which are counted separately. Merge commit counts and diffs are relative to their first parent.
 
 The history landing page shows the branch, local changes, and commits ahead of or behind its configured upstream. Ahead/behind counts use locally stored remote-tracking refs and may be stale; pane does not fetch automatically. History reloads when the checked-out commit changes. Push and pull are available from history as well as the diff view. After a successful push, pane returns to history and refreshes its status.
+
+In history, `u` edits the latest commit's subject without changing its body, contents, or staged changes. Before rewriting, pane checks the current branch and tag tips on every configured remote. It refuses if the commit is reachable from one, if a remote cannot be contacted, or if a remote's history is not available locally; fetch the remote's branches and tags and try again in the latter case. With no configured remotes, pane permits the edit. Remote state can still change between the check and the rewrite.
 
 ## License
 

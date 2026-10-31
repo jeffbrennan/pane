@@ -55,6 +55,7 @@ var shortcutSections = []struct {
 		{"↵ / space", "Open selected commit"},
 		{"} / {", "Jump five commits"},
 		{"/", "Search commits"},
+		{"u", "Edit latest unpublished commit message"},
 		{"esc / q", "Back"},
 	}},
 	{"General", []shortcut{
@@ -204,7 +205,7 @@ func (m model) showCommitDialog(lines []string) {
 	remaining := max(0, innerWidth-runewidth.StringWidth(visibleBefore)-cellWidth)
 	body := []string{"", visibleBefore + "\x1b[7m" + cell + styleReset + sliceWidth(after, 0, remaining)}
 	if m.inputBody != "" {
-		body = append(body, styleDim+"Body pasted"+styleReset)
+		body = append(body, styleDim+"Body preserved"+styleReset)
 	}
 	if m.message != "" {
 		for _, line := range wrapLine(clean(m.message), innerWidth)[:min(2, len(wrapLine(clean(m.message), innerWidth)))] {
@@ -217,12 +218,16 @@ func (m model) showCommitDialog(lines []string) {
 		mode, hint = "NORMAL", keyHints("i/a", "insert", "↵", "commit", "esc", "cancel")
 	}
 	info := mode
-	if scope := m.commitScope(); scope != "" {
+	if scope := m.commitScope(); scope != "" && m.amendHash == "" {
 		info += " · " + scope
+	}
+	title := "Commit changes"
+	if m.amendHash != "" {
+		title = "Edit commit message"
 	}
 	content := dialog{
 		width: boxWidth,
-		title: "Commit changes",
+		title: title,
 		info:  info,
 		body:  body,
 		hint:  hint,

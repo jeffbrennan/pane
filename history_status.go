@@ -65,6 +65,8 @@ func (m model) actionStatus() string {
 		return "Pushing…"
 	case "pull":
 		return "Pulling…"
+	case "amend":
+		return "Checking remotes and updating message…"
 	default:
 		return ""
 	}
