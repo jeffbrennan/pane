@@ -313,9 +313,18 @@ func (m model) showFilesDialog(lines []string) {
 	boxWidth := min(120, m.width-2)
 	innerWidth := boxWidth - 4
 	start, visible := m.pickerViewport(len(items))
-	countWidth := len("Changes")
+	last := min(len(items), start+visible) - 1
+	numberWidth := len(fmt.Sprint(max(selected-start, last-selected)))
+	addedWidth, deletedWidth := 1, 1
 	for _, item := range pickerTree(matches, nil) {
-		countWidth = max(countWidth, len(fmt.Sprintf("+%d -%d", item.added, item.deleted)))
+		addedWidth = max(addedWidth, len(fmt.Sprint(item.added)))
+		deletedWidth = max(deletedWidth, len(fmt.Sprint(item.deleted)))
+	}
+	countWidth := max(len("Changes"), addedWidth+deletedWidth+3)
+	nameWidth := max(0, innerWidth-numberWidth-1-3-countWidth)
+	columns := func(number, name, counts string) string {
+		name = fit(name, nameWidth)
+		return number + " " + name + strings.Repeat(" ", max(0, nameWidth-runewidth.StringWidth(name))) + " │ " + counts
 	}
 	query := sliceWidth(clean(m.picker.query), max(0, runewidth.StringWidth(m.picker.query)-innerWidth+2), max(0, innerWidth-2))
 	queryLine := dialogLine("/"+query, innerWidth)
@@ -332,7 +341,7 @@ func (m model) showFilesDialog(lines []string) {
 		"┌" + strings.Repeat("─", boxWidth-2) + "┐",
 		dialogLine(title, innerWidth),
 		queryLine,
-		dialogLine("  "+fmt.Sprintf("%-*s │ ", countWidth, "Changes")+"Files", innerWidth),
+		dialogLine(columns(strings.Repeat(" ", numberWidth), "Files", "Changes"), innerWidth),
 	}
 	shown := 0
 	if len(matches) == 0 {
@@ -347,15 +356,15 @@ func (m model) showFilesDialog(lines []string) {
 			arrow := "▾ "
 			if e.collapsed {
 				arrow = "▸ "
-				counts = fmt.Sprintf("+%d -%d", e.added, e.deleted)
+				counts = fmt.Sprintf("+%*d -%*d", addedWidth, e.added, deletedWidth, e.deleted)
 			}
 			name += arrow + clean(e.name) + "/"
 		} else {
-			counts = fileCounts(e.file)
+			counts = fmt.Sprintf("+%*d -%*d", addedWidth, e.file.added, deletedWidth, e.file.deleted)
 			name += "  " + clean(e.name)
 		}
-		prefix := "  " + fmt.Sprintf("%-*s │ ", countWidth, counts)
-		text := fit(prefix+fit(name, max(0, innerWidth-runewidth.StringWidth(prefix))), innerWidth)
+		distance := max(i-selected, selected-i)
+		text := fit(columns(fmt.Sprintf("%*d", numberWidth, distance), name, counts), innerWidth)
 		line := dialogLine(text, innerWidth)
 		if i == selected {
 			line = "│ \x1b[7m" + text + strings.Repeat(" ", max(0, innerWidth-runewidth.StringWidth(text))) + "\x1b[0m │"
@@ -374,5 +383,3 @@ func (m model) showFilesDialog(lines []string) {
 		lines[top+i] = left + line
 	}
 }
-
-func fileCounts(e fileEntry) string { return fmt.Sprintf("+%d -%d", e.added, e.deleted) }

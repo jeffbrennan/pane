@@ -44,7 +44,7 @@ func keys(t *testing.T, m model, input ...string) model {
 func TestFilePickerFiltersAndJumps(t *testing.T) {
 	m := toolModel()
 	m = keys(t, m, "f")
-	if m.modal != "files" || !strings.Contains(m.View(), "Files  3/3") || !strings.Contains(m.View(), "+1 -1") {
+	if m.modal != "files" || !strings.Contains(m.View(), "Files  3/3") || !strings.Contains(m.View(), "+ 1 -1") {
 		t.Fatalf("picker: %q", m.View())
 	}
 	m = keys(t, m, "/", "t", "y", "p")
@@ -279,6 +279,66 @@ func TestFilePickerHighlightsEntireSelectedRow(t *testing.T) {
 	}
 }
 
+func TestFilePickerRelativeNumbersAndChangeColumn(t *testing.T) {
+	m := toolModel()
+	m.height = 20
+	m = keys(t, m, "f")
+	check := func() {
+		t.Helper()
+		view := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(m.View(), "")
+		lines := strings.Split(view, "\n")
+		items := m.pickerItems()
+		start, visible := m.pickerViewport(len(items))
+		for i := start; i < min(len(items), start+visible); i++ {
+			item := items[i]
+			found := false
+			for _, line := range lines {
+				if !strings.Contains(line, item.name) {
+					continue
+				}
+				found = true
+				fields := strings.Fields(line)
+				want := fmt.Sprint(max(i-m.picker.selected, m.picker.selected-i))
+				if len(fields) < 2 || fields[1] != want {
+					t.Fatalf("wrong distance for %s: %q, want %s", item.path, line, want)
+				}
+				if !item.directory && strings.Index(line, item.name) > strings.LastIndex(line, " │ +") {
+					t.Fatalf("change counts should follow file name: %q", line)
+				}
+				break
+			}
+			if !found {
+				t.Fatalf("missing row for %s in %q", item.path, view)
+			}
+		}
+	}
+	check()
+	m = keys(t, m, "G")
+	m.height = 11
+	m.revealPickerSelection()
+	check()
+	m = keys(t, m, "g", "g", "h")
+	check()
+	m = keys(t, m, "/", "t", "y", "p")
+	check()
+}
+
+func TestFilePickerAlignsChangeCounts(t *testing.T) {
+	m := model{width: 80, height: 15, snapshot: snapshot{unstaged: []change{
+		{path: "small.go", diff: "@@ -1,0 +1,2 @@\n+one\n+two\n"},
+		{path: "large.go", diff: "@@ -1,0 +1,1001 @@\n" + strings.Repeat("+line\n", 1001)},
+		{path: "deleted.go", diff: "@@ -1,1 +1,0 @@\n-line\n"},
+	}}}
+	m.rebuild()
+	m = keys(t, m, "f")
+	view := m.View()
+	for _, counts := range []string{"+   2 -0", "+1001 -0", "+   0 -1"} {
+		if !strings.Contains(view, counts) {
+			t.Errorf("missing aligned counts %q in %q", counts, view)
+		}
+	}
+}
+
 func TestFilePickerTreeBranchesAndStableExpansion(t *testing.T) {
 	m := toolModel()
 	m.height = 20
@@ -298,7 +358,7 @@ func TestFilePickerTreeBranchesAndStableExpansion(t *testing.T) {
 		t.Fatal("expanding a directory moved it on screen")
 	}
 	view := strings.Join(after, "\n")
-	for _, branch := range []string{"Changes │ Files", "├─ ▾ cmd/", "│  └─ ▾ server/", "│     └─   main.go", "└─   README.md"} {
+	for _, branch := range []string{"Files", "│ Changes", "├─ ▾ cmd/", "│  └─ ▾ server/", "│     └─   main.go", "└─   README.md"} {
 		if !strings.Contains(view, branch) {
 			t.Errorf("missing tree branch %q in %q", branch, view)
 		}
@@ -327,7 +387,7 @@ func TestCollapsedDirectoryShowsNestedChangeTotals(t *testing.T) {
 	m = keys(t, m, "h")
 	for _, line := range strings.Split(m.View(), "\n") {
 		if strings.Contains(line, "cmd/") {
-			if !strings.Contains(line, "+1 -1") {
+			if !strings.Contains(line, "+ 1 -1") {
 				t.Fatalf("collapsed directory missing totals: %q", line)
 			}
 			return
