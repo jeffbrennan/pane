@@ -17,6 +17,13 @@ type pickerState struct {
 	collapsed map[string]bool
 }
 
+func (m *model) restorePicker() {
+	m.pickerReturn = false
+	m.pickerBackToHistory = true
+	m.picker.searching = false
+	m.modal = "files"
+}
+
 type fileEntry struct {
 	path           string
 	row            int
@@ -122,9 +129,10 @@ func (m *model) setPickerDirectory(item pickerItem, collapsed bool) {
 	m.picker.collapsed[item.path] = collapsed
 }
 
-func (m *model) handlePickerKey(key string, runes []rune) {
+func (m *model) handlePickerKey(key string, runes []rune) bool {
 	items := m.pickerItems()
 	selected := min(m.picker.selected, max(0, len(items)-1))
+	opened := false
 	switch key {
 	case "ctrl+c":
 		m.modal = ""
@@ -141,6 +149,7 @@ func (m *model) handlePickerKey(key string, runes []rune) {
 			m.setPickerDirectory(items[selected], !items[selected].collapsed)
 		} else {
 			m.modal = ""
+			opened = true
 			before := m.location()
 			m.pos = items[selected].file.row
 			m.positionViewport("t")
@@ -196,6 +205,7 @@ func (m *model) handlePickerKey(key string, runes []rune) {
 		}
 	}
 	m.revealPickerSelection()
+	return opened
 }
 
 func (m model) pickerViewport(count int) (int, int) {

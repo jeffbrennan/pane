@@ -59,6 +59,7 @@ func (m *model) cacheHistoryStats() {
 
 func (m model) openHistory() (tea.Model, tea.Cmd) {
 	m.screen = "history"
+	m.pickerReturn, m.pickerBackToHistory = false, false
 	m.history.commits = nil
 	m.history.filter = ""
 	m.history.searching = false
@@ -305,6 +306,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.history.expandedDeleted = nil
 		m.history.jumps = nil
 		m.history.jumpIndex = 0
+		m.pickerReturn, m.pickerBackToHistory = false, false
 		m.history.pos, m.history.horizontal, m.history.viewTop = 0, 0, 0
 		m.screen = "commit"
 		repo, hash, request := m.repo, m.history.current.hash, m.history.request
@@ -350,14 +352,11 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, copyCmd(m.history.current.hash, shortHash(m.history.current.hash))
 	}
 	if key.String() == "esc" || key.String() == "q" {
-		m.screen = "history"
-		m.history.request++
-		m.history.loading = false
-		m.history.fetching = false
-		if m.history.stale {
-			return m.reloadHistory()
+		if m.pickerReturn {
+			m.restorePicker()
+			return m, nil
 		}
-		return m.loadHistoryBackground()
+		return m.returnToHistory()
 	}
 	if key.String() == "ctrl+c" {
 		return m, tea.Quit
@@ -379,6 +378,18 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop = view.rows, view.pos, view.horizontal, view.viewTop
 	return m, nil
+}
+
+func (m model) returnToHistory() (tea.Model, tea.Cmd) {
+	m.screen = "history"
+	m.pickerReturn, m.pickerBackToHistory = false, false
+	m.history.request++
+	m.history.loading = false
+	m.history.fetching = false
+	if m.history.stale {
+		return m.reloadHistory()
+	}
+	return m.loadHistoryBackground()
 }
 
 func (m model) commitModel() model {

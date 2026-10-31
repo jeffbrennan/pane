@@ -68,6 +68,8 @@ type model struct {
 	screen, viewTitle     string
 	history               historyState
 	picker                pickerState
+	pickerReturn          bool
+	pickerBackToHistory   bool
 	search                searchState
 	flash                 string
 	expandedDeleted       map[string]bool
@@ -333,9 +335,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				path := m.rows[m.pos].path
 				return m, copyCmd(path, path)
 			}
-		case "q", "ctrl+c":
+		case "esc", "q":
+			if m.pickerReturn {
+				m.restorePicker()
+				return m, nil
+			}
+			if msg.String() == "q" {
+				return m, tea.Quit
+			}
+		case "ctrl+c":
 			return m, tea.Quit
 		case "tab":
+			m.pickerReturn, m.pickerBackToHistory = false, false
 			m.staged = !m.staged
 			m.jumps = nil
 			m.jumpIndex = 0
@@ -444,13 +455,24 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if key.Type != tea.KeyRunes {
 			runes = nil
 		}
-		return m.inDiff(func(view *model) {
+		opened := false
+		m = m.inDiff(func(view *model) {
 			if view.modal == "files" {
-				view.handlePickerKey(key.String(), runes)
+				opened = view.handlePickerKey(key.String(), runes)
 			} else {
 				view.handleSearchKey(key.String(), runes)
 			}
-		}), nil
+		})
+		if opened {
+			m.pickerReturn = true
+			m.pickerBackToHistory = false
+		} else if m.modal == "" && m.pickerBackToHistory {
+			if m.screen == "commit" {
+				return m.returnToHistory()
+			}
+			return m.openHistory()
+		}
+		return m, nil
 	}
 	if m.modal == "help" {
 		switch key.String() {

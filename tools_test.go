@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -63,6 +64,53 @@ func TestFilePickerFiltersAndJumps(t *testing.T) {
 	m = keys(t, m, "f", "/", "z", "z", "z", "enter")
 	if m.modal != "" || m.rows[m.pos].path != "pkg/api/types.go" {
 		t.Fatal("no-match enter should close without moving")
+	}
+}
+
+func TestWorkingDiffPickerBackNavigation(t *testing.T) {
+	for _, staged := range []bool{false, true} {
+		for _, back := range []string{"esc", "q"} {
+			for _, close := range []string{"esc", "q"} {
+				name := fmt.Sprintf("staged=%t/%s/%s", staged, back, close)
+				t.Run(name, func(t *testing.T) {
+					m := toolModel()
+					if staged {
+						m.snapshot.staged = m.snapshot.unstaged
+						m.staged = true
+						m.rebuild()
+					}
+					m = keys(t, m, "f", "/", "t", "y", "p", "enter", "j", back)
+					if m.screen != "" || m.modal != "files" || m.picker.query != "typ" || m.picker.searching {
+						t.Fatalf("picker not restored: screen=%q modal=%q picker=%#v", m.screen, m.modal, m.picker)
+					}
+					items := m.pickerItems()
+					if len(items) == 0 || items[m.picker.selected].path != "pkg/api/types.go" {
+						t.Fatalf("picker selection not restored: %#v", items)
+					}
+					m = keys(t, m, close)
+					if m.screen != "history" || m.modal != "" {
+						t.Fatalf("did not return to history: screen=%q modal=%q", m.screen, m.modal)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestWorkingDiffNormalQuitAndTabReset(t *testing.T) {
+	m := toolModel()
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	if cmd == nil {
+		t.Fatal("normal q did not quit")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatal("normal q did not produce quit message")
+	}
+	m = keys(t, m, "f", "/", "t", "y", "p", "enter")
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = updated.(model)
+	if m.pickerReturn {
+		t.Fatal("switching diff views kept stale picker navigation")
 	}
 }
 

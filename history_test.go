@@ -160,6 +160,59 @@ func TestHistorySearchAndReadOnlyNavigation(t *testing.T) {
 	}
 }
 
+func TestCommitPickerBackNavigation(t *testing.T) {
+	for _, back := range []string{"esc", "q"} {
+		for _, close := range []string{"esc", "q"} {
+			t.Run(back+"_"+close, func(t *testing.T) {
+				m := model{width: 60, height: 12, wrap: true, screen: "commit", history: historyState{changes: []change{longFile("first.go"), longFile("second.go")}}}
+				m.rebuildCommit()
+				m = keys(t, m, "f", "/", "s", "e", "c", "o", "n", "d", "enter", "j")
+				if m.screen != "commit" || m.modal != "" || !m.pickerReturn {
+					t.Fatalf("file did not open from picker: %#v", m.history)
+				}
+				m = keys(t, m, back)
+				if m.screen != "commit" || m.modal != "files" || m.picker.query != "second" || m.picker.searching {
+					t.Fatalf("did not restore picker and search: screen=%q modal=%q picker=%#v", m.screen, m.modal, m.picker)
+				}
+				items := m.commitModel().pickerItems()
+				if len(items) == 0 || items[m.picker.selected].path != "second.go" {
+					t.Fatalf("picker lost its selection: %#v", items)
+				}
+				m = keys(t, m, close)
+				if m.screen != "history" || m.modal != "" {
+					t.Fatalf("did not return to history: screen=%q modal=%q", m.screen, m.modal)
+				}
+			})
+		}
+	}
+}
+
+func TestCommitPickerCanReopenFileAfterGoingBack(t *testing.T) {
+	m := model{width: 60, height: 12, wrap: true, screen: "commit", history: historyState{changes: []change{longFile("first.go"), longFile("second.go")}}}
+	m.rebuildCommit()
+	m = keys(t, m, "f", "/", "s", "e", "c", "o", "n", "d", "enter", "esc", "enter")
+	if m.screen != "commit" || m.modal != "" || !m.pickerReturn {
+		t.Fatal("reopening a file should restore picker back navigation")
+	}
+	m = keys(t, m, "q", "q")
+	if m.screen != "history" || m.modal != "" {
+		t.Fatal("back navigation failed after reopening file")
+	}
+}
+
+func TestClosingInitiallyOpenedCommitPickerReturnsToDiff(t *testing.T) {
+	m := model{width: 60, height: 12, wrap: true, screen: "commit", history: historyState{changes: []change{longFile("file.go")}}}
+	m.rebuildCommit()
+	m = keys(t, m, "f", "q")
+	if m.screen != "commit" || m.modal != "" {
+		t.Fatal("closing the initial picker should return to the diff")
+	}
+	m = keys(t, m, "esc")
+	if m.screen != "history" {
+		t.Fatal("back from commit diff should return to history")
+	}
+}
+
 func TestSearchEnterWithNoMatchesKeepsSearchOpen(t *testing.T) {
 	m := model{screen: "history", history: historyState{searching: true, draft: "missing", commits: []commitInfo{{subject: "present"}}}}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
