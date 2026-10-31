@@ -182,6 +182,22 @@ func TestSearchEnterOpensFocusedResult(t *testing.T) {
 	}
 }
 
+func TestSpaceOpensSelectedCommit(t *testing.T) {
+	m := model{screen: "history", history: historyState{selected: 1, commits: []commitInfo{{hash: "first"}, {hash: "second"}}}}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	got := updated.(model)
+	if cmd == nil || got.screen != "commit" || got.history.current.hash != "second" {
+		t.Fatal("space did not open the selected commit")
+	}
+
+	m.history.searching = true
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	got = updated.(model)
+	if got.screen != "history" || got.history.draft != " " {
+		t.Fatal("space should remain searchable while editing the history filter")
+	}
+}
+
 func TestHistorySelectionPresentationAndScrolling(t *testing.T) {
 	m := model{width: 60, height: 9, screen: "history", history: historyState{commits: []commitInfo{
 		{hash: "aaaaaaaa", author: "Alice", subject: "first", statsLoaded: true},

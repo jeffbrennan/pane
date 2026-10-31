@@ -261,7 +261,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.history.selected = min(m.history.selected+5, max(0, len(matches)-1))
 	case "{":
 		m.history.selected = max(0, m.history.selected-5)
-	case "enter":
+	case "enter", " ":
 		if len(matches) == 0 || m.history.loading {
 			break
 		}
