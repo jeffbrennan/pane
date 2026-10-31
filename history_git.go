@@ -12,6 +12,7 @@ type commitInfo struct {
 	hash, author, email, date, subject, message string
 	search                                      string
 	added, deleted, binary                      int
+	statsLoaded                                 bool
 }
 
 const historyPage = 200
@@ -25,10 +26,25 @@ func (r repository) history(skip, limit int) ([]commitInfo, error) {
 		}
 		return nil, gitError(out, err)
 	}
-	out, err = r.command("log", fmt.Sprintf("--skip=%d", skip), fmt.Sprintf("--max-count=%d", limit), "-z", "--numstat", "--no-renames", "--no-ext-diff", "--no-textconv", "--diff-merges=first-parent", "--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00")
+	out, err = r.command("log", fmt.Sprintf("--skip=%d", skip), fmt.Sprintf("--max-count=%d", limit), "-z", "--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00")
 	if err != nil {
 		return nil, gitError(out, err)
 	}
+	return parseHistory(out, false)
+}
+
+func (r repository) historyStats(hashes []string) ([]commitInfo, error) {
+	args := []string{"log", "--no-walk=unsorted", "-z", "--numstat", "--no-renames", "--no-ext-diff", "--no-textconv", "--diff-merges=first-parent", "--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00"}
+	args = append(args, hashes...)
+	args = append(args, "--")
+	out, err := r.command(args...)
+	if err != nil {
+		return nil, gitError(out, err)
+	}
+	return parseHistory(out, true)
+}
+
+func parseHistory(out []byte, statsLoaded bool) ([]commitInfo, error) {
 	fields := bytes.Split(out, []byte{0})
 	var commits []commitInfo
 	for i := 0; i < len(fields); {
@@ -39,7 +55,7 @@ func (r repository) history(skip, limit int) ([]commitInfo, error) {
 		if i+6 > len(fields) {
 			return nil, fmt.Errorf("unexpected Git history format")
 		}
-		c := commitInfo{hash: string(fields[i]), author: string(fields[i+1]), email: string(fields[i+2]), date: string(fields[i+3]), subject: string(fields[i+4]), message: string(fields[i+5])}
+		c := commitInfo{hash: string(fields[i]), author: string(fields[i+1]), email: string(fields[i+2]), date: string(fields[i+3]), subject: string(fields[i+4]), message: string(fields[i+5]), statsLoaded: statsLoaded}
 		c.search = strings.ToLower(c.hash + "\n" + c.author + "\n" + c.email + "\n" + c.message + "\n" + c.subject)
 		i += 6
 		for i < len(fields) && len(fields[i]) == 0 {

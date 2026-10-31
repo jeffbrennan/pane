@@ -96,6 +96,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.rebuild()
 		m.rebuildCommit()
+		return m.loadHistoryBackground()
 	case tick:
 		var cmd tea.Cmd
 		m, cmd = m.refresh()
@@ -196,7 +197,39 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.history.stale {
 			return m.reloadHistory()
 		}
-		return m.loadMoreHistory()
+		return m.loadHistoryBackground()
+	case historyStatsLoaded:
+		if m.screen != "history" || msg.request != m.history.request || !m.history.statsFetching {
+			break
+		}
+		m.history.statsFetching = false
+		if msg.err != nil {
+			m.errorText = msg.err.Error()
+			m.errorPos = 0
+			m.modal = "error"
+			break
+		}
+		stats := make(map[string]commitInfo, len(msg.commits))
+		for _, c := range msg.commits {
+			stats[c.hash] = c
+		}
+		for _, hash := range msg.hashes {
+			if _, ok := stats[hash]; !ok {
+				m.errorText = "Git did not return statistics for commit " + hash
+				m.errorPos = 0
+				m.modal = "error"
+				return m, nil
+			}
+		}
+		for i, c := range m.history.commits {
+			if s, ok := stats[c.hash]; ok {
+				m.history.commits[i].added = s.added
+				m.history.commits[i].deleted = s.deleted
+				m.history.commits[i].binary = s.binary
+				m.history.commits[i].statsLoaded = true
+			}
+		}
+		return m.loadHistoryStats()
 	case commitLoaded:
 		if m.screen != "commit" || msg.request != m.history.request {
 			break
@@ -227,9 +260,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.screen != "" {
 			updated, cmd := m.handleHistoryKey(msg)
-			next, more := updated.(model).loadMoreHistory()
+			next, more := updated.(model).loadHistoryBackground()
 			if more == nil {
 				return updated, cmd
+			}
+			if cmd == nil {
+				return next, more
 			}
 			return next, tea.Batch(cmd, more)
 		}

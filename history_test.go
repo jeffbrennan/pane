@@ -31,6 +31,10 @@ func TestHistoryAndCommitChanges(t *testing.T) {
 	if !strings.Contains(commits[0].message, "Detailed body") {
 		t.Fatalf("missing body: %#v", commits[0])
 	}
+	commits, err = r.historyStats([]string{commits[0].hash, commits[1].hash})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if commits[0].added != 2 || commits[0].deleted != 1 || commits[1].added != 1 {
 		t.Fatalf("wrong line counts: %#v", commits)
 	}
@@ -74,6 +78,10 @@ func TestHistoryMergeFirstParent(t *testing.T) {
 		t.Fatal(err)
 	}
 	commits, err := r.history(0, historyPage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commits, err = r.historyStats([]string{commits[0].hash})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,9 +157,9 @@ func TestSearchEnterOpensFocusedResult(t *testing.T) {
 
 func TestHistorySelectionPresentationAndScrolling(t *testing.T) {
 	m := model{width: 60, height: 9, screen: "history", history: historyState{commits: []commitInfo{
-		{hash: "aaaaaaaa", author: "Alice", subject: "first"},
-		{hash: "bbbbbbbb", author: "Bob", subject: "second"},
-		{hash: "cccccccc", author: "Carol", subject: "third"},
+		{hash: "aaaaaaaa", author: "Alice", subject: "first", statsLoaded: true},
+		{hash: "bbbbbbbb", author: "Bob", subject: "second", statsLoaded: true},
+		{hash: "cccccccc", author: "Carol", subject: "third", statsLoaded: true},
 	}}}
 	view := m.historyView()
 	if !strings.Contains(view, "\x1b[1m▸ first") || !strings.Contains(view, "\x1b[2m  second") || !strings.Contains(view, "\x1b[32m+0") || !strings.Contains(view, "\x1b[31m -0") {
@@ -174,6 +182,10 @@ func TestHistoryEmptyAndBinaryCommits(t *testing.T) {
 		t.Fatal(err)
 	}
 	commits, err := r.history(0, historyPage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commits, err = r.historyStats([]string{commits[0].hash, commits[1].hash})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,6 +292,52 @@ func TestHistoryPaging(t *testing.T) {
 	reloaded, cmd := m.reloadHistory()
 	if cmd == nil || reloaded.history.request != 2 || reloaded.history.fetching {
 		t.Fatal("reload failed")
+	}
+}
+
+func TestHistoryStatsLoadForViewportAndFollowScrolling(t *testing.T) {
+	r := testRepo(t)
+	for _, name := range []string{"one", "two", "three", "four"} {
+		writeFile(t, r, name, name+"\n")
+		if _, err := r.commit(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	commits, err := r.history(0, historyPage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := model{repo: r, width: 60, height: 5, screen: "history", history: historyState{commits: commits}}
+	m, cmd := m.loadHistoryStats()
+	if cmd == nil || !m.history.statsFetching || !strings.Contains(m.historyView(), "…") {
+		t.Fatal("visible statistics were not requested")
+	}
+	msg := cmd().(historyStatsLoaded)
+	if len(msg.hashes) != 1 {
+		t.Fatalf("loaded %d commits, expected only the visible commit", len(msg.hashes))
+	}
+	updated, cmd := m.Update(msg)
+	m = updated.(model)
+	if cmd != nil || !m.history.commits[0].statsLoaded || m.history.commits[1].statsLoaded {
+		t.Fatal("statistics loaded outside the viewport")
+	}
+	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = updated.(model)
+	if cmd == nil || !m.history.statsFetching {
+		t.Fatal("scrolling did not request newly visible statistics")
+	}
+	updated, _ = m.Update(cmd())
+	if !updated.(model).history.commits[1].statsLoaded {
+		t.Fatal("newly visible statistics were not applied")
+	}
+}
+
+func TestStaleHistoryStatsAreIgnored(t *testing.T) {
+	m := model{screen: "history", history: historyState{request: 2, statsFetching: true, commits: []commitInfo{{hash: "a"}}}}
+	updated, _ := m.Update(historyStatsLoaded{request: 1, commits: []commitInfo{{hash: "a", statsLoaded: true}}})
+	got := updated.(model)
+	if got.history.commits[0].statsLoaded || !got.history.statsFetching {
+		t.Fatal("stale statistics changed the current history")
 	}
 }
 

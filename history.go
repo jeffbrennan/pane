@@ -15,6 +15,7 @@ type historyState struct {
 	selected, offset, pos, horizontal, viewTop, request int
 	filter, draft                                       string
 	searching, loading, stale, more, fetching           bool
+	statsFetching                                       bool
 	current                                             commitInfo
 }
 
@@ -26,6 +27,12 @@ type historyLoaded struct {
 }
 type commitLoaded struct {
 	changes []change
+	err     error
+	request int
+}
+type historyStatsLoaded struct {
+	commits []commitInfo
+	hashes  []string
 	err     error
 	request int
 }
@@ -44,8 +51,49 @@ func (m model) reloadHistory() (model, tea.Cmd) {
 	m.history.loading = true
 	m.history.stale = false
 	m.history.fetching = false
+	m.history.statsFetching = false
 	m.history.request++
 	return m, m.fetchHistory(0, max(historyPage, len(m.history.commits)))
+}
+
+func (m model) loadHistoryStats() (model, tea.Cmd) {
+	if m.screen != "history" || m.history.loading || m.history.statsFetching {
+		return m, nil
+	}
+	matches := m.filteredHistory()
+	start, visible := m.historyViewport(len(matches))
+	available := max(0, m.height-m.historyHeaderHeight()-1)
+	if available >= 4 && (available-1)%3 != 0 {
+		visible++
+	}
+	var hashes []string
+	for _, c := range matches[start:min(len(matches), start+visible)] {
+		if !c.statsLoaded && c.hash != "" {
+			hashes = append(hashes, c.hash)
+		}
+	}
+	if len(hashes) == 0 {
+		return m, nil
+	}
+	m.history.statsFetching = true
+	repo, request := m.repo, m.history.request
+	return m, func() tea.Msg {
+		commits, err := repo.historyStats(hashes)
+		return historyStatsLoaded{commits: commits, hashes: hashes, err: err, request: request}
+	}
+}
+
+func (m model) loadHistoryBackground() (model, tea.Cmd) {
+	var pages, stats tea.Cmd
+	m, pages = m.loadMoreHistory()
+	m, stats = m.loadHistoryStats()
+	if pages == nil {
+		return m, stats
+	}
+	if stats == nil {
+		return m, pages
+	}
+	return m, tea.Batch(pages, stats)
 }
 
 func (m model) fetchHistory(skip, limit int) tea.Cmd {
@@ -203,6 +251,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.history.request++
 		m.history.loading = true
 		m.history.fetching = false
+		m.history.statsFetching = false
 		m.history.changes, m.history.rows = nil, nil
 		m.history.pos, m.history.horizontal, m.history.viewTop = 0, 0, 0
 		m.screen = "commit"
@@ -251,7 +300,7 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.history.stale {
 			return m.reloadHistory()
 		}
-		return m, nil
+		return m.loadHistoryBackground()
 	}
 	if key.String() == "ctrl+c" {
 		return m, tea.Quit
@@ -319,14 +368,7 @@ func (m model) historyView() string {
 	if available >= 4 {
 		spacing = 1
 	}
-	visible := max(1, (available-spacing)/3)
-	offset := m.history.offset
-	if selected < offset {
-		offset = selected
-	}
-	if selected >= offset+visible {
-		offset = selected - visible + 1
-	}
+	offset, _ := m.historyViewport(len(matches))
 	var content []string
 	if spacing > 0 && len(matches) > 0 {
 		content = append(content, "")
@@ -388,16 +430,35 @@ func (m model) historyView() string {
 	return strings.Join(lines, "\n")
 }
 
+func (m model) historyViewport(count int) (int, int) {
+	available := max(0, m.height-m.historyHeaderHeight()-1)
+	spacing := 0
+	if available >= 4 {
+		spacing = 1
+	}
+	visible := max(1, (available-spacing)/3)
+	selected := min(m.history.selected, max(0, count-1))
+	offset := m.history.offset
+	if selected < offset {
+		offset = selected
+	}
+	if selected >= offset+visible {
+		offset = selected - visible + 1
+	}
+	return min(offset, count), visible
+}
+
 func historyMetadata(c commitInfo, date string, width int, selected bool) string {
 	type segment struct{ text, style string }
 	green, red, cyan := "\x1b[32m", "\x1b[31m", "\x1b[36m"
 	if !selected {
 		green, red, cyan = "\x1b[2;32m", "\x1b[2;31m", "\x1b[2;36m"
 	}
-	segments := []segment{
-		{"  ", ""},
-		{fmt.Sprintf("+%d", c.added), green},
-		{fmt.Sprintf(" -%d", c.deleted), red},
+	segments := []segment{{"  ", ""}}
+	if c.statsLoaded {
+		segments = append(segments, segment{fmt.Sprintf("+%d", c.added), green}, segment{fmt.Sprintf(" -%d", c.deleted), red})
+	} else {
+		segments = append(segments, segment{"…", "\x1b[2m"})
 	}
 	if c.binary > 0 {
 		segments = append(segments, segment{fmt.Sprintf("  %d binary", c.binary), "\x1b[2m"})
