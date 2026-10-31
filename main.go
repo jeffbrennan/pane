@@ -310,7 +310,7 @@ func (m *model) rebuild() {
 	if m.staged {
 		changes = m.snapshot.staged
 	}
-	m.rows = buildRows(changes, max(1, m.width), m.wrap)
+	m.rows = buildRows(changes, max(1, m.width-diffMargin(m.width)), m.wrap)
 	m.pos = 0
 	if anchor.path != "" {
 		best := -1
@@ -385,6 +385,17 @@ func paragraphBoundary(r row) bool {
 	return r.kind == 'f' || (r.kind == '@' && strings.TrimSpace(r.text) == "···") || strings.TrimSpace(r.text) == ""
 }
 
+func diffMargin(width int) int {
+	if width < 3 {
+		return 1
+	}
+	return 2
+}
+
+func (m model) viewportStart(available int) int {
+	return max(0, min(m.pos-3, max(0, len(m.rows)-available)))
+}
+
 func (m *model) jump(direction int) {
 	if len(m.rows) == 0 {
 		return
@@ -454,8 +465,10 @@ func (m model) View() string {
 	var lines []string
 	lines = append(lines, fit(header, m.width))
 	available := max(0, m.height-2)
+	start := m.viewportStart(available)
+	margin := diffMargin(m.width)
 	for i := 0; i < available; i++ {
-		index := m.pos + i
+		index := start + i
 		if index >= len(m.rows) {
 			if index == 0 {
 				lines = append(lines, fit(" No changes", m.width))
@@ -466,12 +479,13 @@ func (m model) View() string {
 		}
 		r := m.rows[index]
 		text := r.text
+		contentWidth := max(0, m.width-margin)
 		if !m.wrap {
-			text = sliceWidth(text, m.horizontal, max(0, m.width-runewidth.StringWidth(r.gutter)))
+			text = sliceWidth(text, m.horizontal, max(0, contentWidth-runewidth.StringWidth(r.gutter)))
 		} else {
-			text = fit(text, max(0, m.width-runewidth.StringWidth(r.gutter)))
+			text = fit(text, max(0, contentWidth-runewidth.StringWidth(r.gutter)))
 		}
-		text = fit(r.gutter+text, m.width)
+		text = fit(r.gutter+text, contentWidth)
 		color := ""
 		switch r.kind {
 		case '+':
@@ -486,6 +500,11 @@ func (m model) View() string {
 		if color != "" {
 			text = color + text + "\x1b[0m"
 		}
+		prefix := strings.Repeat(" ", margin)
+		if index == m.pos {
+			prefix = "\x1b[1;36m▸" + strings.Repeat(" ", margin-1) + "\x1b[0m"
+		}
+		text = prefix + text
 		lines = append(lines, text)
 	}
 	status := m.message

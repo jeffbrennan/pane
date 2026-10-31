@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -21,6 +23,52 @@ func TestNavigationAndRefreshAnchor(t *testing.T) {
 	m.rebuild()
 	if m.rows[m.pos].path != "one" || m.rows[m.pos].line != 2 {
 		t.Fatal("refresh anchor")
+	}
+}
+
+func TestActiveLineShowsContext(t *testing.T) {
+	rows := make([]row, 20)
+	for i := range rows {
+		rows[i].text = fmt.Sprintf("line %02d", i)
+	}
+	m := model{width: 30, height: 10, wrap: true, rows: rows, pos: 7}
+	view := m.View()
+	if !strings.Contains(view, "line 04") || !strings.Contains(view, "▸ \x1b[0mline 07") || !strings.Contains(view, "line 11") {
+		t.Fatalf("active line or context missing: %q", view)
+	}
+	if strings.Contains(view, "line 03") {
+		t.Fatalf("viewport starts too early: %q", view)
+	}
+}
+
+func TestStagingUsesActiveLine(t *testing.T) {
+	r := testRepo(t)
+	writeFile(t, r, "first", "first\n")
+	writeFile(t, r, "second", "second\n")
+	s, err := r.load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := model{repo: r, width: 60, height: 20, wrap: true, snapshot: s}
+	m.rebuild()
+	m.jump(1)
+	if m.rows[m.pos].path != "second" || m.viewportStart(18) != 0 {
+		t.Fatal("test setup: wrong active file")
+	}
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	if cmd == nil {
+		t.Fatal("missing stage command")
+	}
+	result, ok := cmd().(completed)
+	if !ok || result.err != nil {
+		t.Fatalf("stage failed: %#v", result)
+	}
+	s, err = r.load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.staged) != 1 || s.staged[0].path != "second" || len(s.unstaged) != 1 || s.unstaged[0].path != "first" {
+		t.Fatalf("staged wrong file: %#v", s)
 	}
 }
 

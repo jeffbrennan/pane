@@ -20,7 +20,7 @@ Build with `go build -o diffy .`. Go and Git must be installed. The initial targ
 | `?` | Show keyboard shortcuts |
 | `q` | Quit |
 
-The current file is the one at the top of the viewport. Changes are refreshed by background polling approximately every 1.5 seconds, preserving the current file and approximate position. Git operations use the repository's existing configuration; authentication failures and conflicts must be handled outside diffy. Syntax highlighting, partial staging, and conflict resolution are not supported.
+The active line is marked with `▸`; staging applies to the file containing it. The viewport keeps surrounding lines visible as you navigate. Changes are refreshed by background polling approximately every 1.5 seconds, preserving the current file and approximate position. Git operations use the repository's existing configuration; authentication failures and conflicts must be handled outside diffy. Syntax highlighting, partial staging, and conflict resolution are not supported.
 
 Commits include only staged changes if any are staged. Otherwise, diffy stages all non-ignored changes, including untracked files, before committing. If the commit fails, the automatically staged changes remain staged. After a successful commit, diffy opens history with the new commit selected.
 
