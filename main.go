@@ -156,6 +156,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.busy {
 				m.modal = "commit"
 				m.input = ""
+				m.message = ""
 			}
 		case "p":
 			if !m.busy {
@@ -203,14 +204,17 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return completed{message: output, err: err}
 			}
 		case "backspace", "ctrl+h":
+			m.message = ""
 			runes := []rune(m.input)
 			if len(runes) > 0 {
 				m.input = string(runes[:len(runes)-1])
 			}
 		default:
 			if key.Type == tea.KeyRunes {
+				m.message = ""
 				m.input += string(key.Runes)
 			} else if key.Type == tea.KeySpace {
+				m.message = ""
 				m.input += " "
 			}
 		}
@@ -392,7 +396,7 @@ func (m model) View() string {
 		lines = append(lines, text)
 	}
 	status := m.message
-	if m.modal == "commit" {
+	if m.modal == "commit" && (m.width < 24 || m.height < 9) {
 		status = "Commit message: " + m.input + "_  (enter: commit, esc: cancel)"
 	}
 	if m.modal == "push" || m.modal == "pull" {
@@ -400,6 +404,9 @@ func (m model) View() string {
 	}
 	lines = append(lines, fit(clean(strings.ReplaceAll(status, "\n", " | ")), m.width))
 	lines = append(lines, fit("j/k scroll  J/K file  space stage  w wrap  c commit  p/P push/pull  q quit", m.width))
+	if m.modal == "commit" && m.width >= 24 && m.height >= 9 {
+		showCommitDialog(lines, m.width, m.input, m.message)
+	}
 	return strings.Join(lines, "\n")
 }
 
