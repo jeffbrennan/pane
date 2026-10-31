@@ -74,6 +74,25 @@ func TestPerf(t *testing.T) {
 			cancel()
 			<-done
 		})
+		measurePerf(t, scenario, "stream_first_chunk_ns", func() {
+			ctx, cancel := context.WithCancel(context.Background())
+			stream := repo.streamCommit(ctx, revision, startupSyntaxLines)
+			chunk, ok := <-stream
+			if !ok || chunk.err != nil || len(chunk.changes) == 0 {
+				cancel()
+				t.Fatalf("first stream chunk: %#v", chunk)
+			}
+			cancel()
+			for range stream {
+			}
+		})
+		measurePerf(t, scenario, "stream_total_ns", func() {
+			for chunk := range repo.streamCommit(context.Background(), revision, startupSyntaxLines) {
+				if chunk.err != nil {
+					t.Fatal(chunk.err)
+				}
+			}
+		})
 	} else {
 		for i := 0; i < 500; i++ {
 			changes = append(changes, change{path: fmt.Sprintf("file-%04d.txt", i), diff: "@@ -0,0 +1,100 @@\n" + strings.Repeat("+a representative line of text\n", 100)})

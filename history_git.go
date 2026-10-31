@@ -253,6 +253,24 @@ func (r repository) commitChangesWithoutSyntax(hash string) ([]change, error) {
 		return nil, gitError(patch, err)
 	}
 	patches := splitPatch(string(patch))
+	paths, oldPaths, err := parseCommitPaths(out)
+	if err != nil {
+		return nil, err
+	}
+	changes, err := parallelDiffs(paths, func(path string) (string, error) {
+		if r.context != nil && r.context.Err() != nil {
+			return "", r.context.Err()
+		}
+		diff, ok := patches[path]
+		return r.commitFileDiff(hash, path, oldPaths[path], diff, ok)
+	})
+	for i := range changes {
+		changes[i].oldPath = oldPaths[changes[i].path]
+	}
+	return changes, err
+}
+
+func parseCommitPaths(out []byte) ([]string, map[string]string, error) {
 	var paths []string
 	oldPaths := make(map[string]string)
 	fields := bytes.Split(out, []byte{0})
@@ -260,13 +278,13 @@ func (r repository) commitChangesWithoutSyntax(hash string) ([]change, error) {
 		status := string(fields[i])
 		i++
 		if i >= len(fields) || len(fields[i]) == 0 {
-			return nil, fmt.Errorf("unexpected Git change format")
+			return nil, nil, fmt.Errorf("unexpected Git change format")
 		}
 		path := string(fields[i])
 		i++
 		if strings.HasPrefix(status, "R") {
 			if i >= len(fields) || len(fields[i]) == 0 {
-				return nil, fmt.Errorf("unexpected Git rename format")
+				return nil, nil, fmt.Errorf("unexpected Git rename format")
 			}
 			oldPaths[string(fields[i])] = path
 			path = string(fields[i])
@@ -274,46 +292,40 @@ func (r repository) commitChangesWithoutSyntax(hash string) ([]change, error) {
 		}
 		paths = append(paths, path)
 	}
-	changes, err := parallelDiffs(paths, func(path string) (string, error) {
-		if r.context != nil && r.context.Err() != nil {
-			return "", r.context.Err()
+	return paths, oldPaths, nil
+}
+
+func (r repository) commitFileDiff(hash, path, oldPath, diff string, ok bool) (string, error) {
+	if !ok {
+		args := append([]string{"show", "--first-parent", "--format="}, r.diffOptions()...)
+		args = append(args, "--src-prefix=a/", "--dst-prefix=b/", hash, "--", path)
+		if oldPath != "" {
+			args = append(args, oldPath)
 		}
-		diff, ok := patches[path]
-		if !ok {
-			args := append([]string{"show", "--first-parent", "--format="}, r.diffOptions()...)
-			args = append(args, "--src-prefix=a/", "--dst-prefix=b/", hash, "--", path)
-			if oldPaths[path] != "" {
-				args = append(args, oldPaths[path])
+		out, err := r.commandStdout(args...)
+		if err != nil {
+			return "", gitError(out, err)
+		}
+		diff = string(out)
+	}
+	if strings.TrimSpace(diff) == "" {
+		diff = "No diff available for this file."
+		if r.ignoreSpace {
+			original := r
+			original.ignoreSpace = false
+			args := append([]string{"show", "--first-parent", "--format="}, original.diffOptions()...)
+			args = append(args, hash, "--", path)
+			if oldPath != "" {
+				args = append(args, oldPath)
 			}
-			out, err := r.commandStdout(args...)
+			out, err := original.commandStdout(args...)
 			if err != nil {
 				return "", gitError(out, err)
 			}
-			diff = string(out)
-		}
-		if strings.TrimSpace(diff) == "" {
-			diff = "No diff available for this file."
-			if r.ignoreSpace {
-				original := r
-				original.ignoreSpace = false
-				args := append([]string{"show", "--first-parent", "--format="}, original.diffOptions()...)
-				args = append(args, hash, "--", path)
-				if oldPaths[path] != "" {
-					args = append(args, oldPaths[path])
-				}
-				out, err := original.commandStdout(args...)
-				if err != nil {
-					return "", gitError(out, err)
-				}
-				if len(out) > 0 {
-					diff = "Whitespace-only changes"
-				}
+			if len(out) > 0 {
+				diff = "Whitespace-only changes"
 			}
 		}
-		return diff, nil
-	})
-	for i := range changes {
-		changes[i].oldPath = oldPaths[changes[i].path]
 	}
-	return changes, err
+	return diff, nil
 }
