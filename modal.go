@@ -16,6 +16,10 @@ var shortcuts = []string{
 	"c           Commit changes",
 	"p / P       Push / pull",
 	"r           Refresh changes",
+	"H           Open commit history",
+	"/           Search commit history",
+	"enter       Open selected commit",
+	"esc / q     Back from history",
 	"?           Show shortcuts",
 	"q           Quit",
 }

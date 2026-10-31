@@ -43,6 +43,8 @@ type model struct {
 	errorText             string
 	errorPos              int
 	helpPos               int
+	screen, viewTitle     string
+	history               historyState
 }
 
 func main() {
@@ -81,6 +83,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.rebuild()
+		m.rebuildCommit()
 	case tick:
 		var cmd tea.Cmd
 		m, cmd = m.refresh()
@@ -106,9 +109,41 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.message = msg.message
 		}
 		return m.refresh()
+	case historyLoaded:
+		if m.screen != "history" || msg.request != m.history.request {
+			break
+		}
+		m.history.loading = false
+		if msg.err != nil {
+			m.errorText = msg.err.Error()
+			m.errorPos = 0
+			m.modal = "error"
+			break
+		}
+		m.history.commits = msg.commits
+		m.history.selected = 0
+	case commitLoaded:
+		if m.screen != "commit" || msg.request != m.history.request {
+			break
+		}
+		m.history.loading = false
+		if msg.err != nil {
+			m.screen = "history"
+			m.errorText = msg.err.Error()
+			m.errorPos = 0
+			m.modal = "error"
+			break
+		}
+		m.history.changes = msg.changes
+		m.history.rows = nil
+		m.history.pos = 0
+		m.rebuildCommit()
 	case tea.KeyMsg:
 		if m.modal != "" {
 			return m.handleModal(msg)
+		}
+		if m.screen != "" {
+			return m.handleHistoryKey(msg)
 		}
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -143,6 +178,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "?":
 			m.modal = "help"
 			m.helpPos = 0
+		case "H":
+			return m.openHistory()
 		case " ":
 			if !m.busy && len(m.rows) > 0 {
 				path, staged, repo := m.rows[m.pos].path, m.staged, m.repo
@@ -365,11 +402,20 @@ func (m model) View() string {
 		lines = append(lines, fit("j/k scroll  enter/esc dismiss", m.width))
 		return strings.Join(lines, "\n")
 	}
+	if m.screen == "history" {
+		return m.historyView()
+	}
+	if m.screen == "commit" {
+		return m.commitView()
+	}
 	mode := "UNSTAGED"
 	if m.staged {
 		mode = "STAGED"
 	}
 	header := " diffy  " + mode
+	if m.viewTitle != "" {
+		header = m.viewTitle
+	}
 	if m.busy {
 		header += "  working…"
 	}
