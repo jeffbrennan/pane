@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"time"
 	"unicode"
@@ -26,8 +27,9 @@ type loaded struct {
 }
 type tick struct{}
 type completed struct {
-	message string
-	err     error
+	message       string
+	commitMessage string
+	err           error
 }
 
 type model struct {
@@ -45,6 +47,7 @@ type model struct {
 	helpPos               int
 	screen, viewTitle     string
 	history               historyState
+	receipt               *commitReceipt
 }
 
 func main() {
@@ -97,6 +100,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.message = msg.err.Error()
 			break
 		}
+		if m.receipt != nil {
+			if m.receipt.baseline == nil {
+				baseline := msg.snapshot
+				m.receipt.baseline = &baseline
+			} else if !reflect.DeepEqual(*m.receipt.baseline, msg.snapshot) {
+				m.receipt = nil
+			}
+		}
 		m.snapshot = msg.snapshot
 		m.rebuild()
 	case completed:
@@ -105,6 +116,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errorText = msg.err.Error()
 			m.errorPos = 0
 			m.modal = "error"
+		} else if msg.commitMessage != "" {
+			m.receipt = &commitReceipt{message: msg.commitMessage, output: msg.message}
+			m.message = ""
 		} else {
 			m.message = msg.message
 		}
@@ -253,7 +267,7 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			repo := m.repo
 			return m, func() tea.Msg {
 				output, err := repo.commit(message)
-				return completed{message: output, err: err}
+				return completed{message: output, commitMessage: message, err: err}
 			}
 		case "backspace", "ctrl+h":
 			m.message = ""
@@ -422,10 +436,24 @@ func (m model) View() string {
 	var lines []string
 	lines = append(lines, fit(header, m.width))
 	available := max(0, m.height-2)
-	for i := 0; i < available; i++ {
+	showReceipt := m.receipt != nil && m.viewTitle == ""
+	if showReceipt {
+		limit := available
+		if len(m.rows) > 0 {
+			limit = max(0, available-1)
+		}
+		for _, line := range m.receipt.lines(m.width) {
+			if len(lines)-1 >= limit {
+				break
+			}
+			lines = append(lines, line)
+		}
+	}
+	remaining := available - (len(lines) - 1)
+	for i := 0; i < remaining; i++ {
 		index := m.pos + i
 		if index >= len(m.rows) {
-			if index == 0 {
+			if index == 0 && !showReceipt {
 				lines = append(lines, fit(" No changes", m.width))
 			} else {
 				lines = append(lines, "")
