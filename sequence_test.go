@@ -31,12 +31,12 @@ func TestPipedCommitReview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.screen != "sequence" || len(m.sequence.commits) != 2 || m.sequence.commits[0].subject != "second commit" || m.sequence.commits[1].hash != first {
+	if m.screen != "sequence" || len(m.sequence.commits) != 2 || m.sequence.commits[0].hash != second[:8] || m.sequence.commits[1].hash != first[:8] {
 		t.Fatalf("incorrect commit input: %#v", m.sequence.commits)
 	}
 	batch := m.Init()().(tea.BatchMsg)
 	result := batch[2]().(sequenceLoaded)
-	if result.err != nil || len(result.changes) != 2 {
+	if result.err != nil || result.index != 0 || len(result.changes) != 1 {
 		t.Fatalf("could not load commits: %#v", result)
 	}
 	m.width, m.height = 60, 8
@@ -48,6 +48,9 @@ func TestPipedCommitReview(t *testing.T) {
 	if strings.Count(m.View(), "second commit") != 1 {
 		t.Fatalf("duplicate commit heading: %q", m.View())
 	}
+	result = batch[3]().(sequenceLoaded)
+	updated, _ = m.Update(result)
+	m = updated.(model)
 	for i, row := range m.rows {
 		if row.commitIndex == 1 && row.kind == '+' && row.sourceLine == 10 {
 			m.pos, m.viewTop = i, i-1
@@ -76,10 +79,24 @@ func TestPipedCommitInputValidation(t *testing.T) {
 	if _, err := r.commit("initial"); err != nil {
 		t.Fatal(err)
 	}
-	for _, input := range []string{"", "\n ", "not-a-hash subject\n", "--help\n", "deadbeef subject\n", strings.Repeat("x", 70000)} {
+	for _, input := range []string{"", "\n ", "not-a-hash subject\n", "--help\n", strings.Repeat("x", 70000)} {
 		if _, err := initialSequence(r, strings.NewReader(input)); err == nil {
 			t.Errorf("accepted invalid input %q", input[:min(len(input), 40)])
 		}
+	}
+	m, err := initialSequence(r, strings.NewReader("deadbeef subject\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch := m.Init()().(tea.BatchMsg)
+	result := batch[2]().(sequenceLoaded)
+	if result.err == nil {
+		t.Fatal("invalid hash was not reported")
+	}
+	updated, _ := m.Update(result)
+	m = updated.(model)
+	if m.sequence.states[0] != sequenceFailed || !strings.Contains(m.sequence.errors[0], "invalid commit") {
+		t.Fatalf("invalid commit not shown in sequence: %#v", m.sequence)
 	}
 }
 
@@ -187,5 +204,54 @@ func TestSequencePickerEmptyCommit(t *testing.T) {
 	m = keys(t, m, "esc")
 	if m.screen != "sequence" || m.modal != "" {
 		t.Fatal("closing initial picker should return to sequence")
+	}
+}
+
+func TestSequenceLoadsFirstAndLastBeforeMiddle(t *testing.T) {
+	m, err := initialSequence(repository{}, strings.NewReader("aaaa first\nbbbb second\ncccc third\ndddd last\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch := m.Init()().(tea.BatchMsg)
+	if len(batch) != 4 || m.sequence.states[0] != sequenceLoading || m.sequence.states[3] != sequenceLoading || m.sequence.states[1] != sequencePending || m.sequence.states[2] != sequencePending {
+		t.Fatalf("first and last were not prioritized: %#v", m.sequence.states)
+	}
+	m.width, m.height = 40, 8
+	m.rebuildSequence()
+	m = keys(t, m, "G")
+	if !m.sequence.endPending || m.rows[m.pos].commitIndex != 3 {
+		t.Fatal("G did not select the last loading commit")
+	}
+	updated, next := m.Update(sequenceLoaded{request: 1, index: 3, commit: commitInfo{hash: "dddd", subject: "last"}, changes: []change{longFile("last.go")}})
+	m = updated.(model)
+	if next == nil || m.sequence.states[1] != sequenceLoading || m.rows[m.pos].commitIndex != 3 || m.rows[m.pos].sourceLine != 20 || m.sequence.endPending {
+		t.Fatalf("last commit did not load at the end or schedule the next: %#v row=%#v", m.sequence.states, m.rows[m.pos])
+	}
+	oldOffset := m.pos - m.viewTop
+	updated, next = m.Update(sequenceLoaded{request: 1, index: 0, commit: commitInfo{hash: "aaaa", subject: "first"}, changes: []change{longFile("first.go")}})
+	m = updated.(model)
+	if next == nil || m.sequence.states[2] != sequenceLoading || m.rows[m.pos].commitIndex != 3 || m.rows[m.pos].sourceLine != 20 || m.pos-m.viewTop != oldOffset {
+		t.Fatalf("first commit load moved the selected last line: pos=%d top=%d row=%#v", m.pos, m.viewTop, m.rows[m.pos])
+	}
+	updated, _ = m.Update(sequenceLoaded{request: 1, index: 1, commit: commitInfo{hash: "bbbb"}, changes: []change{longFile("middle.go")}})
+	m = updated.(model)
+	if m.rows[m.pos].commitIndex != 3 || m.rows[m.pos].sourceLine != 20 {
+		t.Fatal("loading another commit lost the selection")
+	}
+	updated, _ = m.Update(sequenceLoaded{request: 1, index: 2, commit: commitInfo{hash: "cccc"}})
+	m = updated.(model)
+	if m.sequence.loading || m.sequence.states[2] != sequenceReady {
+		t.Fatal("sequence remained loading after all commits completed")
+	}
+}
+
+func TestSequenceSingleCommitStartsOneLoad(t *testing.T) {
+	m, err := initialSequence(repository{}, strings.NewReader("aaaa\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch := m.Init()().(tea.BatchMsg)
+	if len(batch) != 3 {
+		t.Fatalf("single commit started multiple loads: %d", len(batch))
 	}
 }

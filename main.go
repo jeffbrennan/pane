@@ -148,18 +148,11 @@ func (m model) Init() tea.Cmd {
 		})
 	}
 	if m.screen == "sequence" && m.sequence.loading {
-		repo, commits, request := m.repo, m.sequence.commits, m.sequence.request
-		commands = append(commands, func() tea.Msg {
-			var changes [][]change
-			for _, commit := range commits {
-				files, err := repo.commitChanges(commit.hash)
-				if err != nil {
-					return sequenceLoaded{request: request, err: fmt.Errorf("%s: %w", shortHash(commit.hash), err)}
-				}
-				changes = append(changes, files)
+		for i, state := range m.sequence.states {
+			if state == sequenceLoading {
+				commands = append(commands, loadSequenceCommit(m.repo, m.sequence.commits[i].hash, i, m.sequence.request))
 			}
-			return sequenceLoaded{request: request, changes: changes}
-		})
+		}
 	}
 	return tea.Batch(commands...)
 }
@@ -360,16 +353,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.history.pos = 0
 		m.rebuildCommit()
 	case sequenceLoaded:
-		if m.screen != "sequence" || msg.request != m.sequence.request {
+		if m.screen != "sequence" || msg.request != m.sequence.request || msg.index < 0 || msg.index >= len(m.sequence.states) || m.sequence.states[msg.index] != sequenceLoading {
 			break
 		}
-		m.sequence.loading = false
 		if msg.err != nil {
-			m.errorText, m.errorPos, m.modal = msg.err.Error(), 0, "error"
-			break
+			m.sequence.states[msg.index] = sequenceFailed
+			m.sequence.errors[msg.index] = msg.err.Error()
+		} else {
+			m.sequence.states[msg.index] = sequenceReady
+			m.sequence.commits[msg.index] = msg.commit
+			m.sequence.changes[msg.index] = msg.changes
 		}
-		m.sequence.changes = msg.changes
 		m.rebuildSequence()
+		cmd := m.nextSequenceLoad()
+		return m, cmd
 	case flashed:
 		m.flash = msg.text
 	case editorClosed:

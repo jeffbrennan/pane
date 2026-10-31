@@ -10,14 +10,31 @@ import (
 )
 
 type sequenceState struct {
-	commits []commitInfo
-	changes [][]change
-	loading bool
-	request int
+	commits    []commitInfo
+	changes    [][]change
+	states     []sequenceLoadState
+	errors     []string
+	rowCache   [][]row
+	cacheWidth int
+	cacheWrap  bool
+	loading    bool
+	request    int
+	endPending bool
 }
 
+type sequenceLoadState uint8
+
+const (
+	sequencePending sequenceLoadState = iota
+	sequenceLoading
+	sequenceReady
+	sequenceFailed
+)
+
 type sequenceLoaded struct {
-	changes [][]change
+	index   int
+	commit  commitInfo
+	changes []change
 	request int
 	err     error
 }
@@ -43,11 +60,7 @@ func initialSequence(repo repository, input io.Reader) (model, error) {
 		if len(commits) >= 1000 {
 			return model{}, fmt.Errorf("commit input exceeds 1000 commits")
 		}
-		commit, err := repo.resolveCommit(hash)
-		if err != nil {
-			return model{}, err
-		}
-		commits = append(commits, commit)
+		commits = append(commits, commitInfo{hash: hash})
 	}
 	if err := scanner.Err(); err != nil {
 		return model{}, fmt.Errorf("reading commit input: %w", err)
@@ -55,10 +68,41 @@ func initialSequence(repo repository, input io.Reader) (model, error) {
 	if len(commits) == 0 {
 		return model{}, fmt.Errorf("no commits in input; use git log --oneline | pane")
 	}
+	state := sequenceState{commits: commits, changes: make([][]change, len(commits)), states: make([]sequenceLoadState, len(commits)), errors: make([]string, len(commits)), loading: true, request: 1}
+	state.states[0] = sequenceLoading
+	state.states[len(commits)-1] = sequenceLoading
 	return model{
 		repo: repo, wrap: true, loading: true, startup: true, screen: "sequence",
-		sequence: sequenceState{commits: commits, loading: true, request: 1},
+		sequence: state,
 	}, nil
+}
+
+func loadSequenceCommit(repo repository, revision string, index, request int) tea.Cmd {
+	return func() tea.Msg {
+		commit, err := repo.resolveCommit(revision)
+		if err != nil {
+			return sequenceLoaded{index: index, request: request, err: err}
+		}
+		changes, err := repo.commitChanges(commit.hash)
+		return sequenceLoaded{index: index, request: request, commit: commit, changes: changes, err: err}
+	}
+}
+
+func (m *model) nextSequenceLoad() tea.Cmd {
+	for i, state := range m.sequence.states {
+		if state == sequencePending {
+			m.sequence.states[i] = sequenceLoading
+			return loadSequenceCommit(m.repo, m.sequence.commits[i].hash, i, m.sequence.request)
+		}
+	}
+	m.sequence.loading = false
+	for _, state := range m.sequence.states {
+		if state == sequenceLoading {
+			m.sequence.loading = true
+			break
+		}
+	}
+	return nil
 }
 
 func (m *model) rebuildSequence() {
@@ -67,22 +111,36 @@ func (m *model) rebuildSequence() {
 	if hasAnchor {
 		anchor = m.rows[m.pos]
 	}
+	oldPos, oldTop := m.pos, m.viewTop
+	width := max(1, m.width-diffMargin(m.width))
+	if len(m.sequence.rowCache) != len(m.sequence.commits) || m.sequence.cacheWidth != width || m.sequence.cacheWrap != m.wrap {
+		m.sequence.rowCache = make([][]row, len(m.sequence.commits))
+		m.sequence.cacheWidth, m.sequence.cacheWrap = width, m.wrap
+	}
 	var rows []row
 	for i := range m.sequence.commits {
-		if i >= len(m.sequence.changes) {
+		if len(m.sequence.states) > 0 && m.sequence.states[i] == sequenceFailed {
+			rows = append(rows, row{kind: '@', text: "  " + clean(m.sequence.errors[i]), commitIndex: i})
+			continue
+		}
+		if i >= len(m.sequence.changes) || (len(m.sequence.states) > 0 && m.sequence.states[i] != sequenceReady) {
 			rows = append(rows, row{kind: '@', text: "  Loading commit…", commitIndex: i})
 			continue
 		}
-		expanded := make(map[string]bool, len(m.sequence.changes[i]))
-		for _, c := range m.sequence.changes[i] {
-			expanded[c.path] = true
-		}
-		files := buildRowsExpanded(m.sequence.changes[i], max(1, m.width-diffMargin(m.width)), m.wrap, expanded)
-		if len(files) == 0 {
-			files = append(files, row{kind: '@', text: "  No file changes"})
-		}
-		for j := range files {
-			files[j].commitIndex = i
+		files := m.sequence.rowCache[i]
+		if files == nil {
+			expanded := make(map[string]bool, len(m.sequence.changes[i]))
+			for _, c := range m.sequence.changes[i] {
+				expanded[c.path] = true
+			}
+			files = buildRowsExpanded(m.sequence.changes[i], width, m.wrap, expanded)
+			if len(files) == 0 {
+				files = append(files, row{kind: '@', text: "  No file changes"})
+			}
+			for j := range files {
+				files[j].commitIndex = i
+			}
+			m.sequence.rowCache[i] = files
 		}
 		rows = append(rows, files...)
 	}
@@ -101,7 +159,20 @@ func (m *model) rebuildSequence() {
 		}
 		if best >= 0 {
 			m.pos = best
+		} else if anchor.kind == '@' {
+			for i, r := range rows {
+				if r.commitIndex == anchor.commitIndex {
+					m.pos = i
+					break
+				}
+			}
 		}
+		m.viewTop = max(0, oldTop+m.pos-oldPos)
+	}
+	if m.sequence.endPending && len(m.sequence.states) > 0 && m.sequence.states[len(m.sequence.states)-1] >= sequenceReady {
+		m.pos = max(0, len(rows)-1)
+		m.sequence.endPending = false
+		m.viewTop = max(0, m.pos-max(1, m.height-2)+1)
 	}
 	m.clamp()
 	m.viewTop = m.viewportStart(max(1, m.height-2))
@@ -127,6 +198,12 @@ func (m model) sequenceView() string {
 }
 
 func (m model) handleSequenceKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if key.String() == "G" && m.pending == "" && m.count == 0 && len(m.sequence.states) > 0 {
+		last := m.sequence.states[len(m.sequence.states)-1]
+		m.sequence.endPending = last == sequencePending || last == sequenceLoading
+	} else if key.String() != "G" {
+		m.sequence.endPending = false
+	}
 	if m.handleDiffNavigation(key.String()) {
 		return m, nil
 	}
