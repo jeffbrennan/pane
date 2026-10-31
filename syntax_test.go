@@ -122,13 +122,99 @@ func TestSyntaxWrappingScrollingAndSearch(t *testing.T) {
 
 func TestSyntaxFallbackForMissingContextAndOtherLanguages(t *testing.T) {
 	diff := "@@ -5 +5 @@\n-old\n+new\n"
-	for _, c := range []change{{path: "file.go", diff: diff, syntaxDiff: diff}, {path: "file.py", diff: diff, syntaxDiff: diff}, {path: "file.rs", diff: "@@ -0,0 +1 @@\n+fn main() {}\n", syntaxDiff: "@@ -0,0 +1 @@\n+fn main() {}\n"}} {
+	for _, c := range []change{{path: "file.go", diff: diff, syntaxDiff: diff}, {path: "file.py", diff: diff, syntaxDiff: diff}, {path: "file.txt", diff: "@@ -0,0 +1 @@\n+plain text\n", syntaxDiff: "@@ -0,0 +1 @@\n+plain text\n"}} {
 		for _, r := range buildRows([]change{c}, 80, true) {
 			if r.syntax != nil {
 				t.Fatalf("unexpected syntax for %s: %#v", c.path, r)
 			}
 		}
 	}
+}
+
+func TestDataEngineeringSyntax(t *testing.T) {
+	tests := []struct {
+		path, lexer, text string
+	}{
+		{"query.sql", "SQL", "SELECT 42 FROM events;"},
+		{"main.rs", "Rust", "fn main() {}"},
+		{"config.json", "JSON", "{\"name\": \"value\"}"},
+		{"events.jsonl", "JSON", "{\"name\": \"value\"}"},
+		{"events.ndjson", "JSON", "{\"name\": \"value\"}"},
+		{"analysis.ipynb", "JSON", "{\"name\": \"value\"}"},
+		{"schema.avsc", "JSON", "{\"name\": \"value\"}"},
+		{"pyproject.toml", "TOML", "name = \"value\""},
+		{"config.hcl", "HCL", "name = \"value\""},
+		{"main.tf", "Terraform", "variable \"name\" {}"},
+		{"prod.tfvars", "Terraform", "name = \"value\""},
+		{"pipeline.yaml", "YAML", "name: value"},
+		{"pipeline.yml", "YAML", "name: value"},
+		{"config.ini", "INI", "name = value"},
+		{"config.cfg", "INI", "name = value"},
+		{"config.properties", "properties", "name = value"},
+		{"run.sh", "Bash", "echo \"hello\""},
+		{"job.scala", "Scala", "val x = 42"},
+		{"job.java", "Java", "public class Job {}"},
+		{"job.kt", "Kotlin", "val x = 42"},
+		{"job.R", "R", "x <- 42"},
+		{"job.jl", "Julia", "x = 42"},
+		{"build.gradle", "Groovy", "def x = 42"},
+		{"job.js", "JavaScript", "const x = 42;"},
+		{"job.ts", "TypeScript", "const x = 42;"},
+		{"config.xml", "XML", "<item>value</item>"},
+		{"event.proto", "Protocol Buffer", "message Event {}"},
+		{"run.ps1", "PowerShell", "$x = 42"},
+		{"Dockerfile", "Docker", "FROM python:3"},
+		{"docker/Dockerfile.worker", "Docker", "FROM python:3"},
+		{"Makefile", "Makefile", "all: build"},
+	}
+	for _, test := range tests {
+		t.Run(test.path, func(t *testing.T) {
+			lexer := syntaxLexer(test.path)
+			if lexer == nil || lexer.Config().Name != test.lexer {
+				t.Fatalf("wrong lexer for %s: %v", test.path, lexer)
+			}
+			diff := "@@ -0,0 +1 @@\n+" + test.text + "\n"
+			rows := buildRows([]change{{path: test.path, diff: diff, syntaxDiff: diff}}, 80, true)
+			if len(rows) < 2 || len(rows[1].syntax) == 0 {
+				t.Fatalf("missing highlighting: %#v", rows)
+			}
+		})
+	}
+}
+
+func TestSQLMultilineSyntaxAcrossDiffViews(t *testing.T) {
+	r := testRepo(t)
+	prefix := "/*\n" + strings.Repeat("comment\n", 8)
+	writeFile(t, r, "query.sql", prefix+"old text\n*/\nSELECT 1;\n")
+	if err := r.stage("query.sql", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.action("commit", "-m", "initial"); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, r, "query.sql", prefix+"staged text\n*/\nSELECT 1;\n")
+	if err := r.stage("query.sql", false); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, r, "query.sql", prefix+"working text\n*/\nSELECT 1;\n")
+	s, err := r.load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertCommentRows(t, s.staged, "old text", "staged text")
+	assertCommentRows(t, s.unstaged, "staged text", "working text")
+	if _, err := r.action("commit", "-m", "change"); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := r.action("rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	changes, err := r.commitChanges(hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertCommentRows(t, changes, "old text", "staged text")
 }
 
 func TestPythonSyntaxTokensAndExtensions(t *testing.T) {

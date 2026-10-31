@@ -22,11 +22,60 @@ type syntaxLine struct {
 }
 
 func syntaxLexer(path string) chroma.Lexer {
-	switch filepath.Ext(path) {
+	name := strings.ToLower(filepath.Base(path))
+	if name == "dockerfile" || strings.HasPrefix(name, "dockerfile.") {
+		return lexers.Get("docker")
+	}
+	if name == "makefile" || name == "gnumakefile" {
+		return lexers.Get("makefile")
+	}
+	switch strings.ToLower(filepath.Ext(path)) {
 	case ".go":
 		return lexers.Get("go")
 	case ".py", ".pyi", ".pyw":
 		return lexers.Get("python")
+	case ".sql":
+		return lexers.Get("sql")
+	case ".rs":
+		return lexers.Get("rust")
+	case ".json", ".jsonl", ".ndjson", ".ipynb", ".avsc":
+		return lexers.Get("json")
+	case ".toml":
+		return lexers.Get("toml")
+	case ".hcl":
+		return lexers.Get("hcl")
+	case ".tf", ".tfvars":
+		return lexers.Get("terraform")
+	case ".yaml", ".yml":
+		return lexers.Get("yaml")
+	case ".ini", ".cfg":
+		return lexers.Get("ini")
+	case ".properties":
+		return lexers.Get("properties")
+	case ".sh", ".bash", ".zsh":
+		return lexers.Get("bash")
+	case ".scala", ".sc":
+		return lexers.Get("scala")
+	case ".java":
+		return lexers.Get("java")
+	case ".kt", ".kts":
+		return lexers.Get("kotlin")
+	case ".r":
+		return lexers.Get("r")
+	case ".jl":
+		return lexers.Get("julia")
+	case ".groovy", ".gradle":
+		return lexers.Get("groovy")
+	case ".js", ".mjs", ".cjs":
+		return lexers.Get("javascript")
+	case ".ts":
+		return lexers.Get("typescript")
+	case ".xml":
+		return lexers.Get("xml")
+	case ".proto":
+		return lexers.Get("protobuf")
+	case ".ps1", ".psm1", ".psd1":
+		return lexers.Get("powershell")
 	default:
 		return nil
 	}
@@ -132,6 +181,8 @@ func tokenColor(t chroma.TokenType) string {
 		return "\x1b[36m"
 	case t == chroma.NameFunction:
 		return "\x1b[34m"
+	case t == chroma.NameTag || t == chroma.NameAttribute:
+		return "\x1b[36m"
 	default:
 		return ""
 	}
