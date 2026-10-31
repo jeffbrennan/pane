@@ -17,6 +17,14 @@ type discardRequest struct {
 }
 
 func (m model) startDiscard() (tea.Model, tea.Cmd) {
+	if m.whitespaceRefreshing {
+		m.flash = "Wait for the diff to refresh"
+		return m, nil
+	}
+	if m.repo.ignoreSpace {
+		m.flash = "Turn off whitespace ignore (W) to discard changes"
+		return m, nil
+	}
 	if m.busy || !m.onDiffFile() {
 		return m, nil
 	}

@@ -229,9 +229,11 @@ func (r repository) fullContext(key contextKey, base, oldPath string) (string, e
 	if strings.Contains(base, "\nnew file mode ") {
 		return base, nil
 	}
-	args := []string{"diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--unified=1000000"}
+	args := append([]string{"diff"}, r.diffOptions()...)
+	args = append(args, "--unified=1000000")
 	if key.commit != "" {
-		args = []string{"show", "--first-parent", "--format=", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--unified=1000000", key.commit}
+		args = append([]string{"show", "--first-parent", "--format="}, r.diffOptions()...)
+		args = append(args, "--unified=1000000", key.commit)
 	} else if key.staged {
 		args = append(args, "--cached")
 	}

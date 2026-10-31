@@ -34,9 +34,10 @@ type cachedChange struct {
 }
 
 type refreshCache struct {
-	branch   branchStatus
-	changes  map[changeKey]cachedChange
-	snapshot snapshot
+	branch      branchStatus
+	ignoreSpace bool
+	changes     map[changeKey]cachedChange
+	snapshot    snapshot
 }
 
 func (r repository) status() (branchStatus, []statusEntry, error) {
@@ -94,10 +95,10 @@ func (r repository) loadCached(previous *refreshCache) (*refreshCache, bool, err
 	if err != nil {
 		return nil, false, err
 	}
-	if previous != nil && previous.branch.head != branch.head {
+	if previous != nil && (previous.branch.head != branch.head || previous.ignoreSpace != r.ignoreSpace) {
 		previous = nil
 	}
-	next := &refreshCache{branch: branch, changes: make(map[changeKey]cachedChange), snapshot: snapshot{branch: branch}}
+	next := &refreshCache{branch: branch, ignoreSpace: r.ignoreSpace, changes: make(map[changeKey]cachedChange), snapshot: snapshot{branch: branch}}
 	var staged []change
 	var unstaged, untracked []string
 	for _, entry := range entries {

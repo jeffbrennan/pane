@@ -14,6 +14,10 @@ type stagingCursor struct {
 }
 
 func (m model) stageSelection(hunk bool) (tea.Model, tea.Cmd) {
+	if m.whitespaceRefreshing {
+		m.flash = "Wait for the diff to refresh"
+		return m, nil
+	}
 	if m.busy || !m.onDiffFile() {
 		return m, nil
 	}
@@ -33,6 +37,10 @@ func (m model) stageSelection(hunk bool) (tea.Model, tea.Cmd) {
 			continue
 		}
 		whole := !hunk || selected.kind == 'f' || selected.kind == 'F' || c.untracked || strings.Contains(c.diff, "\ndeleted file mode ")
+		if m.repo.ignoreSpace && !whole {
+			m.flash = "Turn off whitespace ignore (W) to stage hunks"
+			return m, nil
+		}
 		patch := ""
 		if !whole {
 			if selected.kind != '+' && selected.kind != '-' && selected.kind != ' ' {

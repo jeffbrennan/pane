@@ -131,7 +131,9 @@ func (r repository) commitChangesWithoutSyntax(hash string) ([]change, error) {
 	if err != nil {
 		return nil, gitError(out, err)
 	}
-	patch, err := r.command("show", "--first-parent", "--format=", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--src-prefix=a/", "--dst-prefix=b/", hash, "--")
+	args := append([]string{"show", "--first-parent", "--format="}, r.diffOptions()...)
+	args = append(args, "--src-prefix=a/", "--dst-prefix=b/", hash, "--")
+	patch, err := r.command(args...)
 	if err != nil {
 		return nil, gitError(patch, err)
 	}
@@ -160,7 +162,8 @@ func (r repository) commitChangesWithoutSyntax(hash string) ([]change, error) {
 	changes, err := parallelDiffs(paths, func(path string) (string, error) {
 		diff, ok := patches[path]
 		if !ok {
-			args := []string{"show", "--first-parent", "--format=", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--src-prefix=a/", "--dst-prefix=b/", hash, "--", path}
+			args := append([]string{"show", "--first-parent", "--format="}, r.diffOptions()...)
+			args = append(args, "--src-prefix=a/", "--dst-prefix=b/", hash, "--", path)
 			if oldPaths[path] != "" {
 				args = append(args, oldPaths[path])
 			}
@@ -172,6 +175,22 @@ func (r repository) commitChangesWithoutSyntax(hash string) ([]change, error) {
 		}
 		if strings.TrimSpace(diff) == "" {
 			diff = "No diff available for this file."
+			if r.ignoreSpace {
+				original := r
+				original.ignoreSpace = false
+				args := append([]string{"show", "--first-parent", "--format="}, original.diffOptions()...)
+				args = append(args, hash, "--", path)
+				if oldPaths[path] != "" {
+					args = append(args, oldPaths[path])
+				}
+				out, err := original.command(args...)
+				if err != nil {
+					return "", gitError(out, err)
+				}
+				if len(out) > 0 {
+					diff = "Whitespace-only changes"
+				}
+			}
 		}
 		return diff, nil
 	})

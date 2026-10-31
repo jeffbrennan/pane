@@ -36,6 +36,15 @@ func (s snapshot) equal(other snapshot) bool {
 type repository struct {
 	root        string
 	commandHook func([]string)
+	ignoreSpace bool
+}
+
+func (r repository) diffOptions() []string {
+	args := []string{"--no-ext-diff", "--no-textconv", "--no-color", "-M"}
+	if r.ignoreSpace {
+		args = append(args, "-w")
+	}
+	return args
 }
 
 func openRepository() (repository, error) {
@@ -127,7 +136,8 @@ func (r repository) diffsForChanges(input []change, staged bool) ([]change, erro
 	if len(input) == 0 {
 		return nil, nil
 	}
-	args := []string{"diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--src-prefix=a/", "--dst-prefix=b/"}
+	args := append([]string{"diff"}, r.diffOptions()...)
+	args = append(args, "--src-prefix=a/", "--dst-prefix=b/")
 	if staged {
 		args = append(args, "--cached")
 	}
@@ -245,7 +255,8 @@ func (r repository) diff(path string, staged bool) (string, error) {
 }
 
 func (r repository) diffPaths(path, oldPath string, staged bool) (string, error) {
-	args := []string{"diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--src-prefix=a/", "--dst-prefix=b/"}
+	args := append([]string{"diff"}, r.diffOptions()...)
+	args = append(args, "--src-prefix=a/", "--dst-prefix=b/")
 	if staged {
 		args = append(args, "--cached")
 	}
@@ -258,13 +269,27 @@ func (r repository) diffPaths(path, oldPath string, staged bool) (string, error)
 		return "", gitError(out, err)
 	}
 	if len(out) == 0 {
+		if r.ignoreSpace {
+			original := r
+			original.ignoreSpace = false
+			unfiltered, err := original.diffPaths(path, oldPath, staged)
+			if err != nil {
+				return "", err
+			}
+			if strings.HasPrefix(unfiltered, "diff --git ") {
+				return "Whitespace-only changes", nil
+			}
+			return unfiltered, nil
+		}
 		return "No diff available (possibly a conflict or submodule change).", nil
 	}
 	return string(out), nil
 }
 
 func (r repository) untrackedDiff(path string) (string, error) {
-	out, err := r.command("diff", "--no-index", "--no-ext-diff", "--no-textconv", "--no-color", "--", os.DevNull, path)
+	args := append([]string{"diff", "--no-index"}, r.diffOptions()...)
+	args = append(args, "--", os.DevNull, path)
+	out, err := r.command(args...)
 	if err != nil {
 		if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 {
 			return "", gitError(out, err)

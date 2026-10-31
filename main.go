@@ -75,6 +75,7 @@ type model struct {
 	themeAuto             bool
 	themeQuery            func()
 	refreshTick           bool
+	whitespaceRefreshing  bool
 	loading, busy         bool
 	activeAction          string
 	startup               bool
@@ -274,6 +275,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.refresh()
 		}
 		m.refreshCache = msg.cache
+		m.whitespaceRefreshing = false
 		m.restoreStagingCursor()
 	case loaded:
 		m.loading = false
@@ -285,6 +287,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.refreshCache = msg.cache
+		m.whitespaceRefreshing = false
 		headChanged := m.snapshot.branch.available && msg.snapshot.branch.available && m.snapshot.branch.head != msg.snapshot.branch.head
 		if !m.snapshot.equal(msg.snapshot) {
 			m.snapshot = msg.snapshot
@@ -494,6 +497,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.flash = ""
 		if m.modal != "" {
 			return m.handleModal(msg)
+		}
+		if msg.String() == "W" && m.pending == "" && (m.screen == "" || m.screen == "commit" || m.screen == "sequence") {
+			return m.toggleWhitespace()
 		}
 		if msg.String() == "B" && m.pending == "" && (m.screen == "" || m.screen == "commit" || m.screen == "sequence") {
 			m.shortPaths = !m.shortPaths
@@ -1030,6 +1036,13 @@ func (m model) View() string {
 	status := clean(strings.ReplaceAll(m.message, "\n", " | "))
 	if m.flash != "" {
 		status = clean(strings.ReplaceAll(m.flash, "\n", " | "))
+	}
+	if m.repo.ignoreSpace && m.modal == "" {
+		badge := styleDim + "ignoring whitespace" + styleReset
+		if status != "" {
+			status += "  "
+		}
+		status += badge
 	}
 	hints := m.viewHints
 	if hints == "" {
