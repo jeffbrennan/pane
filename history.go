@@ -199,7 +199,11 @@ func (m model) historyView() string {
 	available := max(0, m.height-2)
 	matches := m.filteredHistory()
 	selected := min(m.history.selected, max(0, len(matches)-1))
-	visible := max(1, available/2)
+	spacing := 0
+	if available >= 4 {
+		spacing = 1
+	}
+	visible := max(1, (available-spacing)/3)
 	offset := m.history.offset
 	if selected < offset {
 		offset = selected
@@ -208,18 +212,24 @@ func (m model) historyView() string {
 		offset = selected - visible + 1
 	}
 	var content []string
+	if spacing > 0 && len(matches) > 0 {
+		content = append(content, "")
+	}
 	for i := offset; i < len(matches); i++ {
 		c := matches[i]
 		marker := "  "
+		style := "\x1b[2m"
 		if i == selected {
-			marker = "> "
+			marker = "▸ "
+			style = "\x1b[1m"
 		}
 		date := c.date
 		if len(date) >= 10 {
 			date = date[:10]
 		}
-		content = append(content, fit(clean(fmt.Sprintf("%s%s  %s  %s", marker, shortHash(c.hash), date, c.author)), m.width))
-		content = append(content, fit("  "+clean(c.subject), m.width))
+		meta := fit(clean(fmt.Sprintf("%s%s  %s  %s", marker, shortHash(c.hash), date, c.author)), m.width)
+		subject := fit("  "+clean(c.subject), m.width)
+		content = append(content, style+meta+"\x1b[0m", style+subject+"\x1b[0m", "")
 		if len(content) >= available {
 			break
 		}

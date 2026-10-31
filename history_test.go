@@ -123,3 +123,20 @@ func TestHistorySearchAndReadOnlyNavigation(t *testing.T) {
 		t.Fatal("back to history failed")
 	}
 }
+
+func TestHistorySelectionPresentationAndScrolling(t *testing.T) {
+	m := model{width: 60, height: 9, screen: "history", history: historyState{commits: []commitInfo{
+		{hash: "aaaaaaaa", author: "Alice", subject: "first"},
+		{hash: "bbbbbbbb", author: "Bob", subject: "second"},
+		{hash: "cccccccc", author: "Carol", subject: "third"},
+	}}}
+	view := m.historyView()
+	if !strings.Contains(view, "\x1b[1m▸ aaaaaaaa") || !strings.Contains(view, "\x1b[2m  bbbbbbbb") || !strings.Contains(view, "first\x1b[0m\n\n") {
+		t.Fatalf("missing selection styles or spacing: %q", view)
+	}
+	m.history.selected = 2
+	view = m.historyView()
+	if !strings.Contains(view, "\x1b[1m▸ cccccccc") || !strings.Contains(view, "third") {
+		t.Fatalf("selected commit not visible: %q", view)
+	}
+}
