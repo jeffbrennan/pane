@@ -73,7 +73,7 @@ func deferOffscreenSyntax(cache *refreshCache, entries []statusEntry) {
 }
 
 func (r repository) status() (branchStatus, []statusEntry, error) {
-	out, err := r.command("status", "--porcelain=v2", "-z", "--branch", "--untracked-files=all", "--renames", "--ahead-behind")
+	out, err := r.statusOutput()
 	if err != nil {
 		return branchStatus{}, nil, gitError(out, err)
 	}
@@ -119,6 +119,78 @@ func (r repository) status() (branchStatus, []statusEntry, error) {
 		entries = append(entries, entry)
 	}
 	return parseBranchStatus(out), entries, nil
+}
+
+// statusOutput runs status with untracked files listed one by one.
+//
+// In large repositories most of status is its walk for untracked files, which
+// Git's untracked cache skips. Git uses the cache only in the untracked mode
+// it was built for, and rebuilds it whenever the mode changes, so status runs
+// in the configured mode, which the user's own status shares. That output
+// lists each untracked file unless a whole directory is untracked; those
+// directories are expanded by walking only them. When untracked files are
+// hidden, status lists every file itself, which bypasses the cache without
+// discarding it.
+func (r repository) statusOutput() ([]byte, error) {
+	args := []string{"status", "--porcelain=v2", "-z", "--branch", "--renames", "--ahead-behind"}
+	if r.untrackedCache {
+		args = append([]string{"-c", "core.untrackedCache=true"}, args...)
+	}
+	if r.untrackedHidden {
+		return r.command(append(args, "--untracked-files=all")...)
+	}
+	out, err := r.command(args...)
+	if err != nil {
+		return out, err
+	}
+	return r.expandUntrackedDirectories(out)
+}
+
+// expandUntrackedDirectories replaces each untracked directory in status
+// output with the untracked files inside it, as --untracked-files=all lists
+// them.
+func (r repository) expandUntrackedDirectories(out []byte) ([]byte, error) {
+	records := bytes.Split(out, []byte{0})
+	var directories []string
+	for i := 0; i < len(records); i++ {
+		switch record := records[i]; {
+		case bytes.HasPrefix(record, []byte("2 ")):
+			i++ // the original path of a rename
+		case bytes.HasPrefix(record, []byte("? ")) && bytes.HasSuffix(record, []byte("/")):
+			directories = append(directories, string(record[2:]))
+		}
+	}
+	if len(directories) == 0 {
+		return out, nil
+	}
+	listed, err := r.command(append([]string{"ls-files", "--others", "--exclude-standard", "-z", "--"}, directories...)...)
+	if err != nil {
+		return nil, gitError(listed, err)
+	}
+	files := make(map[string][][]byte)
+	for _, file := range bytes.Split(listed, []byte{0}) {
+		for _, directory := range directories {
+			if len(file) > 0 && bytes.HasPrefix(file, []byte(directory)) {
+				files[directory] = append(files[directory], append([]byte("? "), file...))
+				break
+			}
+		}
+	}
+	expanded := make([][]byte, 0, len(records))
+	for i := 0; i < len(records); i++ {
+		record := records[i]
+		if bytes.HasPrefix(record, []byte("2 ")) && i+1 < len(records) {
+			expanded = append(expanded, record, records[i+1])
+			i++
+			continue
+		}
+		if bytes.HasPrefix(record, []byte("? ")) && bytes.HasSuffix(record, []byte("/")) && len(files[string(record[2:])]) > 0 {
+			expanded = append(expanded, files[string(record[2:])]...)
+			continue
+		}
+		expanded = append(expanded, record)
+	}
+	return bytes.Join(expanded, []byte{0}), nil
 }
 
 func (r repository) loadCached(previous *refreshCache) (*refreshCache, bool, error) {

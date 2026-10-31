@@ -38,6 +38,13 @@ type repository struct {
 	commandHook func([]string)
 	ignoreSpace bool
 	stats       *statsStore
+	// untrackedCache turns on Git's untracked cache for status, which
+	// otherwise walks every directory for untracked files. It is set only
+	// when the repository leaves core.untrackedCache unset.
+	untrackedCache bool
+	// untrackedHidden is set when status.showUntrackedFiles hides untracked
+	// files; see statusOutput.
+	untrackedHidden bool
 }
 
 func (r repository) diffOptions() []string {
@@ -49,13 +56,43 @@ func (r repository) diffOptions() []string {
 }
 
 func openRepository() (repository, error) {
+	// Status settings are read alongside the root, so they cost no extra
+	// wait.
+	settings := make(chan repository, 1)
+	go func() {
+		out, _ := exec.Command("git", "config", "--get-regexp", `^(core\.untrackedcache|status\.showuntrackedfiles)$`).Output()
+		settings <- statusSettings(string(out))
+	}()
 	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
 	out, err := cmd.Output()
 	if err != nil {
 		return repository{}, fmt.Errorf("not inside a Git working tree")
 	}
 	root := strings.TrimSuffix(string(out), "\n")
-	return repository{root: root, stats: newStatsStore(root)}, nil
+	r := <-settings
+	r.root, r.stats = root, newStatsStore(root)
+	return r, nil
+}
+
+// statusSettings reads core.untrackedCache and status.showUntrackedFiles
+// from git config --get-regexp output.
+func statusSettings(config string) repository {
+	r := repository{untrackedCache: true}
+	for _, line := range strings.Split(config, "\n") {
+		key, value, _ := strings.Cut(line, " ")
+		switch key {
+		case "core.untrackedcache":
+			r.untrackedCache = false
+		case "status.showuntrackedfiles":
+			switch strings.ToLower(value) {
+			case "no", "false", "off", "0":
+				r.untrackedHidden = true
+			default:
+				r.untrackedHidden = false
+			}
+		}
+	}
+	return r
 }
 
 func (r repository) command(args ...string) ([]byte, error) {

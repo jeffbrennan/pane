@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -184,5 +185,89 @@ func TestFocusRefreshesImmediately(t *testing.T) {
 	m := updated.(model)
 	if m.blurred || !m.loading || cmd == nil {
 		t.Fatal("regaining focus should refresh immediately")
+	}
+}
+
+func TestStatusUsesUntrackedCache(t *testing.T) {
+	r := testRepo(t)
+	commitFile(t, r, "a.txt", "one\n", "first")
+	writeFile(t, r, "new.txt", "new\n")
+	r.untrackedCache = true
+	var commands []string
+	r.commandHook = func(args []string) { commands = append(commands, strings.Join(args, " ")) }
+	_, entries, err := r.status()
+	if err != nil || len(entries) != 1 || entries[0].path != "new.txt" {
+		t.Fatalf("status with the untracked cache: %+v, %v", entries, err)
+	}
+	if want := "-c core.untrackedCache=true status --porcelain=v2 -z --branch --renames --ahead-behind"; len(commands) != 1 || commands[0] != want {
+		t.Fatalf("status should run once in the configured mode with the cache: %q", commands)
+	}
+
+	if err := os.MkdirAll(filepath.Join(r.root, "dir", "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, r, "dir/sub/file.txt", "nested\n")
+	commands = nil
+	_, entries, err = r.status()
+	if err != nil || len(commands) != 2 || !strings.HasPrefix(commands[1], "ls-files --others") {
+		t.Fatalf("an untracked directory should list its files: %q, %v", commands, err)
+	}
+	var paths []string
+	for _, e := range entries {
+		paths = append(paths, e.path)
+	}
+	if strings.Join(paths, " ") != "dir/sub/file.txt new.txt" {
+		t.Fatalf("untracked files: %q", paths)
+	}
+
+	r.untrackedHidden = true
+	commands = nil
+	if _, entries, err = r.status(); err != nil || len(commands) != 1 || len(entries) != 2 {
+		t.Fatalf("hidden untracked files should still be listed: %q, %+v, %v", commands, entries, err)
+	}
+}
+
+func TestStatusSettings(t *testing.T) {
+	for config, want := range map[string]repository{
+		"":                                {untrackedCache: true},
+		"core.untrackedcache false\n":     {},
+		"status.showuntrackedfiles no\n":  {untrackedCache: true, untrackedHidden: true},
+		"status.showuntrackedfiles all\n": {untrackedCache: true},
+		"core.untrackedcache keep\nstatus.showuntrackedfiles false\n": {untrackedHidden: true},
+	} {
+		if got := statusSettings(config); got.untrackedCache != want.untrackedCache || got.untrackedHidden != want.untrackedHidden {
+			t.Errorf("%q: got cache %v hidden %v", config, got.untrackedCache, got.untrackedHidden)
+		}
+	}
+}
+
+func TestExpandedStatusMatchesAllUntrackedFiles(t *testing.T) {
+	r := testRepo(t)
+	commitFile(t, r, ".gitignore", "*.log\n", "ignore")
+	if err := os.MkdirAll(filepath.Join(r.root, "tracked"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	commitFile(t, r, "tracked/old.txt", "old\n", "tracked")
+	if out, err := r.command("mv", "tracked/old.txt", "tracked/renamed.txt"); err != nil {
+		t.Fatalf("%s: %v", out, err)
+	}
+	for _, dir := range []string{"a/b", "only ignored", "with space/x"} {
+		if err := os.MkdirAll(filepath.Join(r.root, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, path := range []string{"a/b/c.txt", "a/b/d.log", "a/e.txt", "only ignored/f.log", "with space/x/g h.txt", "tracked/new.txt", "top.txt"} {
+		writeFile(t, r, path, "x\n")
+	}
+	got, err := r.statusOutput()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := r.command("status", "--porcelain=v2", "-z", "--branch", "--renames", "--ahead-behind", "--untracked-files=all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("expanded status:\n%q\nwant:\n%q", got, want)
 	}
 }
