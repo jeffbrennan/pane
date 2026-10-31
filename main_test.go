@@ -76,6 +76,44 @@ func TestCommitWrappedLineSurvivesResize(t *testing.T) {
 	}
 }
 
+func TestStartupViewSelection(t *testing.T) {
+	tests := []struct {
+		name     string
+		snapshot snapshot
+		want     string
+	}{
+		{name: "clean", want: "history"},
+		{name: "unstaged", snapshot: snapshot{unstaged: []change{{path: "file", diff: "changed"}}}},
+		{name: "staged", snapshot: snapshot{staged: []change{{path: "file", diff: "changed"}}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := model{startup: true, loading: true, width: 60, height: 10}
+			updated, cmd := m.Update(loaded{snapshot: tt.snapshot})
+			got := updated.(model)
+			if got.screen != tt.want || got.startup || (tt.want == "history" && cmd == nil) {
+				t.Fatalf("unexpected startup state: %#v", got)
+			}
+		})
+	}
+}
+
+func TestCleanRefreshDoesNotChangeViewAfterStartup(t *testing.T) {
+	m := model{startup: false, width: 60, height: 10}
+	updated, cmd := m.Update(loaded{})
+	if updated.(model).screen != "" || cmd != nil {
+		t.Fatal("refresh unexpectedly opened history")
+	}
+}
+
+func TestStartupDoesNotInterruptModal(t *testing.T) {
+	m := model{startup: true, modal: "help", width: 60, height: 10}
+	updated, cmd := m.Update(loaded{})
+	if updated.(model).screen != "" || cmd != nil {
+		t.Fatal("startup interrupted modal")
+	}
+}
+
 func TestStagingUsesActiveLine(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "first", "first\n")

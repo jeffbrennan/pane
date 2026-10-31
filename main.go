@@ -40,6 +40,7 @@ type model struct {
 	pos, horizontal       int
 	staged, wrap          bool
 	loading, busy         bool
+	startup               bool
 	generation            int
 	modal, input, message string
 	errorText             string
@@ -55,7 +56,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	m := model{repo: repo, wrap: true, loading: true}
+	m := model{repo: repo, wrap: true, loading: true, startup: true}
 	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -101,6 +102,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.snapshot = msg.snapshot
 		m.rebuild()
+		if m.startup {
+			m.startup = false
+			if len(msg.snapshot.unstaged) == 0 && len(msg.snapshot.staged) == 0 && m.screen == "" && m.modal == "" {
+				return m.openHistory()
+			}
+		}
 	case completed:
 		m.busy = false
 		if msg.err != nil {
