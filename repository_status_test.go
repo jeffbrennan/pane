@@ -80,10 +80,17 @@ func TestHistoryLandingStatusAndActions(t *testing.T) {
 		unstaged: []change{{path: "one"}}, staged: []change{{path: "two"}},
 	}, history: historyState{commits: []commitInfo{{subject: "recent commit"}}}}
 	view := m.View()
-	for _, text := range []string{"Branch: main", "↑2 unpushed", "↓3 behind", "cached", "origin/main", "1 unstaged", "1 staged", "recent commit"} {
+	for _, text := range []string{"main", "↑2 unpushed", "↓3 behind", "cached", "origin/main", "1 unstaged", "1 staged", "recent commit"} {
 		if !strings.Contains(view, text) {
 			t.Errorf("missing %q in %q", text, view)
 		}
+	}
+	firstLine := strings.Split(view, "\n")[0]
+	if !strings.Contains(firstLine, "main") || !strings.Contains(firstLine, "origin/main") || strings.Contains(firstLine, "HISTORY") {
+		t.Fatalf("branch and upstream should share the heading: %q", firstLine)
+	}
+	if strings.Contains(strings.ToLower(strings.Join(m.historyHeader(), "\n")), "history") {
+		t.Fatal("unnecessary history heading is visible")
 	}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
 	if cmd != nil || updated.(model).modal != "push" {

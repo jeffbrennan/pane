@@ -1,43 +1,70 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/mattn/go-runewidth"
+)
 
 func (m model) historyHeader() []string {
-	lines := []string{fit(" pane  HISTORY", m.width)}
-	limit := min(3, max(0, m.height-4))
+	branch := m.snapshot.branch
+	lines := []string{historyTitle(branch, m.width)}
+	limit := min(2, max(0, m.height-4))
 	if limit == 0 {
 		return lines
 	}
-	branch := m.snapshot.branch
-	var status []string
+	type statusLine struct{ text, style string }
+	var status []statusLine
 	if !branch.available {
-		status = []string{"  Loading repository status…"}
+		status = append(status, statusLine{"  Loading repository status…", "\x1b[2m"})
 	} else {
-		name := branch.name
-		if name == "" {
-			name = "unknown"
+		syncStyle := "\x1b[2m"
+		if branch.countsKnown && (branch.ahead > 0 || branch.behind > 0) {
+			syncStyle = "\x1b[33m"
 		}
-		status = append(status, "  Branch: "+clean(name))
 		switch {
 		case branch.upstream == "":
-			status = append(status, "  No upstream configured")
+			status = append(status, statusLine{"  No upstream configured", syncStyle})
 		case !branch.countsKnown:
-			status = append(status, "  Upstream counts unavailable")
+			status = append(status, statusLine{"  Upstream counts unavailable", syncStyle})
 		case m.width < 40:
-			status = append(status, fmt.Sprintf("  ↑%d ↓%d (cached)", branch.ahead, branch.behind))
+			status = append(status, statusLine{fmt.Sprintf("  ↑%d ↓%d (cached)", branch.ahead, branch.behind), syncStyle})
 		default:
-			status = append(status, fmt.Sprintf("  ↑%d unpushed  ↓%d behind (cached)", branch.ahead, branch.behind))
+			status = append(status, statusLine{fmt.Sprintf("  ↑%d unpushed  ↓%d behind (cached)", branch.ahead, branch.behind), syncStyle})
 		}
 		changes := fmt.Sprintf("%d unstaged · %d staged", len(m.snapshot.unstaged), len(m.snapshot.staged))
-		if branch.upstream != "" {
-			changes = clean(branch.upstream) + " · " + changes
+		changeStyle := "\x1b[2m"
+		if len(m.snapshot.unstaged) > 0 || len(m.snapshot.staged) > 0 {
+			changeStyle = ""
 		}
-		status = append(status, "  "+changes)
+		status = append(status, statusLine{"  " + changes, changeStyle})
 	}
 	for _, line := range status[:min(limit, len(status))] {
-		lines = append(lines, fit(line, m.width))
+		text := fit(line.text, m.width)
+		if line.style != "" {
+			text = line.style + text + "\x1b[0m"
+		}
+		lines = append(lines, text)
 	}
 	return lines
+}
+
+func historyTitle(branch branchStatus, width int) string {
+	prefix := fit(" pane  ", width)
+	if !branch.available {
+		return prefix
+	}
+	name := branch.name
+	if name == "" {
+		name = "unknown"
+	}
+	name = fit(clean(name), max(0, width-runewidth.StringWidth(prefix)))
+	result := prefix + "\x1b[1m" + name + "\x1b[0m"
+	remaining := max(0, width-runewidth.StringWidth(prefix)-runewidth.StringWidth(name))
+	if branch.upstream != "" && remaining > 0 {
+		result += "\x1b[2m" + fit(" → "+clean(branch.upstream), remaining) + "\x1b[0m"
+	}
+	return result
 }
 
 func (m model) historyAvailable() int {
