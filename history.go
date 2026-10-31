@@ -61,11 +61,21 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.history.searching {
 		switch key.String() {
+		case "down":
+			m.history.selected = min(m.history.selected+1, max(0, len(m.filteredHistory())-1))
+			return m, nil
+		case "up":
+			m.history.selected = max(0, m.history.selected-1)
+			return m, nil
 		case "esc":
 			m.history.searching = false
 		case "enter":
+			if len(m.filteredHistory()) == 0 || m.history.loading {
+				return m, nil
+			}
 			m.history.filter = m.history.draft
 			m.history.searching = false
+			return m.handleHistoryKey(key)
 		case "backspace", "ctrl+h":
 			runes := []rune(m.history.draft)
 			if len(runes) > 0 {

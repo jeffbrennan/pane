@@ -108,14 +108,9 @@ func TestHistorySearchAndReadOnlyNavigation(t *testing.T) {
 	if len(m.filteredHistory()) != 1 || !strings.Contains(m.historyView(), "Fix issue") {
 		t.Fatal("live search failed")
 	}
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = updated.(model)
-	if m.history.searching || m.history.filter != "fix" {
-		t.Fatal("search not applied")
-	}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(model)
-	if m.screen != "commit" || cmd == nil || m.history.current.author != "Bob" {
+	if m.screen != "commit" || cmd == nil || m.history.current.author != "Bob" || m.history.searching || m.history.filter != "fix" {
 		t.Fatal("commit not opened")
 	}
 	for _, key := range []string{" ", "c", "p", "P"} {
@@ -127,6 +122,28 @@ func TestHistorySearchAndReadOnlyNavigation(t *testing.T) {
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if updated.(model).screen != "history" {
 		t.Fatal("back to history failed")
+	}
+}
+
+func TestSearchEnterWithNoMatchesKeepsSearchOpen(t *testing.T) {
+	m := model{screen: "history", history: historyState{searching: true, draft: "missing", commits: []commitInfo{{subject: "present"}}}}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	got := updated.(model)
+	if got.screen != "history" || !got.history.searching || cmd != nil {
+		t.Fatal("empty search should remain editable")
+	}
+}
+
+func TestSearchEnterOpensFocusedResult(t *testing.T) {
+	m := model{screen: "history", history: historyState{searching: true, draft: "fix", commits: []commitInfo{
+		{hash: "first", subject: "fix one"}, {hash: "second", subject: "fix two"},
+	}}}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = updated.(model)
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	got := updated.(model)
+	if cmd == nil || got.screen != "commit" || got.history.current.hash != "second" {
+		t.Fatalf("wrong focused result: %#v", got.history)
 	}
 }
 
