@@ -31,7 +31,6 @@ type row struct {
 	syntax       []syntaxSpan
 	inline       []syntaxSpan
 	commitIndex  int
-	numberWidth  int
 }
 
 type loaded struct {
@@ -67,6 +66,8 @@ type model struct {
 	rows                  []row
 	width, height         int
 	gutterFloor           int
+	gutterWidth           int
+	sequenceGutters       bool
 	resizeRequest         int
 	pos, horizontal       int
 	viewTop               int
@@ -1150,7 +1151,7 @@ func (m *model) rebuild() {
 		changes = m.snapshot.staged
 	}
 	changes = m.applySyntaxDemand(contextKey{commit: m.contextCommit, staged: m.staged, base: m.contextBase}, changes)
-	m.rows = buildRowsDisplay(changes, m.diffContentWidth(), m.wrap, m.expandedDeleted, m.gutterFloor, m.shortPaths)
+	m.rows, m.gutterWidth = buildRowsDisplay(changes, m.diffContentWidth(), m.wrap, m.expandedDeleted, m.gutterFloor, m.shortPaths)
 	m.rows = m.localContextRows(m.rows, changes)
 	m.rows = m.foldContextFiles(m.rows)
 	m.pos = 0
@@ -1563,14 +1564,15 @@ func (m model) lineDistance(index int) int {
 }
 
 func (m model) renderNumberedDiffRow(r row, index int) string {
-	gutter := rowGutter(r)
+	gutterWidth := m.rowGutterWidth(r)
+	gutter := rowGutter(r, gutterWidth)
 	width := m.relativeGutterWidth()
 	if width > 0 {
 		if gutter != "" {
 			width = max(width, len(gutter)-3)
 		} else {
 			// Line up headers and separators with the line numbers.
-			width = max(width, r.numberWidth)
+			width = max(width, gutterWidth)
 		}
 		number := strings.Repeat(" ", width)
 		if index >= 0 && r.offset == 0 {
@@ -1590,11 +1592,21 @@ func (m model) renderNumberedDiffRow(r row, index int) string {
 }
 
 func (m model) renderDiffRow(r row, active bool) string {
-	return m.renderDiffRowWithGutter(r, active, rowGutter(r))
+	return m.renderDiffRowWithGutter(r, active, rowGutter(r, m.rowGutterWidth(r)))
 }
 
-func rowGutter(r row) string {
-	if r.numberWidth == 0 {
+func (m model) rowGutterWidth(r row) int {
+	if m.screen == "sequence" || m.sequenceGutters {
+		if r.commitIndex >= 0 && r.commitIndex < len(m.sequence.gutterWidths) {
+			return m.sequence.gutterWidths[r.commitIndex]
+		}
+		return 0
+	}
+	return m.gutterWidth
+}
+
+func rowGutter(r row, width int) string {
+	if width == 0 {
 		return ""
 	}
 	kind := r.kind
@@ -1605,9 +1617,9 @@ func rowGutter(r row) string {
 		return ""
 	}
 	if r.offset > 0 {
-		return strings.Repeat(" ", r.numberWidth+3)
+		return strings.Repeat(" ", width+3)
 	}
-	return fmt.Sprintf("%*d %c ", r.numberWidth, r.sourceLine, kind)
+	return fmt.Sprintf("%*d %c ", width, r.sourceLine, kind)
 }
 
 func (m model) renderDiffRowWithGutter(r row, active bool, gutter string) string {

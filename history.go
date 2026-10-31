@@ -23,6 +23,7 @@ type historyState struct {
 	statsCache                                          map[string]commitInfo
 	changes                                             []change
 	rows                                                []row
+	gutterWidth                                         int
 	selected, offset, pos, horizontal, viewTop, request int
 	stashCount                                          int
 	filter, draft                                       string
@@ -116,7 +117,6 @@ func (m *model) appendCommitChanges(changes []change, done bool) {
 		}
 		for _, part := range parts {
 			for i := range part {
-				part[i].numberWidth = width
 				if part[i].kind == 'f' {
 					header = len(rows) + i + 1
 				} else {
@@ -128,7 +128,7 @@ func (m *model) appendCommitChanges(changes []change, done bool) {
 		m.history.rows = rows
 		return
 	}
-	part := buildRowsDisplay(changes, view.diffContentWidth(), view.wrap, view.expandedDeleted, width, view.shortPaths)
+	part, _ := buildRowsDisplay(changes, view.diffContentWidth(), view.wrap, view.expandedDeleted, width, view.shortPaths)
 	part = view.localContextRows(part, changes)
 	part = view.foldContextFiles(part)
 	if len(part) == 0 {
@@ -140,7 +140,7 @@ func (m *model) appendCommitChanges(changes []change, done bool) {
 	if last.kind == 'f' {
 		header = len(rows)
 	}
-	rows = append(rows, row{path: changes[0].path, line: -2, kind: 's', numberWidth: width, headerIndex: header})
+	rows = append(rows, row{path: changes[0].path, line: -2, kind: 's', headerIndex: header})
 	offset := len(rows)
 	for i := range part {
 		if part[i].headerIndex > 0 {
@@ -622,6 +622,7 @@ func (m model) inDiff(f func(*model)) model {
 	view := m.commitModel()
 	f(&view)
 	m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop = view.rows, view.pos, view.horizontal, view.viewTop
+	m.history.gutterWidth = view.gutterWidth
 	m.history.expandedDeleted = view.expandedDeleted
 	m.pending, m.count, m.modal, m.picker, m.search, m.flash = view.pending, view.count, view.modal, view.picker, view.search, view.flash
 	m.history.jumps, m.history.jumpIndex = view.jumps, view.jumpIndex
@@ -701,6 +702,7 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.rebuild()
 	}
 	m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop = view.rows, view.pos, view.horizontal, view.viewTop
+	m.history.gutterWidth = view.gutterWidth
 	return m, nil
 }
 
@@ -774,6 +776,7 @@ func (m model) commitModel() model {
 	view.relativeLines = true
 	view.contextCommit = m.history.current.hash
 	view.gutterFloor = m.history.streamGutter
+	view.gutterWidth = m.history.gutterWidth
 	if m.screen == "base" {
 		view.contextCommit, view.contextBase = m.base.hash, true
 	}
@@ -813,6 +816,7 @@ func (m *model) rebuildCommit() {
 	view := m.commitModel()
 	view.rebuild()
 	m.history.rows, m.history.pos, m.history.viewTop = view.rows, view.pos, view.viewTop
+	m.history.gutterWidth = view.gutterWidth
 }
 
 func (m model) commitView() string { return m.commitModel().View() }

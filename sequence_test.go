@@ -127,6 +127,43 @@ func TestSequenceHeadersAndResizeKeepCommitIdentity(t *testing.T) {
 	}
 }
 
+func TestSequenceKeepsGutterWidthPerCommit(t *testing.T) {
+	m := model{width: 50, height: 10, wrap: true, screen: "sequence", sequence: sequenceState{
+		commits: []commitInfo{{hash: "one"}, {hash: "two"}},
+		changes: [][]change{
+			{{path: "one", diff: "@@ -0,0 +1 @@\n+first\n"}},
+			{{path: "two", diff: "@@ -0,0 +10000 @@\n+second\n"}},
+		},
+	}}
+	for iteration := 0; iteration < 2; iteration++ {
+		m.rebuildSequence()
+		if len(m.sequence.gutterWidths) != 2 || m.sequence.gutterWidths[0] != 3 || m.sequence.gutterWidths[1] != 5 {
+			t.Fatalf("incorrect per-commit widths: %v", m.sequence.gutterWidths)
+		}
+		view := m
+		view.screen, view.sequenceGutters, view.relativeLines = "", true, true
+		for index, r := range m.rows {
+			if r.kind != '+' {
+				continue
+			}
+			want := "  1 + "
+			if r.commitIndex == 1 {
+				want = "10000 + "
+			}
+			if got := rowGutter(r, view.rowGutterWidth(r)); got != want {
+				t.Fatalf("commit %d gutter = %q, want %q", r.commitIndex, got, want)
+			}
+			view.pos = index
+			if rendered := plain(view.renderNumberedDiffRow(r, index)); !strings.Contains(rendered, want+r.text) {
+				t.Fatalf("commit %d rendered with incorrect alignment: %q", r.commitIndex, rendered)
+			}
+		}
+		if iteration == 0 {
+			m.sequence.gutterWidths = nil
+		}
+	}
+}
+
 func TestSequenceDeletedFilesAreVisible(t *testing.T) {
 	diff := "diff --git a/file b/file\ndeleted file mode 100644\n--- a/file\n+++ /dev/null\n@@ -1 +0,0 @@\n-removed\n"
 	m := model{width: 40, height: 8, wrap: true, screen: "sequence", sequence: sequenceState{

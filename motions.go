@@ -95,7 +95,7 @@ func (m *model) sourceLineJump(number int) {
 		if r.path != path || r.offset != 0 {
 			continue
 		}
-		if r.numberWidth == 0 || (r.kind != '+' && r.kind != '-' && r.kind != 'd' && r.kind != ' ') {
+		if m.rowGutterWidth(r) == 0 || (r.kind != '+' && r.kind != '-' && r.kind != 'd' && r.kind != ' ') {
 			continue
 		}
 		line := r.sourceLine

@@ -15,6 +15,7 @@ type sequenceState struct {
 	states          []sequenceLoadState
 	errors          []string
 	rowCache        [][]row
+	gutterWidths    []int
 	cacheWidth      int
 	cacheWrap       bool
 	cacheShortPaths bool
@@ -122,8 +123,12 @@ func (m *model) rebuildSequence() {
 	width := m.diffContentWidth()
 	if len(m.sequence.rowCache) != len(m.sequence.commits) || m.sequence.cacheWidth != width || m.sequence.cacheWrap != m.wrap || m.sequence.cacheShortPaths != m.shortPaths {
 		m.sequence.rowCache = make([][]row, len(m.sequence.commits))
+		m.sequence.gutterWidths = make([]int, len(m.sequence.commits))
 		m.sequence.cacheWidth, m.sequence.cacheWrap = width, m.wrap
 		m.sequence.cacheShortPaths = m.shortPaths
+	}
+	if len(m.sequence.gutterWidths) != len(m.sequence.commits) {
+		m.sequence.gutterWidths = make([]int, len(m.sequence.commits))
 	}
 	var rows []row
 	for i := range m.sequence.commits {
@@ -142,7 +147,7 @@ func (m *model) rebuildSequence() {
 				expanded[c.path] = true
 			}
 			changes := m.applySyntaxDemand(contextKey{commit: m.sequence.commits[i].hash}, m.sequence.changes[i])
-			files = buildRowsDisplay(changes, width, m.wrap, expanded, 0, m.shortPaths)
+			files, m.sequence.gutterWidths[i] = buildRowsDisplay(changes, width, m.wrap, expanded, 0, m.shortPaths)
 			if len(files) == 0 {
 				files = append(files, row{kind: '@', text: "  No file changes"})
 			}
@@ -150,6 +155,10 @@ func (m *model) rebuildSequence() {
 				files[j].commitIndex = i
 			}
 			m.sequence.rowCache[i] = files
+		} else if m.sequence.gutterWidths[i] == 0 {
+			for _, c := range m.sequence.changes[i] {
+				m.sequence.gutterWidths[i] = max(m.sequence.gutterWidths[i], lineNumberWidth(strings.Split(c.diff, "\n")))
+			}
 		}
 		rows = append(rows, files...)
 	}
@@ -208,6 +217,7 @@ func (m *model) rebuildSequence() {
 func (m model) sequenceView() string {
 	view := m
 	view.screen = ""
+	view.sequenceGutters = true
 	view.relativeLines = true
 	view.viewTitle = " "
 	if len(m.rows) > 0 && len(m.sequence.commits) > 0 {

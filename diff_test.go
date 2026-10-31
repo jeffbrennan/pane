@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"unsafe"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -12,7 +13,7 @@ func TestUnifiedDiffPresentation(t *testing.T) {
 	rows := buildRows([]change{{path: "x", diff: diff}}, 80, true)
 	var displayed []string
 	for _, row := range rows {
-		displayed = append(displayed, rowGutter(row)+row.text)
+		displayed = append(displayed, rowGutter(row, 3)+row.text)
 	}
 	got := strings.Join(displayed, "\n")
 	for _, expected := range []string{" 10   context", " 11 - old", " 11 + new", " 12   +++literal", "  ···", " 30 - removed", " 30 + added", "No newline at end of file"} {
@@ -24,6 +25,28 @@ func TestUnifiedDiffPresentation(t *testing.T) {
 		if strings.Contains(got, unwanted) {
 			t.Errorf("unexpected %q in %q", unwanted, got)
 		}
+	}
+}
+
+func TestRowSizeExcludesGutterWidth(t *testing.T) {
+	if size := unsafe.Sizeof(row{}); size > 168 {
+		t.Fatalf("row size %d exceeds 168 bytes", size)
+	}
+}
+
+func TestWorkingTreeGutterWidthFollowsSelectedChanges(t *testing.T) {
+	m := model{width: 80, height: 10, wrap: true, snapshot: snapshot{
+		unstaged: []change{{path: "one", diff: "@@ -0,0 +1 @@\n+first\n"}},
+		staged:   []change{{path: "two", diff: "@@ -0,0 +10000 @@\n+second\n"}},
+	}}
+	m.rebuild()
+	if m.gutterWidth != 3 {
+		t.Fatalf("unstaged width = %d", m.gutterWidth)
+	}
+	m.staged = true
+	m.rebuild()
+	if m.gutterWidth != 5 {
+		t.Fatalf("staged width = %d", m.gutterWidth)
 	}
 }
 
@@ -53,27 +76,28 @@ func TestToggleDeletedFileInDiffViews(t *testing.T) {
 
 func TestWrappedLinesKeepGutter(t *testing.T) {
 	rows := buildRows([]change{{path: "x", diff: "@@ -0,0 +1 @@\n+abcdefgh\n"}}, 10, true)
-	if len(rows) != 3 || rowGutter(rows[1]) != "  1 + " || rows[1].text != "abcd" || rowGutter(rows[2]) != "      " || rows[2].text != "efgh" {
+	if len(rows) != 3 || rowGutter(rows[1], 3) != "  1 + " || rows[1].text != "abcd" || rowGutter(rows[2], 3) != "      " || rows[2].text != "efgh" {
 		t.Fatalf("rows: %#v", rows)
 	}
 }
 
 func TestRowGutterRendersLineKindsAndContinuations(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		row  row
-		want string
+		name  string
+		row   row
+		width int
+		want  string
 	}{
-		{"addition", row{kind: '+', numberWidth: 3, sourceLine: 42}, " 42 + "},
-		{"context", row{kind: ' ', numberWidth: 4, sourceLine: 9}, "   9   "},
-		{"deletion", row{kind: '-', numberWidth: 3, sourceLine: 0}, "  0 - "},
-		{"deleted file", row{kind: 'd', numberWidth: 3, sourceLine: 3}, "  3 - "},
-		{"continuation", row{kind: '+', numberWidth: 3, sourceLine: 42, offset: 4}, "      "},
-		{"header", row{kind: 'f', numberWidth: 3}, ""},
-		{"uninitialized", row{kind: '+'}, ""},
+		{"addition", row{kind: '+', sourceLine: 42}, 3, " 42 + "},
+		{"context", row{kind: ' ', sourceLine: 9}, 4, "   9   "},
+		{"deletion", row{kind: '-', sourceLine: 0}, 3, "  0 - "},
+		{"deleted file", row{kind: 'd', sourceLine: 3}, 3, "  3 - "},
+		{"continuation", row{kind: '+', sourceLine: 42, offset: 4}, 3, "      "},
+		{"header", row{kind: 'f'}, 3, ""},
+		{"uninitialized", row{kind: '+'}, 0, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := rowGutter(tc.row); got != tc.want {
+			if got := rowGutter(tc.row, tc.width); got != tc.want {
 				t.Fatalf("got %q, want %q", got, tc.want)
 			}
 		})
@@ -83,7 +107,7 @@ func TestRowGutterRendersLineKindsAndContinuations(t *testing.T) {
 func TestSourceLineJumpUsesDerivedGutter(t *testing.T) {
 	changes := []change{{path: "file", diff: "@@ -10,2 +10,2 @@\n first\n-old\n+new\n"}}
 	rows := buildRows(changes, 80, true)
-	m := model{width: 80, height: 10, rows: rows}
+	m := model{width: 80, height: 10, rows: rows, gutterWidth: 3}
 	m.sourceLineJump(11)
 	if got := m.rows[m.pos]; got.kind != '+' || got.sourceLine != 11 {
 		t.Fatalf("source line jump selected %#v", got)

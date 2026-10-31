@@ -29,15 +29,20 @@ func TestStreamedRowsMatchFullBuildAndWidenGutter(t *testing.T) {
 	m := streamModel()
 	paths := []string{"one", "two", "three"}
 	m = deliverChunk(t, m, commitChunk{paths: paths, changes: changes[:1], loaded: 1})
-	if m.history.streamGutter != 4 || len(m.history.rows) == 0 {
+	if m.history.streamGutter != 4 || m.history.gutterWidth != 4 || len(m.history.rows) == 0 {
 		t.Fatal("first streaming chunk did not use a four-column gutter")
 	}
 	m = deliverChunk(t, m, commitChunk{paths: paths, changes: changes[1:2], loaded: 2})
-	if m.history.streamGutter != 5 {
+	if m.history.streamGutter != 5 || m.history.gutterWidth != 5 {
 		t.Fatal("later large line number did not widen the gutter")
 	}
+	for _, r := range m.history.rows {
+		if r.path == "one" && r.kind == '+' && r.sourceLine == 1 && rowGutter(r, m.commitModel().rowGutterWidth(r)) != "    1 + " {
+			t.Fatal("existing rows did not adopt the wider gutter")
+		}
+	}
 	m = deliverChunk(t, m, commitChunk{paths: paths, changes: changes[2:], loaded: 3, done: true})
-	want := buildRowsDisplay(changes, m.commitModel().diffContentWidth(), m.wrap, nil, 5, false)
+	want, _ := buildRowsDisplay(changes, m.commitModel().diffContentWidth(), m.wrap, nil, 5, false)
 	if !reflect.DeepEqual(m.history.rows, want) {
 		t.Fatalf("streamed rows differ from a complete build:\ngot %#v\nwant %#v", m.history.rows, want)
 	}
@@ -48,7 +53,7 @@ func TestStreamedRowsMatchFullBuildAndWidenGutter(t *testing.T) {
 
 func TestSingleChunkKeepsNormalGutter(t *testing.T) {
 	m := deliverChunk(t, streamModel(), commitChunk{paths: []string{"one"}, changes: []change{{path: "one", diff: "@@ -0,0 +1 @@\n+line\n"}}, loaded: 1, done: true})
-	if m.history.streamGutter != 3 || m.history.rows[0].numberWidth != 3 {
+	if m.history.streamGutter != 3 || m.history.gutterWidth != 3 {
 		t.Fatal("single chunk changed the normal gutter width")
 	}
 }

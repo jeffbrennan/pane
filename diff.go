@@ -51,7 +51,8 @@ func buildRowsExpanded(changes []change, width int, wrap bool, expanded map[stri
 // buildRowsNumbered builds rows whose line numbers are at least gutterWidth
 // wide, so rows rebuilt for one file line up with the rest of the diff.
 func buildRowsNumbered(changes []change, width int, wrap bool, expanded map[string]bool, gutterWidth int) []row {
-	return buildRowsDisplay(changes, width, wrap, expanded, gutterWidth, false)
+	rows, _ := buildRowsDisplay(changes, width, wrap, expanded, gutterWidth, false)
+	return rows
 }
 
 func displayPath(path string, shortened bool) string {
@@ -65,7 +66,7 @@ func displayPath(path string, shortened bool) string {
 	return "…/" + clean(strings.Join(parts[len(parts)-2:], "/"))
 }
 
-func buildRowsDisplay(changes []change, width int, wrap bool, expanded map[string]bool, gutterWidth int, shortPaths bool) []row {
+func buildRowsDisplay(changes []change, width int, wrap bool, expanded map[string]bool, gutterWidth int, shortPaths bool) ([]row, int) {
 	// Share one line number width across files so the number column stays
 	// put when moving between them.
 	widths := make([]int, len(changes))
@@ -89,11 +90,8 @@ func buildRowsDisplay(changes []change, width int, wrap bool, expanded map[strin
 		rows = append(rows, part...)
 		parts[i] = nil
 	}
-	for i := range rows {
-		rows[i].numberWidth = gutterWidth
-	}
 	indexRowHeaders(rows)
-	return rows
+	return rows, gutterWidth
 }
 
 // parallelEach calls f for each index in [0, n), one goroutine per core.
@@ -146,7 +144,7 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 		name = displayPath(c.oldPath, shortPaths)
 	}
 	_, _, submodule := submoduleLine(strings.SplitN(c.diff, "\n", 2)[0])
-	header := row{path: c.path, oldPath: c.oldPath, line: -1, text: " " + name, kind: 'f', numberWidth: gutterWidth, submodule: submodule}
+	header := row{path: c.path, oldPath: c.oldPath, line: -1, text: " " + name, kind: 'f', submodule: submodule}
 	if deletedFile && !expanded {
 		header.deletedLines = deletedLines
 	}

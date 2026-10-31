@@ -84,11 +84,7 @@ func (m model) localContextRows(rows []row, changes []change) []row {
 			}
 		}
 		c.diff = file.diff
-		numberWidth := 0
-		if len(rows) > 0 {
-			numberWidth = rows[0].numberWidth
-		}
-		full := buildRowsDisplay([]change{c}, m.diffContentWidth(), m.wrap, m.expandedDeleted, numberWidth, m.shortPaths)
+		full, _ := buildRowsDisplay([]change{c}, m.diffContentWidth(), m.wrap, m.expandedDeleted, m.gutterWidth, m.shortPaths)
 		var gap *row
 		for _, r := range full {
 			show := r.kind != ' ' || visible[r.target]
@@ -97,7 +93,7 @@ func (m model) localContextRows(rows []row, changes []change) []row {
 			}
 			if !show {
 				if gap == nil {
-					separator := row{path: path, line: r.line, target: r.target, text: "  ···", kind: '@', numberWidth: r.numberWidth}
+					separator := row{path: path, line: r.line, target: r.target, text: "  ···", kind: '@'}
 					gap = &separator
 				}
 				continue
