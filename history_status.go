@@ -49,6 +49,9 @@ func (m model) historyHeader() []string {
 	if unstaged == 0 && staged == 0 {
 		parts = append(parts, styleDim+"clean"+styleReset)
 	}
+	if m.history.stashCount > 0 {
+		parts = append(parts, styleDim+fmt.Sprintf("%d stashed", m.history.stashCount)+styleReset)
+	}
 	return append(lines, bar(m.width, " "+strings.Join(parts, styleDim+" · "+styleReset), ""))
 }
 
@@ -67,6 +70,12 @@ func (m model) actionStatus() string {
 		return "Pulling…"
 	case "fetch":
 		return "Fetching…"
+	case "stash-push":
+		return "Stashing…"
+	case "stash-pop":
+		return "Popping stash…"
+	case "stash-drop":
+		return "Dropping stash…"
 	case "amend":
 		return "Checking remotes and updating message…"
 	default:

@@ -15,6 +15,7 @@ type historyState struct {
 	changes                                             []change
 	rows                                                []row
 	selected, offset, pos, horizontal, viewTop, request int
+	stashCount                                          int
 	filter, draft                                       string
 	draftCursor                                         int
 	searching, loading, stale, more, fetching           bool
@@ -32,6 +33,7 @@ type historyLoaded struct {
 	err         error
 	request     int
 	skip, limit int
+	stashCount  int
 }
 type commitLoaded struct {
 	changes []change
@@ -147,7 +149,13 @@ func (m model) fetchHistory(skip, limit int) tea.Cmd {
 	repo, request := m.repo, m.history.request
 	return func() tea.Msg {
 		commits, err := repo.history(skip, limit)
-		return historyLoaded{commits: commits, err: err, request: request, skip: skip, limit: limit}
+		count := 0
+		if skip == 0 {
+			if entries, stashErr := repo.stashes(); stashErr == nil {
+				count = len(entries)
+			}
+		}
+		return historyLoaded{commits: commits, err: err, request: request, skip: skip, limit: limit, stashCount: count}
 	}
 }
 
@@ -281,6 +289,10 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "P":
 		if !m.busy {
 			return m.runAction("pull")
+		}
+	case "S":
+		if !m.busy {
+			return m.openStashes()
 		}
 	case "r":
 		var refreshCmd, historyCmd tea.Cmd
@@ -436,6 +448,9 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) returnToHistory() (tea.Model, tea.Cmd) {
+	if m.stash.viewing {
+		return m.openStashes()
+	}
 	if m.history.directCommit {
 		m.history.directCommit = false
 		return m.openHistory()

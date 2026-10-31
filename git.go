@@ -68,6 +68,10 @@ func (r repository) commandInput(input io.Reader, args ...string) ([]byte, error
 	cmd.Dir = r.root
 	cmd.Stdin = input
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_LITERAL_PATHSPECS=1", "GIT_PAGER=cat", "GIT_EDITOR=true")
+	if len(args) > 0 && args[0] == "stash" {
+		// Git stash uses its own magic pathspecs when saving untracked files.
+		cmd.Env = append(cmd.Env, "GIT_LITERAL_PATHSPECS=0")
+	}
 	if os.Getenv("GIT_SSH_COMMAND") == "" {
 		cmd.Env = append(cmd.Env, "GIT_SSH_COMMAND=ssh -o BatchMode=yes")
 	}

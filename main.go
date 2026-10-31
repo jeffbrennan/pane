@@ -110,6 +110,7 @@ type model struct {
 	discard               discardRequest
 	stageCursor           *stagingCursor
 	sequence              sequenceState
+	stash                 stashState
 	base                  baseState
 	contextBase           bool
 }
@@ -400,6 +401,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if msg.action == "fetch" {
 			m.flash = msg.message
 			return m.refresh()
+		} else if msg.action == "stash-push" {
+			m.flash = msg.message
+			var refreshCmd tea.Cmd
+			m, refreshCmd = m.refresh()
+			if msg.message == "Nothing to stash" {
+				return m, refreshCmd
+			}
+			historyModel, historyCmd := m.openHistory()
+			return historyModel, tea.Batch(refreshCmd, historyCmd)
+		} else if msg.action == "stash-pop" || msg.action == "stash-drop" {
+			m.flash = msg.message
+			var refreshCmd tea.Cmd
+			m, refreshCmd = m.refresh()
+			stashModel, stashCmd := m.openStashes()
+			return stashModel, tea.Batch(refreshCmd, stashCmd)
 		} else if msg.stageCursor != nil {
 			m.flash = msg.message
 			m.stageCursor = msg.stageCursor
@@ -426,6 +442,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.history.more = msg.err == nil
 		} else {
 			m.history.loading = false
+			m.history.stashCount = msg.stashCount
 		}
 		if msg.err != nil {
 			m.errorText = msg.err.Error()
@@ -487,6 +504,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.cacheHistoryStats()
 		return m.loadHistoryStats()
+	case stashesLoaded:
+		if m.screen != "stashes" || msg.request != m.stash.request {
+			break
+		}
+		m.stash.loading = false
+		if msg.err != nil {
+			m.errorText, m.errorPos, m.modal = msg.err.Error(), 0, "error"
+			break
+		}
+		m.stash.entries = msg.entries
+		m.stash.selected = min(m.stash.selected, max(0, len(msg.entries)-1))
+	case stashDiffLoaded:
+		if m.screen != "commit" || !m.stash.viewing || msg.request != m.history.request {
+			break
+		}
+		m.history.loading = false
+		if msg.err != nil {
+			m.screen = "stashes"
+			m.errorText, m.errorPos, m.modal = msg.err.Error(), 0, "error"
+			break
+		}
+		m.history.changes = msg.changes
+		m.rebuildCommit()
 	case commitLoadingDelay:
 		if m.screen == "commit" && m.history.loading && msg.request == m.history.request {
 			m.history.commitLoadingVisible = true
@@ -578,6 +618,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.screen != "" {
+			if m.screen == "stashes" {
+				return m.handleStashKey(msg)
+			}
 			if m.screen == "sequence" {
 				return m.handleSequenceKey(msg)
 			}
@@ -642,6 +685,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.helpPos = 0
 		case "H":
 			return m.openHistory()
+		case "S":
+			if !m.busy {
+				return m.startStashPush()
+			}
 		case " ", "s":
 			return m.stageSelection(msg.String() == "s")
 		case "c":
@@ -702,6 +749,15 @@ func (m *model) handleDiffTool(key string) bool {
 }
 
 func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.modal == "stash-confirm" {
+		switch key.String() {
+		case "y":
+			return m.startStashAction(m.stash.operation, m.stash.target)
+		case "n", "esc", "q", "ctrl+c":
+			m.modal = ""
+		}
+		return m, nil
+	}
 	if m.modal == "discard" {
 		switch key.String() {
 		case "y":
@@ -1043,11 +1099,14 @@ func (m model) View() string {
 	if m.width <= 0 || m.height <= 0 {
 		return ""
 	}
-	if m.modal == "error" || m.modal == "discard" {
+	if m.modal == "error" || m.modal == "discard" || m.modal == "stash-confirm" {
 		return m.confirmationView()
 	}
 	if m.screen == "history" {
 		return m.historyView()
+	}
+	if m.screen == "stashes" {
+		return m.stashView()
 	}
 	if m.screen == "commit" || m.screen == "base" {
 		return m.commitView()
@@ -1147,6 +1206,9 @@ func (m model) confirmationView() string {
 	if m.modal == "discard" && small {
 		return m.discardView()
 	}
+	if m.modal == "stash-confirm" && small {
+		return strings.Join([]string{fit(" "+strings.ToUpper(m.stash.operation)+" "+m.stash.target.ref+"?", m.width), fit(" y confirm  n/esc cancel", m.width)}, "\n")
+	}
 	if m.modal == "error" && small {
 		content := m.errorLines(m.width)
 		start := min(m.errorPos, max(0, len(content)-1))
@@ -1165,6 +1227,8 @@ func (m model) confirmationView() string {
 	lines[len(lines)-1] = ""
 	if m.modal == "error" {
 		m.showErrorDialog(lines)
+	} else if m.modal == "stash-confirm" {
+		m.showStashConfirm(lines)
 	} else {
 		m.showDiscardDialog(lines)
 	}

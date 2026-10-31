@@ -19,6 +19,7 @@ var shortcutSections = []struct {
 		{"tab", "Switch unstaged / staged"},
 		{"space", "Stage / unstage file"},
 		{"s", "Stage / unstage hunk"},
+		{"S", "Stash all changes, including untracked"},
 		{"d", "Discard hunk / file"},
 		{"c", "Commit changes"},
 		{"p / P", "Push / pull"},
@@ -58,7 +59,14 @@ var shortcutSections = []struct {
 		{"} / {", "Jump five commits"},
 		{"/", "Search commits"},
 		{"u", "Edit latest unpublished commit message"},
+		{"S", "Open stashes"},
 		{"esc / q", "Back"},
+	}},
+	{"Stashes", []shortcut{
+		{"j / k", "Select stash"},
+		{"↵ / space", "View stash"},
+		{"p / x", "Pop / drop selected stash"},
+		{"esc / q", "Back to history"},
 	}},
 	{"Search input", []shortcut{
 		{"← / →, home / end", "Move within the query"},

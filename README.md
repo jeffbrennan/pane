@@ -43,6 +43,8 @@ For development, `just b` builds pane, installs it, and runs it in the current r
 | `tab` | Switch unstaged / staged view |
 | `space` | Stage / unstage the current whole file |
 | `s` | Stage / unstage the current hunk, or the whole file on its header |
+| `S` | Stash all changes including untracked files; in history, open the stash list |
+| Stash list: `enter` / `space`, `p`, `x` | View, pop, or drop the selected stash; pop and drop require confirmation |
 | `d` | Discard the current unstaged hunk, or the whole file on its header (confirmation required) |
 | `w` | Toggle line wrapping |
 | `W` | Toggle ignoring whitespace in diffs |
@@ -74,6 +76,8 @@ Press `ctrl-g` in the commit dialog to edit the full message in `$VISUAL` or `$E
 Detected renames show the old and new paths on separate lines in staged changes and commit views, with removed path text highlighted in red and added text in green. Press `B` to shorten displayed paths to the parent directory and filename; an ellipsis indicates omitted directories and is highlighted when they differ. The file picker displays the new path and can search either full name. Unstaged moves appear as a deletion and an untracked file, as in Git status.
 
 Press `W` to ignore whitespace differences in working-tree, commit, and multi-commit diffs. The setting lasts for the session. Hunk staging and discarding are disabled while it is on, because the displayed patch may omit changes; whole-file staging remains available.
+
+Press `S` in the changes view to stash the whole working tree, including untracked (but not ignored) files. In history, `S` opens the stash list. Select a stash and press Enter to inspect it, `p` to pop it, or `x` to drop it. Pane asks for confirmation before popping or dropping; resolve any pop conflicts outside pane.
 
 In diffs, paragraph boundaries are blank lines, file headers, and hunk separators. On a file header, `h` collapses the file and `l` reopens its standard diff. On a diff line or `···`, `l` reveals nearby unchanged lines in chunks; repeat to see more, or use `h` to undo a nearby expansion. This also works for staged changes and historical commits. In the unstaged view, `d` discards the Git hunk containing the selected line, or all unstaged changes in the selected file when on its header. Discarding an untracked file deletes it from disk. Pane asks for confirmation; staged changes must be unstaged first. Diff search is incremental and case-insensitive unless the query contains an uppercase letter; matches are highlighted and `n` / `N` wrap around. The diff jump list tracks searches and larger jumps within the current view. `gi` is used for jump-forward because terminals commonly send `ctrl-i` as Tab, which switches staged views. `o` opens the working-tree file, so in a historical commit the line may have moved since. Copying uses `pbcopy`, `wl-copy`, `xclip`, or `xsel`. In history, `j` / `k` select commits, `}` / `{` jump five commits, and `/` searches author name or email, message, and hash. Enter or Space opens the selected commit's read-only diff. While typing a search, use the arrow keys to select a result and Enter to open it. Press `Esc` or `q` to go back. If you opened a file from a diff's file picker, back returns to the picker first; back again returns to history. Addition and deletion counts omit binary files, which are counted separately. Merge commit counts and diffs are relative to their first parent.
 
