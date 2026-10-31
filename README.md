@@ -36,3 +36,7 @@ Commits include only staged changes if any are staged. Otherwise, pane stages al
 In diffs, paragraph boundaries are blank lines, file headers, and hunk separators. In history, `j` / `k` select commits, `}` / `{` jump five commits, and `/` searches author name or email, message, and hash. While typing a search, use the arrow keys to select a result; Enter opens the focused commit's read-only diff. Press `Esc` or `q` to go back. Addition and deletion counts omit binary files, which are counted separately. Merge commit counts and diffs are relative to their first parent.
 
 The history landing page shows the branch, local changes, and commits ahead of or behind its configured upstream. Ahead/behind counts use locally stored remote-tracking refs and may be stale; pane does not fetch automatically. History reloads when the checked-out commit changes. Push and pull are available from history as well as the diff view. After a successful push, pane returns to history and refreshes its status.
+
+## License
+
+Pane is licensed under the [MIT License](LICENSE).
