@@ -29,10 +29,7 @@ func (m model) actionDialogView() string {
 	}
 	title, output, hint := "", "", "y/↵ yes  n/esc no"
 	if m.modal == "result" {
-		title = "✓ Push complete"
-		if m.resultAction == "pull" {
-			title = "✓ Pull complete"
-		}
+		title = "✓ Pull complete"
 		output = m.resultText
 		hint = "↵/esc close"
 	} else if m.modal == "push" {

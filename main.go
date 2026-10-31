@@ -49,7 +49,6 @@ type model struct {
 	errorText             string
 	errorPos              int
 	helpPos               int
-	resultAction          string
 	resultText            string
 	resultPos             int
 	screen, viewTitle     string
@@ -137,16 +136,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m, refreshCmd = m.refresh()
 			historyModel, historyCmd := m.openHistory()
 			return historyModel, tea.Batch(refreshCmd, historyCmd)
-		} else if msg.action == "push" || msg.action == "pull" {
+		} else if msg.action == "push" {
+			m.message = ""
+			m.modal = ""
+			var refreshCmd tea.Cmd
+			m, refreshCmd = m.refresh()
+			if m.screen == "history" {
+				return m, refreshCmd
+			}
+			historyModel, historyCmd := m.openHistory()
+			return historyModel, tea.Batch(refreshCmd, historyCmd)
+		} else if msg.action == "pull" {
 			m.message = ""
 			m.modal = "result"
-			m.resultAction = msg.action
 			m.resultText = msg.message
 			m.resultPos = 0
-			if msg.action == "pull" && m.screen == "commit" {
+			if m.screen == "commit" {
 				m.history.stale = true
 			}
-			if msg.action == "pull" && m.screen == "history" {
+			if m.screen == "history" {
 				var refreshCmd, historyCmd tea.Cmd
 				m, refreshCmd = m.refresh()
 				m, historyCmd = m.reloadHistory()
