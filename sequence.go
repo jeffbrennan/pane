@@ -181,13 +181,13 @@ func (m *model) rebuildSequence() {
 func (m model) sequenceView() string {
 	view := m
 	view.screen = ""
-	view.viewTitle = " pane  COMMITS"
+	view.viewTitle = " "
 	if len(m.rows) > 0 && len(m.sequence.commits) > 0 {
 		start := m.viewportStart(max(1, m.height-2))
 		index := m.rows[start].commitIndex
 		if index >= 0 && index < len(m.sequence.commits) {
 			commit := m.sequence.commits[index]
-			view.viewTitle = " pane  COMMIT " + shortHash(commit.hash) + "  " + clean(commit.subject)
+			view.viewTitle = " " + shortHash(commit.hash) + "  " + clean(commit.subject)
 		}
 	}
 	view.message = "Read-only · esc/q back"

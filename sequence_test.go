@@ -62,6 +62,9 @@ func TestPipedCommitReview(t *testing.T) {
 	if !strings.Contains(lines[0], "first commit") || !strings.Contains(lines[1], "shared.txt") || !strings.Contains(view, "first") || strings.Contains(lines[0], "second commit") {
 		t.Fatalf("incorrect pinned headers: %q", view)
 	}
+	if strings.Contains(lines[0], "pane") || strings.Contains(lines[0], "COMMIT") || !strings.Contains(lines[0], first[:8]) {
+		t.Fatalf("unexpected commit heading: %q", lines[0])
+	}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = updated.(model)
 	if m.screen != "history" || cmd == nil || !m.history.loading {

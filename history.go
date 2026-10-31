@@ -406,11 +406,8 @@ func (m model) commitModel() model {
 	view.expandedDeleted = m.history.expandedDeleted
 	view.staged = false
 	view.rows, view.pos, view.horizontal, view.viewTop = m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop
-	view.viewTitle = " pane  COMMIT " + shortHash(m.history.current.hash) + "  " + clean(m.history.current.subject)
+	view.viewTitle = " " + shortHash(m.history.current.hash) + "  " + clean(m.history.current.subject)
 	view.message = "Read-only · esc/q back"
-	if m.history.loading {
-		view.message = "Loading commit…"
-	}
 	return view
 }
 

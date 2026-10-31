@@ -160,6 +160,21 @@ func TestHistorySearchAndReadOnlyNavigation(t *testing.T) {
 	}
 }
 
+func TestCommitLoadingDoesNotFlashStatus(t *testing.T) {
+	m := model{width: 60, height: 10, screen: "commit", history: historyState{loading: true}}
+	if view := m.View(); strings.Contains(view, "Loading commit") || !strings.Contains(view, "Read-only · esc/q back") {
+		t.Fatalf("unexpected loading status: %q", view)
+	}
+}
+
+func TestCommitHeadingShowsHashAndSubject(t *testing.T) {
+	m := model{width: 60, height: 10, screen: "commit", history: historyState{current: commitInfo{hash: "123456789abcdef", subject: "commit subject"}}}
+	header := strings.Split(m.View(), "\n")[0]
+	if header != " 12345678  commit subject" {
+		t.Fatalf("unexpected commit heading: %q", header)
+	}
+}
+
 func TestCommitPickerBackNavigation(t *testing.T) {
 	for _, back := range []string{"esc", "q"} {
 		for _, close := range []string{"esc", "q"} {
