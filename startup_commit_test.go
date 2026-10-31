@@ -97,3 +97,87 @@ func TestDirectCommitBackBeforeLoading(t *testing.T) {
 		t.Fatal("stale commit response changed history")
 	}
 }
+
+func TestInitialModelOpensCommitRange(t *testing.T) {
+	r := testRepo(t)
+	var hashes []string
+	for _, content := range []string{"first", "second", "third"} {
+		writeFile(t, r, "file", content+"\n")
+		if _, err := r.commit(content); err != nil {
+			t.Fatal(err)
+		}
+		hash, err := r.action("rev-parse", "HEAD")
+		if err != nil {
+			t.Fatal(err)
+		}
+		hashes = append(hashes, hash)
+	}
+	writeFile(t, r, "file", "uncommitted\n")
+	for _, revision := range []string{hashes[0][:8] + ".." + hashes[2][:8], "HEAD~2..HEAD", "HEAD~2.."} {
+		t.Run(revision, func(t *testing.T) {
+			m, err := initialModel(r, []string{revision})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if m.screen != "sequence" || len(m.sequence.commits) != 2 || m.sequence.commits[0].hash != hashes[2] || m.sequence.commits[1].hash != hashes[1] {
+				t.Fatalf("incorrect range order or boundaries: %#v", m.sequence.commits)
+			}
+			batch := m.Init()().(tea.BatchMsg)
+			first := batch[2]().(sequenceLoaded)
+			last := batch[3]().(sequenceLoaded)
+			if first.err != nil || last.err != nil || first.commit.hash != hashes[2] || last.commit.hash != hashes[1] {
+				t.Fatalf("range diffs did not load: %#v %#v", first, last)
+			}
+		})
+	}
+	for _, revision := range []string{"missing..HEAD", "HEAD..HEAD", "--all..HEAD"} {
+		if _, err := initialModel(r, []string{revision}); err == nil {
+			t.Errorf("accepted invalid or empty range %q", revision)
+		}
+	}
+}
+
+func TestInitialModelOpensSymmetricRange(t *testing.T) {
+	r := testRepo(t)
+	writeFile(t, r, "base", "base\n")
+	if _, err := r.commit("base"); err != nil {
+		t.Fatal(err)
+	}
+	base, err := r.action("rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.action("checkout", "-b", "feature"); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, r, "feature", "feature\n")
+	if _, err := r.commit("feature"); err != nil {
+		t.Fatal(err)
+	}
+	feature, err := r.action("rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.action("checkout", "--detach", base); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, r, "other", "other\n")
+	if _, err := r.commit("other"); err != nil {
+		t.Fatal(err)
+	}
+	other, err := r.action("rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := initialModel(r, []string{"HEAD...feature"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, commit := range m.sequence.commits {
+		got[commit.hash] = true
+	}
+	if m.screen != "sequence" || len(m.sequence.commits) != 2 || !got[feature] || !got[other] || got[base] {
+		t.Fatalf("incorrect symmetric range: %#v", m.sequence.commits)
+	}
+}

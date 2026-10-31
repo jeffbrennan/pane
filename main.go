@@ -89,7 +89,7 @@ type model struct {
 
 func main() {
 	if len(os.Args) > 2 {
-		fmt.Fprintln(os.Stderr, "usage: pane [commit]")
+		fmt.Fprintln(os.Stderr, "usage: pane [commit-or-range]")
 		os.Exit(1)
 	}
 	repo, err := openRepository()
@@ -120,11 +120,21 @@ func main() {
 
 func initialModel(repo repository, args []string) (model, error) {
 	if len(args) > 1 {
-		return model{}, fmt.Errorf("usage: pane [commit]")
+		return model{}, fmt.Errorf("usage: pane [commit-or-range]")
 	}
 	m := model{repo: repo, wrap: true, loading: true, startup: true}
 	if len(args) == 0 {
 		return m, nil
+	}
+	if strings.Contains(args[0], "..") {
+		out, err := repo.command("rev-list", "--max-count=1001", "--end-of-options", args[0], "--")
+		if err != nil {
+			return model{}, fmt.Errorf("invalid commit range %q: %w", args[0], gitError(out, err))
+		}
+		if len(out) == 0 {
+			return model{}, fmt.Errorf("commit range %q contains no commits", args[0])
+		}
+		return initialSequence(repo, strings.NewReader(string(out)))
 	}
 	commit, err := repo.resolveCommit(args[0])
 	if err != nil {
