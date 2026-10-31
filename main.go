@@ -154,9 +154,10 @@ func (m model) Init() tea.Cmd {
 	if m.screen == "commit" && m.history.loading && m.history.directCommit {
 		repo, hash, request := m.repo, m.history.current.hash, m.history.request
 		commands = append(commands, func() tea.Msg {
-			changes, err := repo.commitChanges(hash)
+			changes, err := repo.commitChangesWithoutSyntax(hash)
 			return commitLoaded{changes, err, request}
 		})
+		commands = append(commands, commitLoadingTimer(request))
 	}
 	if m.screen == "sequence" && m.sequence.loading {
 		for i, state := range m.sequence.states {
@@ -347,11 +348,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.cacheHistoryStats()
 		return m.loadHistoryStats()
+	case commitLoadingDelay:
+		if m.screen == "commit" && m.history.loading && msg.request == m.history.request {
+			m.history.commitLoadingVisible = true
+		}
 	case commitLoaded:
 		if m.screen != "commit" || msg.request != m.history.request {
 			break
 		}
 		m.history.loading = false
+		m.history.commitLoadingVisible = false
 		if msg.err != nil {
 			m.screen = "history"
 			m.errorText = msg.err.Error()
@@ -362,6 +368,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.history.changes = msg.changes
 		m.history.rows = nil
 		m.history.pos = 0
+		m.rebuildCommit()
+		return m, loadCommitSyntax(m.repo, m.history.current.hash, m.history.request, m.history.changes)
+	case commitSyntaxLoaded:
+		if m.screen != "commit" || msg.request != m.history.request {
+			break
+		}
+		m.history.changes = msg.changes
 		m.rebuildCommit()
 	case sequenceLoaded:
 		if m.screen != "sequence" || msg.request != m.sequence.request || msg.index < 0 || msg.index >= len(m.sequence.states) || m.sequence.states[msg.index] != sequenceLoading {
@@ -870,7 +883,14 @@ func (m model) View() string {
 		index := start + i
 		if index >= len(m.rows) {
 			if index == 0 {
-				lines = append(lines, fit(" No changes", m.width))
+				empty := " No changes"
+				if m.relativeLines && m.history.loading {
+					empty = ""
+					if m.history.commitLoadingVisible {
+						empty = " Loading commit…"
+					}
+				}
+				lines = append(lines, fit(empty, m.width))
 			} else {
 				lines = append(lines, "")
 			}

@@ -160,10 +160,45 @@ func TestHistorySearchAndReadOnlyNavigation(t *testing.T) {
 	}
 }
 
-func TestCommitLoadingDoesNotFlashStatus(t *testing.T) {
-	m := model{width: 60, height: 10, screen: "commit", history: historyState{loading: true}}
-	if view := m.View(); strings.Contains(view, "Loading commit") || !strings.Contains(view, "Read-only · esc/q back") {
-		t.Fatalf("unexpected loading status: %q", view)
+func TestCommitLoadingIsDelayed(t *testing.T) {
+	m := model{width: 60, height: 10, screen: "commit", history: historyState{loading: true, request: 1}}
+	if view := m.View(); strings.Contains(view, "Loading commit") || strings.Contains(view, "No changes") {
+		t.Fatalf("unexpected initial loading state: %q", view)
+	}
+	updated, _ := m.Update(commitLoadingDelay{request: 0})
+	if strings.Contains(updated.(model).View(), "Loading commit") {
+		t.Fatal("stale timer showed a loading state")
+	}
+	updated, _ = m.Update(commitLoadingDelay{request: 1})
+	m = updated.(model)
+	if view := m.View(); !strings.Contains(view, "Loading commit") || strings.Contains(view, "No changes") {
+		t.Fatalf("missing delayed loading state: %q", view)
+	}
+	updated, _ = m.Update(commitLoaded{request: 1})
+	m = updated.(model)
+	updated, _ = m.Update(commitLoadingDelay{request: 1})
+	if view := updated.(model).View(); strings.Contains(view, "Loading commit") || !strings.Contains(view, "No changes") {
+		t.Fatalf("loading timer affected completed empty commit: %q", view)
+	}
+}
+
+func TestCommitLoadsDiffBeforeSyntax(t *testing.T) {
+	changes := []change{longFile("first.go")}
+	m := model{width: 60, height: 12, wrap: true, screen: "commit", history: historyState{loading: true, request: 4}}
+	updated, cmd := m.Update(commitLoaded{changes: changes, request: 4})
+	m = updated.(model)
+	if cmd == nil || m.history.loading || len(m.history.rows) < 2 || strings.Contains(m.View(), "Loading commit") {
+		t.Fatalf("diff should appear before syntax loads: %q", m.View())
+	}
+	m.history.pos = 2
+	updated, _ = m.Update(commitSyntaxLoaded{changes: changes, request: 4})
+	m = updated.(model)
+	if m.history.pos != 2 {
+		t.Fatalf("syntax loading moved selection to %d", m.history.pos)
+	}
+	updated, _ = m.Update(commitSyntaxLoaded{changes: nil, request: 3})
+	if len(updated.(model).history.changes) != 1 {
+		t.Fatal("stale syntax result replaced current changes")
 	}
 }
 

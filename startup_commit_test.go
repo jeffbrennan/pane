@@ -35,7 +35,7 @@ func TestInitialModelOpensCommitRevision(t *testing.T) {
 				t.Fatalf("incorrect startup model: %#v", m.history)
 			}
 			batch, ok := m.Init()().(tea.BatchMsg)
-			if !ok || len(batch) != 3 {
+			if !ok || len(batch) != 4 {
 				t.Fatalf("missing startup commands: %#v", batch)
 			}
 			result, ok := batch[2]().(commitLoaded)

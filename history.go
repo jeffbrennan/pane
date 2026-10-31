@@ -17,6 +17,7 @@ type historyState struct {
 	selected, offset, pos, horizontal, viewTop, request int
 	filter, draft                                       string
 	searching, loading, stale, more, fetching           bool
+	commitLoadingVisible                                bool
 	statsFetching                                       bool
 	directCommit                                        bool
 	current                                             commitInfo
@@ -36,6 +37,28 @@ type commitLoaded struct {
 	err     error
 	request int
 }
+
+type commitSyntaxLoaded struct {
+	changes []change
+	request int
+}
+
+type commitLoadingDelay struct{ request int }
+
+func commitLoadingTimer(request int) tea.Cmd {
+	return tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg {
+		return commitLoadingDelay{request: request}
+	})
+}
+
+func loadCommitSyntax(repo repository, hash string, request int, changes []change) tea.Cmd {
+	changes = append([]change(nil), changes...)
+	return func() tea.Msg {
+		repo.loadSyntaxDiffs(changes, contextKey{commit: hash})
+		return commitSyntaxLoaded{changes: changes, request: request}
+	}
+}
+
 type historyStatsLoaded struct {
 	commits []commitInfo
 	hashes  []string
@@ -301,6 +324,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.history.current = matches[min(m.history.selected, len(matches)-1)]
 		m.history.request++
 		m.history.loading = true
+		m.history.commitLoadingVisible = false
 		m.history.fetching = false
 		m.history.statsFetching = false
 		m.history.changes, m.history.rows = nil, nil
@@ -311,7 +335,10 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.history.pos, m.history.horizontal, m.history.viewTop = 0, 0, 0
 		m.screen = "commit"
 		repo, hash, request := m.repo, m.history.current.hash, m.history.request
-		return m, func() tea.Msg { changes, err := repo.commitChanges(hash); return commitLoaded{changes, err, request} }
+		return m, tea.Batch(func() tea.Msg {
+			changes, err := repo.commitChangesWithoutSyntax(hash)
+			return commitLoaded{changes, err, request}
+		}, commitLoadingTimer(request))
 	}
 	return m, nil
 }
@@ -409,6 +436,9 @@ func (m model) commitModel() model {
 	view.rows, view.pos, view.horizontal, view.viewTop = m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop
 	view.viewTitle = " " + shortHash(m.history.current.hash) + "  " + clean(m.history.current.subject)
 	view.message = "Read-only · esc/q back"
+	if m.history.loading && m.history.commitLoadingVisible {
+		view.message = "Loading commit… · esc/q back"
+	}
 	return view
 }
 

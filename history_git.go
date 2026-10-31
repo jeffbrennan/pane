@@ -113,6 +113,14 @@ func parseHistory(out []byte, statsLoaded bool) ([]commitInfo, error) {
 }
 
 func (r repository) commitChanges(hash string) ([]change, error) {
+	changes, err := r.commitChangesWithoutSyntax(hash)
+	if err == nil {
+		r.loadSyntaxDiffs(changes, contextKey{commit: hash})
+	}
+	return changes, err
+}
+
+func (r repository) commitChangesWithoutSyntax(hash string) ([]change, error) {
 	out, err := r.command("show", "--first-parent", "--format=", "--name-only", "--no-renames", "-z", hash, "--")
 	if err != nil {
 		return nil, gitError(out, err)
@@ -142,8 +150,5 @@ func (r repository) commitChanges(hash string) ([]change, error) {
 		}
 		return diff, nil
 	})
-	if err == nil {
-		r.loadSyntaxDiffs(changes, contextKey{commit: hash})
-	}
 	return changes, err
 }
