@@ -196,7 +196,14 @@ func (m model) Init() tea.Cmd {
 }
 
 func load(repo repository, generation int) tea.Cmd {
-	return func() tea.Msg { s, err := repo.load(); return loaded{s, err, generation} }
+	return func() tea.Msg {
+		s, err := repo.load()
+		if err == nil {
+			warmSyntax(s.unstaged)
+			warmSyntax(s.staged)
+		}
+		return loaded{s, err, generation}
+	}
 }
 
 func nextTick() tea.Cmd {
@@ -229,8 +236,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m, cmd = m.refresh()
 		}
 		var query tea.Cmd
-		if m.themeAuto && m.themeQuery != nil {
-			query = func() tea.Msg { m.themeQuery(); return nil }
+		if m.themeAuto && m.themeQuery != nil && !editorRunning.Load() {
+			query = func() tea.Msg {
+				if !editorRunning.Load() {
+					m.themeQuery()
+				}
+				return nil
+			}
 		}
 		return m, tea.Batch(cmd, nextTick(), query)
 	case terminalBackgroundChanged:
@@ -880,7 +892,7 @@ func (m model) View() string {
 	}
 	title := " " + m.viewTitle
 	if m.viewTitle == "" {
-		title = m.brand(m.stageTabs())
+		title = " " + m.stageTabs()
 	}
 	var lines []string
 	lines = append(lines, m.titleBar(title, m.viewBadge))

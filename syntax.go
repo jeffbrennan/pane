@@ -103,7 +103,49 @@ func (r repository) loadSyntaxDiffs(changes []change, key contextKey) {
 	wg.Wait()
 }
 
+type syntaxKey struct{ path, diff string }
+
+type syntaxResult struct{ old, new map[int]syntaxLine }
+
+// syntaxCache keeps tokenized diffs between rebuilds; tokenizing dominates
+// the cost of switching views, toggling wrap and resizing. The results are
+// shared and must not be modified.
+var syntaxCache = struct {
+	sync.Mutex
+	entries map[syntaxKey]syntaxResult
+}{entries: make(map[syntaxKey]syntaxResult)}
+
+const syntaxCacheSize = 512
+
 func syntaxLines(path, diff string) (map[int]syntaxLine, map[int]syntaxLine) {
+	if diff == "" || syntaxLexer(path) == nil {
+		return nil, nil
+	}
+	key := syntaxKey{path, diff}
+	syntaxCache.Lock()
+	cached, ok := syntaxCache.entries[key]
+	syntaxCache.Unlock()
+	if ok {
+		return cached.old, cached.new
+	}
+	old, new := tokenizeDiff(path, diff)
+	syntaxCache.Lock()
+	if len(syntaxCache.entries) >= syntaxCacheSize {
+		clear(syntaxCache.entries)
+	}
+	syntaxCache.entries[key] = syntaxResult{old, new}
+	syntaxCache.Unlock()
+	return old, new
+}
+
+// warmSyntax tokenizes changes ahead of time, off the UI goroutine.
+func warmSyntax(changes []change) {
+	for _, c := range changes {
+		syntaxLines(c.path, c.syntaxDiff)
+	}
+}
+
+func tokenizeDiff(path, diff string) (map[int]syntaxLine, map[int]syntaxLine) {
 	lexer := syntaxLexer(path)
 	if lexer == nil || diff == "" {
 		return nil, nil

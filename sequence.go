@@ -84,6 +84,7 @@ func loadSequenceCommit(repo repository, revision string, index, request int) te
 			return sequenceLoaded{index: index, request: request, err: err}
 		}
 		changes, err := repo.commitChanges(commit.hash)
+		warmSyntax(changes)
 		return sequenceLoaded{index: index, request: request, commit: commit, changes: changes, err: err}
 	}
 }

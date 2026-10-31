@@ -69,7 +69,7 @@ func TestBranchStatusWithoutAvailableUpstreamCounts(t *testing.T) {
 		t.Fatalf("status: %#v", status)
 	}
 	m := model{width: 60, height: 20, screen: "history", snapshot: snapshot{branch: status}}
-	if !strings.Contains(m.View(), "Upstream counts unavailable") {
+	if !strings.Contains(plain(m.View()), "upstream unknown · clean") {
 		t.Fatalf("view: %q", m.View())
 	}
 }
@@ -79,8 +79,8 @@ func TestHistoryLandingStatusAndActions(t *testing.T) {
 		branch:   branchStatus{available: true, name: "main", upstream: "origin/main", countsKnown: true, ahead: 2, behind: 3},
 		unstaged: []change{{path: "one"}}, staged: []change{{path: "two"}},
 	}, history: historyState{commits: []commitInfo{{subject: "recent commit"}}}}
-	view := m.View()
-	for _, text := range []string{"main", "↑2 ahead", "↓3 behind", "origin/main", "1 unstaged", "1 staged", "recent commit"} {
+	view := plain(m.View())
+	for _, text := range []string{"main", "↑2 ahead · ↓3 behind · 1 unstaged · 1 staged", "origin/main", "recent commit"} {
 		if !strings.Contains(view, text) {
 			t.Errorf("missing %q in %q", text, view)
 		}

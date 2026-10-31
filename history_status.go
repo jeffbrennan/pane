@@ -2,51 +2,54 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/mattn/go-runewidth"
 )
 
+// historyHeader shows the branch on the title row and a one-line summary of
+// its sync state and local changes below it.
 func (m model) historyHeader() []string {
 	branch := m.snapshot.branch
-	lines := []string{m.titleBar(m.brand(historyTitle(branch, max(0, m.width-7))), "")}
-	limit := min(2, max(0, m.height-4))
-	if limit == 0 {
+	lines := []string{m.titleBar(" "+m.historyTitle(branch, max(0, m.width-1)), "")}
+	if m.height-4 <= 0 {
 		return lines
 	}
-	type statusLine struct{ text, style string }
-	var status []statusLine
 	if !branch.available {
-		status = append(status, statusLine{"  Loading repository status…", "\x1b[2m"})
-	} else {
-		syncStyle := "\x1b[2m"
-		if branch.countsKnown && (branch.ahead > 0 || branch.behind > 0) {
-			syncStyle = "\x1b[33m"
-		}
-		switch {
-		case branch.upstream == "":
-			status = append(status, statusLine{"  No upstream configured", syncStyle})
-		case !branch.countsKnown:
-			status = append(status, statusLine{"  Upstream counts unavailable", syncStyle})
-		case m.width < 40:
-			status = append(status, statusLine{fmt.Sprintf("  ↑%d ↓%d", branch.ahead, branch.behind), syncStyle})
-		default:
-			status = append(status, statusLine{fmt.Sprintf("  ↑%d ahead  ↓%d behind", branch.ahead, branch.behind), syncStyle})
-		}
-		changes := fmt.Sprintf("%d unstaged · %d staged", len(m.snapshot.unstaged), len(m.snapshot.staged))
-		changeStyle := "\x1b[2m"
-		if len(m.snapshot.unstaged) > 0 || len(m.snapshot.staged) > 0 {
-			changeStyle = ""
-		}
-		status = append(status, statusLine{"  " + changes, changeStyle})
+		return append(lines, fit(styleDim+" Loading repository status…"+styleReset, m.width))
 	}
-	for _, line := range status[:min(limit, len(status))] {
-		text := fit(line.text, m.width)
-		if line.style != "" {
-			text = line.style + text + "\x1b[0m"
+	var parts []string
+	switch {
+	case branch.upstream == "":
+		parts = append(parts, styleDim+"no upstream"+styleReset)
+	case !branch.countsKnown:
+		parts = append(parts, styleDim+"upstream unknown"+styleReset)
+	case branch.ahead == 0 && branch.behind == 0:
+		parts = append(parts, styleDim+"\x1b[32m✓ up to date"+styleReset)
+	case m.width < 40:
+		parts = append(parts, m.warning()+fmt.Sprintf("↑%d ↓%d", branch.ahead, branch.behind)+styleReset)
+	default:
+		if branch.ahead > 0 {
+			parts = append(parts, m.warning()+fmt.Sprintf("↑%d ahead", branch.ahead)+styleReset)
 		}
-		lines = append(lines, text)
+		if branch.behind > 0 {
+			parts = append(parts, m.warning()+fmt.Sprintf("↓%d behind", branch.behind)+styleReset)
+		}
 	}
-	return lines
+	count := func(n int, label string) string {
+		return styleBold + fmt.Sprint(n) + styleReset + styleDim + " " + label + styleReset
+	}
+	unstaged, staged := len(m.snapshot.unstaged), len(m.snapshot.staged)
+	if unstaged > 0 {
+		parts = append(parts, count(unstaged, "unstaged"))
+	}
+	if staged > 0 {
+		parts = append(parts, count(staged, "staged"))
+	}
+	if unstaged == 0 && staged == 0 {
+		parts = append(parts, styleDim+"clean"+styleReset)
+	}
+	return append(lines, bar(m.width, " "+strings.Join(parts, styleDim+" · "+styleReset), ""))
 }
 
 func (m model) actionStatus() string {
@@ -68,7 +71,7 @@ func (m model) actionStatus() string {
 }
 
 // historyTitle shows the branch and its upstream within width columns.
-func historyTitle(branch branchStatus, width int) string {
+func (m model) historyTitle(branch branchStatus, width int) string {
 	if !branch.available || width <= 0 {
 		return ""
 	}
@@ -77,7 +80,7 @@ func historyTitle(branch branchStatus, width int) string {
 		name = "unknown"
 	}
 	name = fit(clean(name), width)
-	result := styleBold + name + styleReset
+	result := styleBold + m.accent() + name + styleReset
 	remaining := max(0, width-runewidth.StringWidth(name))
 	if branch.upstream != "" && remaining > 0 {
 		result += styleDim + fit(" → "+clean(branch.upstream), remaining) + styleReset
@@ -87,11 +90,10 @@ func historyTitle(branch branchStatus, width int) string {
 
 // historyHeaderHeight matches len(m.historyHeader()) without rendering it.
 func (m model) historyHeaderHeight() int {
-	status := 2
-	if !m.snapshot.branch.available {
-		status = 1
+	if m.height-4 <= 0 {
+		return 1
 	}
-	return 1 + min(min(2, max(0, m.height-4)), status)
+	return 2
 }
 
 func (m model) historyAvailable() int {

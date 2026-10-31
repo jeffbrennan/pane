@@ -53,16 +53,6 @@ func bar(width int, left, right string) string {
 	return left + strings.Repeat(" ", width-used-ansi.StringWidth(right)) + right
 }
 
-// brand prefixes the title of the working tree and history screens. Commit
-// views lead with the hash instead to leave room for the subject.
-func (m model) brand(title string) string {
-	left := " " + styleBold + m.accent() + "pane" + styleReset
-	if title != "" {
-		left += "  " + title
-	}
-	return left
-}
-
 // titleBar renders the first row of every screen, with transient state such
 // as a running push on the right.
 func (m model) titleBar(left, right string) string {

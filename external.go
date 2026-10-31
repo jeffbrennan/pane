@@ -2,15 +2,54 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 type flashed struct{ text string }
+
+// editorRunning pauses terminal background queries, whose replies would
+// otherwise be typed into the editor.
+var editorRunning atomic.Bool
+
+// editorCommand runs the editor on the terminal itself. Pane's input reader
+// wraps the terminal, so Bubble Tea would otherwise hand the editor a pipe.
+type editorCommand struct{ *exec.Cmd }
+
+func (c editorCommand) Run() error {
+	editorRunning.Store(true)
+	defer editorRunning.Store(false)
+	if tty, err := os.Open("/dev/tty"); err == nil {
+		defer tty.Close()
+		c.Stdin = tty
+	}
+	return c.Cmd.Run()
+}
+
+func (c editorCommand) SetStdin(r io.Reader) {
+	if c.Stdin == nil {
+		c.Stdin = r
+	}
+}
+
+func (c editorCommand) SetStdout(w io.Writer) {
+	if c.Stdout == nil {
+		c.Stdout = w
+	}
+}
+
+func (c editorCommand) SetStderr(w io.Writer) {
+	if c.Stderr == nil {
+		c.Stderr = w
+	}
+}
+
 type editorClosed struct{ err error }
 
 // editorArgs builds the command opening path at line using the syntax the
@@ -50,7 +89,7 @@ func (m model) openEditor() (model, tea.Cmd) {
 	args := editorArgs(editor, path, r.target)
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Dir = m.repo.root
-	return m, tea.ExecProcess(cmd, func(err error) tea.Msg { return editorClosed{err} })
+	return m, tea.Exec(editorCommand{cmd}, func(err error) tea.Msg { return editorClosed{err} })
 }
 
 func copyCmd(text, label string) tea.Cmd {

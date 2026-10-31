@@ -24,6 +24,12 @@ func buildRows(changes []change, width int, wrap bool) []row {
 
 func buildRowsExpanded(changes []change, width int, wrap bool, expanded map[string]bool) []row {
 	var rows []row
+	// Share one line number width across files so the number column stays
+	// put when moving between them.
+	gutterWidth := 0
+	for _, c := range changes {
+		gutterWidth = max(gutterWidth, lineNumberWidth(strings.Split(c.diff, "\n")))
+	}
 	for i, c := range changes {
 		oldSyntax, newSyntax := syntaxLines(c.path, c.syntaxDiff)
 		if i > 0 {
@@ -42,7 +48,6 @@ func buildRowsExpanded(changes []change, width int, wrap bool, expanded map[stri
 			}
 		}
 		lines := strings.Split(strings.TrimSuffix(c.diff, "\n"), "\n")
-		gutterWidth := lineNumberWidth(lines)
 		header := row{path: c.path, line: -1, text: " " + clean(c.path), kind: 'f', numberWidth: gutterWidth}
 		if deletedFile && !expanded[c.path] {
 			header.deletedLines = deletedLines

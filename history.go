@@ -55,6 +55,7 @@ func loadCommitSyntax(repo repository, hash string, request int, changes []chang
 	changes = append([]change(nil), changes...)
 	return func() tea.Msg {
 		repo.loadSyntaxDiffs(changes, contextKey{commit: hash})
+		warmSyntax(changes)
 		return commitSyntaxLoaded{changes: changes, request: request}
 	}
 }

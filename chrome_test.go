@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -35,8 +36,8 @@ func TestEveryScreenSharesTitleAndStatusBars(t *testing.T) {
 		m            model
 		title, hints string
 	}{
-		"diff":    {diff, " pane  unstaged 1 · staged 0", "? help"},
-		"history": {history, " pane", "↵ open  / search  ? help"},
+		"diff":    {diff, " unstaged 1 · staged 0", "? help"},
+		"history": {history, " ", "↵ open  / search  ? help"},
 		"commit":  {commit, " 12345678  subject", "esc back  ? help"},
 	} {
 		lines := strings.Split(plain(tt.m.View()), "\n")
@@ -70,7 +71,7 @@ func TestEmptyDiffPointsToOtherView(t *testing.T) {
 func TestDiscardAndErrorUseDialogs(t *testing.T) {
 	m := model{width: 60, height: 12, modal: "discard", discard: discardRequest{change: change{path: "a.go"}}}
 	view := plain(m.View())
-	if !strings.Contains(view, "┌") || !strings.Contains(view, "Discard hunk?") || !strings.Contains(view, "y discard  n/esc cancel") || !strings.HasPrefix(view, " pane") {
+	if !strings.Contains(view, "┌") || !strings.Contains(view, "Discard hunk?") || !strings.Contains(view, "y discard  n/esc cancel") || !strings.HasPrefix(view, " unstaged 0") {
 		t.Fatalf("discard is not a dialog: %q", view)
 	}
 	m = model{width: 60, height: 12, modal: "error", errorText: strings.Repeat("line\n", 30)}
@@ -121,5 +122,27 @@ func TestHeaderNumberAlignsWithLineNumbers(t *testing.T) {
 	lines := strings.Split(plain(m.View()), "\n")
 	if !strings.HasPrefix(lines[1], "     2  a.go") || !strings.HasPrefix(lines[2], "     1   x") {
 		t.Fatalf("header number misaligned: %q", lines[1:3])
+	}
+}
+
+func TestNumberColumnSharedAcrossFiles(t *testing.T) {
+	changes := []change{
+		{path: "small.go", diff: "@@ -1,1 +1,1 @@\n x\n"},
+		{path: "large.go", diff: "@@ -1000,1 +1000,1 @@\n y\n"},
+	}
+	m := model{width: 40, height: 10, wrap: true, screen: "commit", history: historyState{changes: changes}}
+	m.rebuildCommit()
+	lines := strings.Split(plain(m.View()), "\n")
+	if !strings.HasPrefix(lines[2], "     1   x") || !strings.HasPrefix(lines[4], "     3  large.go") || !strings.HasPrefix(lines[5], "     4   y") {
+		t.Fatalf("number column moved between files: %q", lines[1:6])
+	}
+}
+
+func TestSyntaxLinesAreCached(t *testing.T) {
+	diff := "@@ -1,1 +1,1 @@\n-func a() {}\n+func b() {}\n"
+	old, _ := syntaxLines("cached.go", diff)
+	again, _ := syntaxLines("cached.go", diff)
+	if len(old) == 0 || fmt.Sprintf("%p", old) != fmt.Sprintf("%p", again) {
+		t.Fatal("tokenized diff was not reused")
 	}
 }
