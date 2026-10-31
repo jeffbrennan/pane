@@ -151,6 +151,11 @@ func buildRowsExpanded(changes []change, width int, wrap bool, expanded map[stri
 			}
 		}
 	}
+	indexRowHeaders(rows)
+	return rows
+}
+
+func indexRowHeaders(rows []row) {
 	headerIndex := 0
 	for i := range rows {
 		if rows[i].kind == 'f' {
@@ -159,7 +164,6 @@ func buildRowsExpanded(changes []change, width int, wrap bool, expanded map[stri
 			rows[i].headerIndex = headerIndex
 		}
 	}
-	return rows
 }
 
 func containsBinary(metadata []string) bool {

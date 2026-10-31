@@ -65,6 +65,10 @@ type model struct {
 	search                searchState
 	flash                 string
 	expandedDeleted       map[string]bool
+	contextFiles          map[contextKey]contextFile
+	collapsedFiles        map[contextKey]bool
+	contextRequest        int
+	contextCommit         string
 	recentCommits         []commitInfo
 	recentCommitRequest   int
 	recentCommitLoading   bool
@@ -288,6 +292,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.flash = "Editor: " + msg.err.Error()
 		}
 		return m.refresh()
+	case contextLoaded:
+		return m.applyContext(msg), nil
 	case tea.KeyMsg:
 		m.flash = ""
 		if m.modal != "" {
@@ -305,6 +311,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return next, more
 			}
 			return next, tea.Batch(cmd, more)
+		}
+		if m.pending == "" && (msg.String() == "h" || msg.String() == "l") && m.onDiffFile() {
+			return m.changeContext(msg.String())
 		}
 		if m.handleDiffNavigation(msg.String()) || m.handleDiffTool(msg.String()) {
 			return m, nil
@@ -500,6 +509,8 @@ func (m *model) rebuild() {
 		changes = m.snapshot.staged
 	}
 	m.rows = buildRowsExpanded(changes, max(1, m.width-diffMargin(m.width)), m.wrap, m.expandedDeleted)
+	m.rows = m.localContextRows(m.rows, changes)
+	m.rows = m.foldContextFiles(m.rows)
 	m.pos = 0
 	if anchor.path != "" {
 		best := -1

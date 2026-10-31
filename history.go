@@ -296,6 +296,9 @@ func (m model) inDiff(f func(*model)) model {
 }
 
 func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.pending == "" && (key.String() == "h" || key.String() == "l") && m.commitModel().onDiffFile() {
+		return m.changeContext(key.String())
+	}
 	handled := false
 	m = m.inDiff(func(view *model) {
 		handled = view.handleDiffNavigation(key.String()) || view.handleDiffTool(key.String())
@@ -347,6 +350,7 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) commitModel() model {
 	view := m
 	view.screen = ""
+	view.contextCommit = m.history.current.hash
 	view.snapshot = snapshot{unstaged: m.history.changes}
 	view.expandedDeleted = m.history.expandedDeleted
 	view.staged = false
