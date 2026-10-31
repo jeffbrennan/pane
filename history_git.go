@@ -19,6 +19,10 @@ const historyPage = 200
 
 // history loads up to limit commits after skipping the newest skip commits.
 func (r repository) history(skip, limit int) ([]commitInfo, error) {
+	return r.historyWithDate(skip, limit, "%aI")
+}
+
+func (r repository) historyWithDate(skip, limit int, dateFormat string) ([]commitInfo, error) {
 	out, err := r.command("rev-parse", "--verify", "--quiet", "HEAD")
 	if err != nil {
 		if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 1 {
@@ -26,7 +30,8 @@ func (r repository) history(skip, limit int) ([]commitInfo, error) {
 		}
 		return nil, gitError(out, err)
 	}
-	out, err = r.command("log", fmt.Sprintf("--skip=%d", skip), fmt.Sprintf("--max-count=%d", limit), "-z", "--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00")
+	format := "--format=%x00%H%x00%an%x00%ae%x00" + dateFormat + "%x00%s%x00%B%x00"
+	out, err = r.command("log", fmt.Sprintf("--skip=%d", skip), fmt.Sprintf("--max-count=%d", limit), "-z", format)
 	if err != nil {
 		return nil, gitError(out, err)
 	}

@@ -35,6 +35,12 @@ type completed struct {
 	err           error
 }
 
+type recentCommitsLoaded struct {
+	commits []commitInfo
+	err     error
+	request int
+}
+
 type model struct {
 	repo                  repository
 	snapshot              snapshot
@@ -58,6 +64,10 @@ type model struct {
 	search                searchState
 	flash                 string
 	expandedDeleted       map[string]bool
+	recentCommits         []commitInfo
+	recentCommitRequest   int
+	recentCommitLoading   bool
+	recentCommitError     bool
 }
 
 func main() {
@@ -170,6 +180,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.message = msg.message
 		}
 		return m.refresh()
+	case recentCommitsLoaded:
+		if m.modal != "commit" || msg.request != m.recentCommitRequest {
+			break
+		}
+		m.recentCommitLoading = false
+		m.recentCommitError = msg.err != nil
+		m.recentCommits = msg.commits
+		if msg.err == nil && m.recentCommits == nil {
+			m.recentCommits = []commitInfo{}
+		}
 	case historyLoaded:
 		if m.screen != "history" || msg.request != m.history.request || (msg.skip > 0 && (!m.history.fetching || msg.skip != len(m.history.commits))) {
 			break
@@ -326,6 +346,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.modal = "commit"
 				m.input = ""
 				m.message = ""
+				m.recentCommits = nil
+				m.recentCommitLoading = true
+				m.recentCommitError = false
+				m.recentCommitRequest++
+				repo, request := m.repo, m.recentCommitRequest
+				return m, func() tea.Msg {
+					commits, err := repo.historyWithDate(0, 5, "%cI")
+					return recentCommitsLoaded{commits: commits, err: err, request: request}
+				}
 			}
 		case "p":
 			if !m.busy {
@@ -667,7 +696,7 @@ func (m model) View() string {
 		if m.width < 24 || m.height < 9 {
 			status = "Commit message: " + m.input + "_  (enter: commit, esc: cancel)"
 		} else {
-			status = "Nothing staged? All changes will be staged."
+			status = ""
 		}
 	}
 	if m.modal == "help" {
@@ -680,7 +709,7 @@ func (m model) View() string {
 		}
 	}
 	if m.modal == "commit" && m.width >= 24 && m.height >= 9 {
-		showCommitDialog(lines, m.width, m.input, m.message)
+		showCommitDialog(lines, m.width, m.input, m.message, m.recentCommits, m.recentCommitLoading, m.recentCommitError)
 	}
 	if m.modal == "help" {
 		showHelpDialog(lines, m.width, m.helpPos)

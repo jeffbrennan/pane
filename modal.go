@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mattn/go-runewidth"
 )
@@ -74,7 +76,7 @@ func showHelpDialog(lines []string, width, pos int) {
 	}
 }
 
-func showCommitDialog(lines []string, width int, input, message string) {
+func showCommitDialog(lines []string, width int, input, message string, commits []commitInfo, loading, failed bool) {
 	boxWidth := min(64, width-2)
 	innerWidth := boxWidth - 4
 	input = clean(input)
@@ -92,16 +94,64 @@ func showCommitDialog(lines []string, width int, input, message string) {
 		dialogLine("Commit changes", innerWidth),
 		dialogLine("", innerWidth),
 		dialogLineWithCursor(visible, innerWidth),
-		dialogLine(infoFirst, innerWidth),
-		dialogLine(infoSecond, innerWidth),
-		dialogLine("↵ commit  esc exit", innerWidth),
-		"└" + strings.Repeat("─", boxWidth-2) + "┘",
+	}
+	if infoFirst != "" {
+		content = append(content, dialogLine(infoFirst, innerWidth))
+	}
+	if infoSecond != "" {
+		content = append(content, dialogLine(infoSecond, innerWidth))
+	}
+	content = append(content, dialogLine("↵ commit  esc exit", innerWidth), "└"+strings.Repeat("─", boxWidth-2)+"┘")
+	room := max(0, len(lines)-2-len(content))
+	if room >= 1 && (loading || failed || commits != nil) {
+		switch {
+		case loading:
+			content = append(content, "  Loading…")
+		case failed:
+			content = append(content, "  Recent commits unavailable")
+		case len(commits) == 0:
+			content = append(content, "  No previous commits")
+		default:
+			count := min(5, len(commits), room)
+			spaced := room >= 2*count-1
+			twoLines := room >= 3*count-1
+			for i, commit := range commits[:count] {
+				metadata := relativeCommitTime(commit.date, time.Now()) + " · " + clean(commit.author)
+				if twoLines {
+					content = append(content, fit("  "+clean(commit.subject), boxWidth), fit("  "+metadata, boxWidth))
+				} else {
+					metadata = fit(metadata, max(1, boxWidth/2))
+					available := max(0, boxWidth-4-runewidth.StringWidth(metadata))
+					content = append(content, fit("  "+fit(clean(commit.subject), available)+"  "+metadata, boxWidth))
+				}
+				if spaced && i < count-1 {
+					content = append(content, "")
+				}
+			}
+		}
 	}
 	left := strings.Repeat(" ", max(0, (width-boxWidth)/2))
 	top := max(0, (len(lines)-len(content))/2)
 	for i, line := range content {
 		lines[top+i] = left + line
 	}
+}
+
+func relativeCommitTime(date string, now time.Time) string {
+	when, err := time.Parse(time.RFC3339, date)
+	if err != nil {
+		return "unknown age"
+	}
+	seconds := max(int64(0), int64(now.Sub(when).Seconds()))
+	for _, unit := range []struct {
+		seconds int64
+		label   string
+	}{{365 * 24 * 60 * 60, "y"}, {30 * 24 * 60 * 60, "mo"}, {7 * 24 * 60 * 60, "w"}, {24 * 60 * 60, "d"}, {60 * 60, "h"}, {60, "m"}, {1, "s"}} {
+		if seconds >= unit.seconds || unit.seconds == 1 {
+			return fmt.Sprintf("%d%s ago", seconds/unit.seconds, unit.label)
+		}
+	}
+	return "0s ago"
 }
 
 func dialogLine(text string, width int) string {
