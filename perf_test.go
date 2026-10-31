@@ -47,6 +47,7 @@ func TestPerf(t *testing.T) {
 	measurePerf(t, scenario, "search_smartcase_miss_ns", func() { _, _ = view.findMatch("UnlikelyMissingPattern", -1, 1) })
 	measurePerf(t, scenario, "resize_height_ns", func() { _, _ = m.Update(tea.WindowSizeMsg{Width: 160, Height: 51}) })
 	measurePerf(t, scenario, "resize_width_ns", func() { _, _ = m.Update(tea.WindowSizeMsg{Width: 150, Height: 50}) })
+	measurePerf(t, scenario, "resize_width_apply_ns", func() { _, _ = m.Update(resizeRebuild{request: m.resizeRequest}) })
 	recordPerf(t, scenario, "rows", int64(len(view.rows)))
 	recordPerf(t, scenario, "row_bytes", int64(unsafe.Sizeof(row{})))
 }

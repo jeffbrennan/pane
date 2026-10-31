@@ -117,6 +117,28 @@ func TestHeightOnlyResizeKeepsRows(t *testing.T) {
 	}
 }
 
+func TestLargeWidthResizeCoalesces(t *testing.T) {
+	rows := make([]row, 50000)
+	m := model{width: 80, height: 20, rows: rows, wrap: true, snapshot: snapshot{unstaged: []change{{path: "file", diff: "@@ -0,0 +1 @@\n+abcdef\n"}}}}
+	for _, width := range []int{70, 60, 50} {
+		updated, cmd := m.Update(tea.WindowSizeMsg{Width: width, Height: 20})
+		m = updated.(model)
+		if cmd == nil || &m.rows[0] != &rows[0] {
+			t.Fatal("large width resize should defer rebuilding")
+		}
+	}
+	updated, _ := m.Update(resizeRebuild{request: m.resizeRequest - 1})
+	m = updated.(model)
+	if &m.rows[0] != &rows[0] {
+		t.Fatal("stale resize timer rebuilt rows")
+	}
+	updated, _ = m.Update(resizeRebuild{request: m.resizeRequest})
+	m = updated.(model)
+	if m.width != 50 || len(m.rows) == len(rows) || m.rows[0].path != "file" {
+		t.Fatal("latest resize did not rebuild at the latest width")
+	}
+}
+
 func TestStartupViewSelection(t *testing.T) {
 	tests := []struct {
 		name     string

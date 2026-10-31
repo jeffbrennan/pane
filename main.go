@@ -44,6 +44,7 @@ type loadedUnchanged struct {
 	cache      *refreshCache
 }
 type tick struct{}
+type resizeRebuild struct{ request int }
 type completed struct {
 	message       string
 	commitMessage string
@@ -64,6 +65,7 @@ type model struct {
 	snapshot              snapshot
 	rows                  []row
 	width, height         int
+	resizeRequest         int
 	pos, horizontal       int
 	viewTop               int
 	pending               string
@@ -365,6 +367,17 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		widthChanged := m.width != msg.Width
 		m.width, m.height = msg.Width, msg.Height
 		if widthChanged {
+			m.resizeRequest++
+			if max(len(m.rows), len(m.history.rows)) >= 50000 {
+				request := m.resizeRequest
+				cmd := tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg { return resizeRebuild{request} })
+				m.revealHistorySelection()
+				if m.modal == "files" {
+					m = m.inDiff(func(view *model) { view.revealPickerSelection() })
+				}
+				m, background := m.loadHistoryBackground()
+				return m, tea.Batch(cmd, background)
+			}
 			m.rebuild()
 			m.rebuildCommit()
 		} else {
@@ -378,6 +391,14 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m = m.inDiff(func(view *model) { view.revealPickerSelection() })
 		}
 		return m.loadHistoryBackground()
+	case resizeRebuild:
+		if msg.request != m.resizeRequest {
+			return m, nil
+		}
+		m.resizeRequest++
+		m.rebuild()
+		m.rebuildCommit()
+		return m, nil
 	case tick:
 		var cmd tea.Cmd
 		m.ticks++
