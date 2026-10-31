@@ -4,20 +4,9 @@ func (m model) fileHeaderAt(index int) *row {
 	if index < 0 || index >= len(m.rows) || m.rows[index].kind == 'f' {
 		return nil
 	}
-	if m.rows[index].kind == 's' {
-		index--
-		if index < 0 {
-			return nil
-		}
-		if m.rows[index].kind == 'f' {
-			return &m.rows[index]
-		}
-	}
-	path := m.rows[index].path
-	for i := index - 1; i >= 0 && m.rows[i].path == path; i-- {
-		if m.rows[i].kind == 'f' {
-			return &m.rows[i]
-		}
+	header := m.rows[index].headerIndex - 1
+	if header >= 0 && header < index && m.rows[header].kind == 'f' {
+		return &m.rows[header]
 	}
 	return nil
 }

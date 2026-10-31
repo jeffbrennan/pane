@@ -20,6 +20,7 @@ type row struct {
 	text         string
 	kind         byte
 	deletedLines int
+	headerIndex  int
 }
 
 type loaded struct {
@@ -677,6 +678,15 @@ func (m model) View() string {
 	lines = append(lines, fit(header, m.width))
 	available := max(0, m.height-2)
 	start, visible, pinned := m.diffViewport(available)
+	if pinned != nil {
+		// Overlay the top row so pinning and unpinning never shifts the rows below it.
+		if m.pos == start {
+			pinned = nil
+			visible++
+		} else {
+			start++
+		}
+	}
 	if pinned != nil {
 		lines = append(lines, m.renderDiffRow(*pinned, false))
 	}

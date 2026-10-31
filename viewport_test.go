@@ -46,7 +46,7 @@ func TestPinnedHeaderChangesBetweenFiles(t *testing.T) {
 	if pinned != nil || strings.Count(m.View(), "second.go") != 1 {
 		t.Fatalf("duplicate header: %q", m.View())
 	}
-	m.pos, m.viewTop = second+2, second+2
+	m.pos, m.viewTop = second+3, second+2
 	_, _, pinned = m.diffViewport(6)
 	if pinned == nil || pinned.path != "second.go" {
 		t.Fatalf("wrong pinned header: %#v", pinned)
@@ -72,13 +72,78 @@ func TestPinnedHeaderRemainsUntilNextHeaderArrives(t *testing.T) {
 		t.Fatalf("old header disappeared at spacer: start=%d pinned=%#v", start, pinned)
 	}
 	lines := strings.Split(m.View(), "\n")
-	if !strings.Contains(lines[1], "first.go") || !strings.Contains(lines[3], "second.go") {
+	if !strings.Contains(lines[1], "first.go") || !strings.Contains(lines[2], "second.go") {
 		t.Fatalf("expected old header above incoming header: %q", m.View())
 	}
 	m.viewTop = second
 	start, _, pinned = m.diffViewport(6)
 	if start != second || pinned != nil || !strings.Contains(strings.Split(m.View(), "\n")[1], "second.go") {
 		t.Fatalf("next header did not replace old header: %q", m.View())
+	}
+}
+
+func TestFileBoundaryScrollsOneScreenRowAtATime(t *testing.T) {
+	m := model{width: 40, height: 8, wrap: true, snapshot: snapshot{unstaged: []change{longFile("first.go"), longFile("second.go")}}}
+	m.rebuild()
+	second := 0
+	for i, r := range m.rows {
+		if r.kind == 'f' && r.path == "second.go" {
+			second = i
+			break
+		}
+	}
+	for _, direction := range []int{1, -1} {
+		start := second - 3
+		if direction < 0 {
+			start = second + 1
+		}
+		previous := -1
+		for top := start; top >= second-3 && top <= second+1; top += direction {
+			m.viewTop, m.pos = top, top+3
+			lines := strings.Split(m.View(), "\n")
+			position := -1
+			for i, line := range lines {
+				if strings.Contains(line, "second.go") {
+					position = i
+					break
+				}
+			}
+			if previous >= 0 && position >= 0 && (position-previous)*direction < -1 {
+				t.Fatalf("direction %d top %d: header jumped from %d to %d", direction, top, previous, position)
+			}
+			previous = position
+		}
+	}
+
+	m.viewTop, m.pos = second-1, second-1
+	if !strings.Contains(strings.Split(m.View(), "\n")[1], "▸") {
+		t.Fatal("selected separator is hidden by the pinned header")
+	}
+}
+
+func TestRepeatedMovementAcrossFileBoundary(t *testing.T) {
+	m := model{width: 40, height: 8, wrap: true, snapshot: snapshot{unstaged: []change{longFile("first.go"), longFile("second.go")}}}
+	m.rebuild()
+	for _, direction := range []int{1, -1} {
+		previous := -1
+		for range m.rows {
+			lines := strings.Split(m.View(), "\n")
+			position := -1
+			for i, line := range lines {
+				if strings.Contains(line, "second.go") {
+					position = i
+					break
+				}
+			}
+			if previous >= 0 && position >= 0 && (position-previous)*direction < -1 {
+				t.Fatalf("direction %d pos %d: header jumped from %d to %d", direction, m.pos, previous, position)
+			}
+			if !strings.Contains(m.View(), "▸") {
+				t.Fatalf("direction %d pos %d: active row is hidden", direction, m.pos)
+			}
+			previous = position
+			m.move(direction)
+		}
 	}
 }
 

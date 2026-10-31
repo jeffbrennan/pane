@@ -151,6 +151,14 @@ func buildRowsExpanded(changes []change, width int, wrap bool, expanded map[stri
 			}
 		}
 	}
+	headerIndex := 0
+	for i := range rows {
+		if rows[i].kind == 'f' {
+			headerIndex = i + 1
+		} else {
+			rows[i].headerIndex = headerIndex
+		}
+	}
 	return rows
 }
 
