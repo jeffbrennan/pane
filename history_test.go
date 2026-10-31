@@ -4,9 +4,35 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+func TestHistoryCommitTime(t *testing.T) {
+	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	for _, tt := range []struct {
+		date string
+		want string
+	}{
+		{now.Add(-5 * time.Minute).Format(time.RFC3339), "5m ago"},
+		{now.Add(-23 * time.Hour).Format(time.RFC3339), "23h ago"},
+		{now.Add(-24 * time.Hour).Format(time.RFC3339), "2026-10-30"},
+		{now.Add(time.Hour).Format(time.RFC3339), "2026-10-31"},
+		{"unknown", "unknown"},
+	} {
+		if got := historyCommitTime(tt.date, now); got != tt.want {
+			t.Errorf("date %q: got %q, want %q", tt.date, got, tt.want)
+		}
+	}
+}
+
+func TestHistoryViewShowsRecentRelativeTime(t *testing.T) {
+	m := model{width: 80, height: 12, screen: "history", history: historyState{commits: []commitInfo{{subject: "recent", author: "Alice", date: time.Now().Add(-2 * time.Hour).Format(time.RFC3339)}}}}
+	if view := m.View(); !strings.Contains(view, "2h ago") || !strings.Contains(view, "Alice") {
+		t.Fatalf("missing recent relative time: %q", view)
+	}
+}
 
 func TestHistoryAndCommitChanges(t *testing.T) {
 	r := testRepo(t)

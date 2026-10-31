@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-runewidth"
@@ -393,6 +394,7 @@ func (m model) historyView() string {
 	if spacing > 0 && len(matches) > 0 {
 		content = append(content, "")
 	}
+	now := time.Now()
 	for i := offset; i < len(matches); i++ {
 		c := matches[i]
 		marker := "  "
@@ -401,10 +403,7 @@ func (m model) historyView() string {
 			marker = "▸ "
 			style = "\x1b[1m"
 		}
-		date := c.date
-		if len(date) >= 10 {
-			date = date[:10]
-		}
+		date := historyCommitTime(c.date, now)
 		subject := fit(marker+clean(c.subject), m.width)
 		meta := historyMetadata(c, date, m.width, i == selected)
 		content = append(content, style+subject+"\x1b[0m", meta, "")
