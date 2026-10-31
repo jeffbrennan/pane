@@ -18,6 +18,7 @@ type historyState struct {
 	filter, draft                                       string
 	searching, loading, stale, more, fetching           bool
 	statsFetching                                       bool
+	directCommit                                        bool
 	current                                             commitInfo
 	expandedDeleted                                     map[string]bool
 	jumps                                               []jumpLocation
@@ -381,6 +382,10 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) returnToHistory() (tea.Model, tea.Cmd) {
+	if m.history.directCommit {
+		m.history.directCommit = false
+		return m.openHistory()
+	}
 	m.screen = "history"
 	m.pickerReturn, m.pickerBackToHistory = false, false
 	m.history.request++

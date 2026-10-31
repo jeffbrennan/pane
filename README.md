@@ -4,6 +4,8 @@ A narrow, keyboard-first terminal viewer for Git changes. Diffs show file header
 
 If the working tree and index are clean at startup, pane opens commit history. Otherwise it opens the unstaged diff view.
 
+Run `pane <commit>` to open a commit's read-only diff directly. A full or abbreviated hash, branch, tag, or other Git commit revision is accepted. Press `Esc` or `q` to return to history.
+
 Install with `go install github.com/jeffbrennan/pane@latest`, or run `go install .` from a checkout; either places `pane` in `$(go env GOPATH)/bin`, which must be on your `PATH`. Go and Git must be installed. The initial target is macOS.
 
 For development, `just b` builds pane, installs it, and runs it in the current repository.

@@ -17,6 +17,29 @@ type commitInfo struct {
 
 const historyPage = 200
 
+func (r repository) resolveCommit(revision string) (commitInfo, error) {
+	if revision == "" {
+		return commitInfo{}, fmt.Errorf("commit revision cannot be empty")
+	}
+	out, err := r.command("rev-parse", "--verify", "--end-of-options", revision+"^{commit}")
+	if err != nil {
+		return commitInfo{}, fmt.Errorf("invalid commit %q: %w", revision, gitError(out, err))
+	}
+	hash := strings.TrimSpace(string(out))
+	out, err = r.command("log", "-1", "-z", "--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00", hash, "--")
+	if err != nil {
+		return commitInfo{}, gitError(out, err)
+	}
+	commits, err := parseHistory(out, false)
+	if err != nil {
+		return commitInfo{}, err
+	}
+	if len(commits) != 1 {
+		return commitInfo{}, fmt.Errorf("could not read commit %q", revision)
+	}
+	return commits[0], nil
+}
+
 // history loads up to limit commits after skipping the newest skip commits.
 func (r repository) history(skip, limit int) ([]commitInfo, error) {
 	return r.historyWithDate(skip, limit, "%aI")

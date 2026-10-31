@@ -85,19 +85,57 @@ type model struct {
 }
 
 func main() {
+	if len(os.Args) > 2 {
+		fmt.Fprintln(os.Stderr, "usage: pane [commit]")
+		os.Exit(1)
+	}
 	repo, err := openRepository()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	m := model{repo: repo, wrap: true, loading: true, startup: true}
+	m, err := initialModel(repo, os.Args[1:])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func (m model) Init() tea.Cmd { return tea.Batch(load(m.repo, m.generation), nextTick()) }
+func initialModel(repo repository, args []string) (model, error) {
+	if len(args) > 1 {
+		return model{}, fmt.Errorf("usage: pane [commit]")
+	}
+	m := model{repo: repo, wrap: true, loading: true, startup: true}
+	if len(args) == 0 {
+		return m, nil
+	}
+	commit, err := repo.resolveCommit(args[0])
+	if err != nil {
+		return model{}, err
+	}
+	m.screen = "commit"
+	m.history.current = commit
+	m.history.loading = true
+	m.history.request++
+	m.history.directCommit = true
+	return m, nil
+}
+
+func (m model) Init() tea.Cmd {
+	commands := []tea.Cmd{load(m.repo, m.generation), nextTick()}
+	if m.screen == "commit" && m.history.loading && m.history.directCommit {
+		repo, hash, request := m.repo, m.history.current.hash, m.history.request
+		commands = append(commands, func() tea.Msg {
+			changes, err := repo.commitChanges(hash)
+			return commitLoaded{changes, err, request}
+		})
+	}
+	return tea.Batch(commands...)
+}
 
 func load(repo repository, generation int) tea.Cmd {
 	return func() tea.Msg { s, err := repo.load(); return loaded{s, err, generation} }
