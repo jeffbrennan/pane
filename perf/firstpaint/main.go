@@ -56,6 +56,9 @@ func (output *terminalOutput) feed(data []byte, terminal io.Writer) bool {
 }
 
 func run(binary, repo, revision string, idle time.Duration, logPath string) error {
+	if idle < 0 {
+		return fmt.Errorf("idle duration cannot be negative")
+	}
 	binary, err := filepath.Abs(binary)
 	if err != nil {
 		return err
@@ -120,7 +123,7 @@ func run(binary, repo, revision string, idle time.Duration, logPath string) erro
 		<-wait
 		return fmt.Errorf("pane did not exit")
 	}
-	metrics := map[string]int64{"first_paint_ns": first.Sub(start).Nanoseconds(), "idle_terminal_bytes": idleBytes}
+	metrics := map[string]int64{"first_paint_ns": first.Sub(start).Nanoseconds(), "idle_terminal_bytes": idleBytes, "idle_duration_ns": idle.Nanoseconds()}
 	if usage, ok := cmd.ProcessState.SysUsage().(*syscall.Rusage); ok {
 		metrics["process_cpu_ns"] = usage.Utime.Nano() + usage.Stime.Nano()
 		rss := usage.Maxrss
@@ -150,6 +153,6 @@ func appendMetric(path, metric string, value int64) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(file, "%s\t%s\tcommit\t%s\t%d\n", time.Now().Format(time.RFC3339), strings.TrimSpace(string(revision)), metric, value)
+	_, err = fmt.Fprintf(file, "%s\t%s\tcommit\t%s\t%d\t%s\n", time.Now().Format(time.RFC3339), strings.TrimSpace(string(revision)), metric, value, os.Getenv("PANE_PERF_RUN"))
 	return err
 }

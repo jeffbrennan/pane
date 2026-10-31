@@ -148,7 +148,7 @@ func recordPerf(t *testing.T, scenario, metric string, value int64) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fmt.Fprintf(file, "%s\t%s\t%s\t%s\t%d\n", time.Now().Format(time.RFC3339), strings.TrimSpace(string(revision)), scenario, metric, value); err != nil {
+	if _, err := fmt.Fprintf(file, "%s\t%s\t%s\t%s\t%d\t%s\n", time.Now().Format(time.RFC3339), strings.TrimSpace(string(revision)), scenario, metric, value, os.Getenv("PANE_PERF_RUN")); err != nil {
 		t.Fatal(err)
 	}
 }
