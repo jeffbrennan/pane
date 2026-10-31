@@ -12,6 +12,8 @@ Run `pane <start>..<end>` for a continuous review of a Git commit range, for exa
 
 Run `pane --base main`, `pane -b main`, or `pane main...` for one read-only review from the merge base of `main` and `HEAD` to the working tree. It includes committed, staged, unstaged, and untracked changes, and refreshes as the working tree changes. Press `Esc` or `q` to return to history.
 
+Run `pane log -- <path>` or `pane -- <path>` to open a file's history, following renames. From a diff, press `L` on a file to open its history and `Esc` to return to the original view. Opening a commit selects that file in the diff; change counts describe the whole commit, not just the selected file. To review the commits continuously instead, pipe `git log --format=%H --follow -- <path>` into pane.
+
 Pipe commit lines into pane for a continuous read-only review, for example `git log --oneline -n 10 | pane`. Commits appear in input order with a pinned commit heading and file header. The first field of each nonempty line must be a commit hash. Pane loads the first and last commits first, then fills in the rest in the background; invalid hashes are shown in place. Search covers the diffs loaded so far. The file picker shows files in the commit containing the active line. Deleted files are expanded, and context expansion is not available in this view; normal diff navigation works across commits. Press `Esc` or `q` to return to history.
 
 Install with `go install github.com/jeffbrennan/pane@latest`, or run `go install .` from a checkout; either places `pane` in `$(go env GOPATH)/bin`, which must be on your `PATH`. Go and Git must be installed. The initial target is macOS.
@@ -34,6 +36,7 @@ For development, `just b` builds pane, installs it, and runs it in the current r
 | `}` / `{` | Jump to the next / previous paragraph boundary, or five commits in history |
 | `J` / `K` | Jump to the next / previous file, placing it at the top |
 | `f` | Open file tree; `j` / `k` navigate, `gg` / `G` jump to first / last, `{` / `}` jump between directories, `ctrl-d` / `ctrl-u` and `ctrl-f` / `ctrl-b` move by half / full pages, `h` / `l` fold directories, `/` searches. Relative row numbers help with navigation counts. |
+| `L` | Open history for the file under the cursor, following renames |
 | `/`, `n` / `N` | Search the diff; jump to the next / previous match |
 | Search / filter input: `←` / `→`, `home` / `end`, `alt-b` / `alt-f`, `ctrl-a` / `ctrl-e` | Move the query cursor by character, word, or to the start / end |
 | Search / filter input: `backspace` / `delete`, `ctrl-w` / `alt-backspace` | Delete a character or the previous word |

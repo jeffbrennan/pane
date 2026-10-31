@@ -17,6 +17,7 @@ type historyState struct {
 	selected, offset, pos, horizontal, viewTop, request int
 	stashCount                                          int
 	filter, draft                                       string
+	path                                                string
 	draftCursor                                         int
 	searching, loading, stale, more, fetching           bool
 	commitLoadingVisible                                bool
@@ -87,6 +88,8 @@ func (m *model) cacheHistoryStats() {
 
 func (m model) openHistory() (tea.Model, tea.Cmd) {
 	m.screen = "history"
+	m.history.path = ""
+	m.fileHistoryReturn = nil
 	m.pickerReturn, m.pickerBackToHistory = false, false
 	m.history.commits = nil
 	m.history.filter = ""
@@ -146,9 +149,9 @@ func (m model) loadHistoryBackground() (model, tea.Cmd) {
 }
 
 func (m model) fetchHistory(skip, limit int) tea.Cmd {
-	repo, request := m.repo, m.history.request
+	repo, request, path := m.repo, m.history.request, m.history.path
 	return func() tea.Msg {
-		commits, err := repo.history(skip, limit)
+		commits, err := repo.historyWithPath(skip, limit, "%aI", path)
 		count := 0
 		if skip == 0 {
 			if entries, stashErr := repo.stashes(); stashErr == nil {
@@ -275,6 +278,9 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	page := max(1, (m.historyAvailable()-1)/3)
 	switch key.String() {
 	case "esc", "q":
+		if m.history.path != "" {
+			return m.leaveFileHistory()
+		}
 		m.screen = ""
 		m.history.request++
 	case "ctrl+c":
@@ -291,6 +297,10 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.runAction("pull")
 		}
 	case "S":
+		if m.history.path != "" {
+			m.flash = "Return to history to open stashes"
+			break
+		}
 		if !m.busy {
 			return m.openStashes()
 		}
@@ -309,6 +319,10 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, copyCmd(hash, shortHash(hash))
 		}
 	case "u":
+		if m.history.path != "" {
+			m.flash = "Return to history to edit the latest commit"
+			break
+		}
 		if m.busy || m.history.loading || len(matches) == 0 || len(m.history.commits) == 0 {
 			break
 		}

@@ -11,7 +11,13 @@ import (
 // its sync state and local changes below it.
 func (m model) historyHeader() []string {
 	branch := m.snapshot.branch
-	lines := []string{m.titleBar(" "+m.historyTitle(branch, max(0, m.width-1)), "")}
+	title := m.historyTitle(branch, max(0, m.width-1))
+	badge := ""
+	if m.history.path != "" {
+		title = "history · " + clean(m.history.path)
+		badge = styleDim + "whole-commit counts" + styleReset
+	}
+	lines := []string{m.titleBar(" "+title, badge)}
 	if m.height-4 <= 0 {
 		return lines
 	}

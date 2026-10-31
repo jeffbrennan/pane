@@ -113,6 +113,7 @@ type model struct {
 	stash                 stashState
 	base                  baseState
 	contextBase           bool
+	fileHistoryReturn     *model
 }
 
 func main() {
@@ -163,8 +164,14 @@ func main() {
 }
 
 func initialModel(repo repository, args []string) (model, error) {
+	if len(args) == 2 && args[0] == "--" {
+		return initialFileHistory(repo, args[1])
+	}
+	if len(args) == 3 && args[0] == "log" && args[1] == "--" {
+		return initialFileHistory(repo, args[2])
+	}
 	if len(args) > 2 || (len(args) == 2 && args[0] != "--base" && args[0] != "-b") || (len(args) == 1 && (args[0] == "--base" || args[0] == "-b")) {
-		return model{}, fmt.Errorf("usage: pane [commit-or-range | --base <revision>]")
+		return model{}, fmt.Errorf("%s", fileHistoryUsage())
 	}
 	m := model{repo: repo, wrap: true, loading: true, startup: true}
 	if len(args) == 0 {
@@ -215,6 +222,9 @@ func initialModel(repo repository, args []string) (model, error) {
 
 func (m model) Init() tea.Cmd {
 	commands := []tea.Cmd{load(m.repo, m.generation, m.refreshCache), nextTick()}
+	if m.screen == "history" && m.history.path != "" && m.history.loading {
+		commands = append(commands, m.fetchHistory(0, historyPage))
+	}
 	if m.screen == "commit" && m.history.loading && m.history.directCommit {
 		repo, hash, request := m.repo, m.history.current.hash, m.history.request
 		commands = append(commands, func() tea.Msg {
@@ -548,6 +558,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.history.rows = nil
 		m.history.pos = 0
 		m.rebuildCommit()
+		m.jumpToHistoryFile()
 		return m, loadCommitSyntax(m.repo, m.history.current.hash, m.history.request, m.history.changes)
 	case commitSyntaxLoaded:
 		if m.screen != "commit" || msg.request != m.history.request {
@@ -585,6 +596,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.flash = ""
 		if m.modal != "" {
 			return m.handleModal(msg)
+		}
+		if msg.String() == "L" && m.pending == "" && (m.screen == "" || m.screen == "commit" || m.screen == "base" || m.screen == "sequence") {
+			return m.openFileHistory()
 		}
 		if msg.String() == "F" && m.pending == "" && !(m.screen == "history" && m.history.searching) {
 			if !m.busy {

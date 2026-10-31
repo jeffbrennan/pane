@@ -10,6 +10,7 @@ import (
 
 type commitInfo struct {
 	hash, author, email, date, subject, message string
+	filePath                                    string
 	search                                      string
 	added, deleted, binary                      int
 	statsLoaded                                 bool
@@ -46,6 +47,10 @@ func (r repository) history(skip, limit int) ([]commitInfo, error) {
 }
 
 func (r repository) historyWithDate(skip, limit int, dateFormat string) ([]commitInfo, error) {
+	return r.historyWithPath(skip, limit, dateFormat, "")
+}
+
+func (r repository) historyWithPath(skip, limit int, dateFormat, path string) ([]commitInfo, error) {
 	out, err := r.command("rev-parse", "--verify", "--quiet", "HEAD")
 	if err != nil {
 		if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 1 {
@@ -54,11 +59,69 @@ func (r repository) historyWithDate(skip, limit int, dateFormat string) ([]commi
 		return nil, gitError(out, err)
 	}
 	format := "--format=%x00%H%x00%an%x00%ae%x00" + dateFormat + "%x00%s%x00%B%x00"
-	out, err = r.command("log", fmt.Sprintf("--skip=%d", skip), fmt.Sprintf("--max-count=%d", limit), "-z", format)
+	logSkip, logLimit := skip, limit
+	if path != "" {
+		logSkip, logLimit = 0, skip+limit
+	}
+	args := []string{"log", fmt.Sprintf("--skip=%d", logSkip), fmt.Sprintf("--max-count=%d", logLimit), "-z", format}
+	if path != "" {
+		args = append(args, "--follow", "--name-status", "-M", "--", path)
+	}
+	out, err = r.command(args...)
 	if err != nil {
 		return nil, gitError(out, err)
 	}
+	if path != "" {
+		commits, err := parseFileHistory(out, path)
+		if err != nil {
+			return nil, err
+		}
+		return commits[min(skip, len(commits)):], nil
+	}
 	return parseHistory(out, false)
+}
+
+func parseFileHistory(out []byte, path string) ([]commitInfo, error) {
+	fields := bytes.Split(out, []byte{0})
+	var commits []commitInfo
+	for i := 0; i < len(fields); {
+		for i < len(fields) && len(fields[i]) == 0 {
+			i++
+		}
+		if i == len(fields) {
+			break
+		}
+		if i+6 > len(fields) {
+			return nil, fmt.Errorf("unexpected Git file history format")
+		}
+		c := commitInfo{hash: string(fields[i]), author: string(fields[i+1]), email: string(fields[i+2]), date: string(fields[i+3]), subject: string(fields[i+4]), message: string(fields[i+5]), filePath: path}
+		c.search = strings.ToLower(c.hash + "\n" + c.author + "\n" + c.email + "\n" + c.message + "\n" + c.subject)
+		i += 6
+		for i < len(fields) && len(fields[i]) == 0 {
+			i++
+		}
+		for i < len(fields) && len(fields[i]) > 0 {
+			status := strings.TrimPrefix(string(fields[i]), "\n")
+			if status == "" || !strings.ContainsRune("AMDRCTUXB", rune(status[0])) {
+				break
+			}
+			i++
+			if i >= len(fields) || len(fields[i]) == 0 {
+				return nil, fmt.Errorf("unexpected Git file history path")
+			}
+			c.filePath = string(fields[i])
+			i++
+			if strings.HasPrefix(status, "R") || strings.HasPrefix(status, "C") {
+				if i >= len(fields) || len(fields[i]) == 0 {
+					return nil, fmt.Errorf("unexpected Git file history rename")
+				}
+				c.filePath = string(fields[i])
+				i++
+			}
+		}
+		commits = append(commits, c)
+	}
+	return commits, nil
 }
 
 func (r repository) historyStats(hashes []string) ([]commitInfo, error) {
