@@ -45,7 +45,7 @@ func TestFilePickerFiltersAndJumps(t *testing.T) {
 	if m.modal != "files" || !strings.Contains(m.View(), "Files  3/3") || !strings.Contains(m.View(), "+2 -0") {
 		t.Fatalf("picker: %q", m.View())
 	}
-	m = keys(t, m, "t", "y", "p")
+	m = keys(t, m, "/", "t", "y", "p")
 	if got := filterFiles(m.fileEntries(), "typ"); len(got) != 1 || got[0].path != "pkg/api/types.go" {
 		t.Fatalf("filter: %#v", got)
 	}
@@ -59,9 +59,36 @@ func TestFilePickerFiltersAndJumps(t *testing.T) {
 	if got := filterFiles(m.fileEntries(), "md"); len(got) != 2 || got[0].path != "README.md" {
 		t.Fatalf("basename matches should rank first: %#v", got)
 	}
-	m = keys(t, m, "f", "z", "z", "z", "enter")
+	m = keys(t, m, "f", "/", "z", "z", "z", "enter")
 	if m.modal != "" || m.rows[m.pos].path != "pkg/api/types.go" {
 		t.Fatal("no-match enter should close without moving")
+	}
+}
+
+func TestFilePickerNavigationAndSearchModes(t *testing.T) {
+	m := keys(t, toolModel(), "f")
+	if !strings.Contains(m.View(), "j/k select") || !strings.Contains(m.View(), "/ search") {
+		t.Fatalf("missing navigation hints: %q", m.View())
+	}
+	m = keys(t, m, "j", "j", "k")
+	if m.picker.selected != 1 || m.picker.query != "" {
+		t.Fatalf("j/k did not navigate: %#v", m.picker)
+	}
+	m = keys(t, m, "/", "k", "j", "/")
+	if !m.picker.searching || m.picker.query != "kj/" {
+		t.Fatalf("search mode did not accept literal keys: %#v", m.picker)
+	}
+	m = keys(t, m, "esc")
+	if m.modal != "files" || m.picker.searching || m.picker.query != "kj/" {
+		t.Fatal("escape should return to navigation while keeping the filter")
+	}
+	m = keys(t, m, "/", "backspace", "backspace", "backspace", "t", "y", "p", "esc", "enter")
+	if m.modal != "" || m.rows[m.pos].path != "pkg/api/types.go" {
+		t.Fatal("enter should jump to the selected filtered file")
+	}
+	m = keys(t, m, "f", "esc")
+	if m.modal != "" {
+		t.Fatal("escape in navigation mode should close the picker")
 	}
 }
 
@@ -116,7 +143,7 @@ func TestCommitViewSharesDiffTools(t *testing.T) {
 	m.history.changes = m.snapshot.unstaged
 	m.history.current = commitInfo{hash: "abcdef1234567890", subject: "subject"}
 	m.rebuildCommit()
-	m = keys(t, m, "f", "R", "E", "A", "enter")
+	m = keys(t, m, "f", "/", "R", "E", "A", "enter")
 	if m.screen != "commit" || m.history.rows[m.history.pos].path != "README.md" {
 		t.Fatalf("commit picker: %#v", m.history.rows[m.history.pos])
 	}

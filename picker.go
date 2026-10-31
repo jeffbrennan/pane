@@ -10,8 +10,9 @@ import (
 )
 
 type pickerState struct {
-	query    string
-	selected int
+	query     string
+	selected  int
+	searching bool
 }
 
 type fileEntry struct {
@@ -95,8 +96,14 @@ func (m *model) openPicker() {
 func (m *model) handlePickerKey(key string, runes []rune) {
 	matches := filterFiles(m.fileEntries(), m.picker.query)
 	switch key {
-	case "esc", "ctrl+c":
+	case "ctrl+c":
 		m.modal = ""
+	case "esc":
+		if m.picker.searching {
+			m.picker.searching = false
+		} else {
+			m.modal = ""
+		}
 	case "enter":
 		m.modal = ""
 		if len(matches) > 0 {
@@ -108,15 +115,28 @@ func (m *model) handlePickerKey(key string, runes []rune) {
 	case "down", "ctrl+n", "ctrl+j", "tab":
 		m.picker.selected = min(m.picker.selected+1, max(0, len(matches)-1))
 	case "backspace", "ctrl+h":
-		query := []rune(m.picker.query)
-		if len(query) > 0 {
-			m.picker.query = string(query[:len(query)-1])
-			m.picker.selected = 0
+		if m.picker.searching {
+			query := []rune(m.picker.query)
+			if len(query) > 0 {
+				m.picker.query = string(query[:len(query)-1])
+				m.picker.selected = 0
+			}
 		}
 	default:
-		if len(runes) > 0 {
+		if m.picker.searching && len(runes) > 0 {
 			m.picker.query += string(runes)
 			m.picker.selected = 0
+		} else if !m.picker.searching {
+			switch key {
+			case "/":
+				m.picker.searching = true
+			case "j":
+				m.picker.selected = min(m.picker.selected+1, max(0, len(matches)-1))
+			case "k":
+				m.picker.selected = max(0, m.picker.selected-1)
+			case "q":
+				m.modal = ""
+			}
 		}
 	}
 }
@@ -126,7 +146,10 @@ func (m model) showFilesDialog(lines []string) {
 	matches := filterFiles(entries, m.picker.query)
 	selected := min(m.picker.selected, max(0, len(matches)-1))
 	if m.width < 20 || len(lines) < 7 {
-		status := "file: " + clean(m.picker.query) + "_"
+		status := "file: /" + clean(m.picker.query)
+		if m.picker.searching {
+			status += "_"
+		}
 		if len(matches) > 0 {
 			status += "  " + clean(matches[selected].path)
 		}
@@ -141,10 +164,17 @@ func (m model) showFilesDialog(lines []string) {
 	for _, e := range matches {
 		countWidth = max(countWidth, len(fileCounts(e)))
 	}
+	query := sliceWidth(clean(m.picker.query), max(0, runewidth.StringWidth(m.picker.query)-innerWidth+2), max(0, innerWidth-2))
+	queryLine := dialogLine("/"+query, innerWidth)
+	hint := "j/k select  / search  ↵ jump  esc close"
+	if m.picker.searching {
+		queryLine = dialogLineWithCursor("/"+query, innerWidth)
+		hint = "↑↓ select  ↵ jump  esc navigate"
+	}
 	content := []string{
 		"┌" + strings.Repeat("─", boxWidth-2) + "┐",
 		dialogLine(fmt.Sprintf("Files  %d/%d", len(matches), len(entries)), innerWidth),
-		dialogLineWithCursor(sliceWidth(clean(m.picker.query), max(0, runewidth.StringWidth(m.picker.query)-innerWidth+1), innerWidth-1), innerWidth),
+		queryLine,
 	}
 	if len(matches) == 0 {
 		content = append(content, dialogLine("  No matching files", innerWidth))
@@ -162,7 +192,7 @@ func (m model) showFilesDialog(lines []string) {
 		}
 		content = append(content, line)
 	}
-	content = append(content, dialogLine("↑↓ select  ↵ jump  esc close", innerWidth), "└"+strings.Repeat("─", boxWidth-2)+"┘")
+	content = append(content, dialogLine(hint, innerWidth), "└"+strings.Repeat("─", boxWidth-2)+"┘")
 	left := strings.Repeat(" ", max(0, (m.width-boxWidth)/2))
 	top := max(0, (len(lines)-len(content))/2)
 	for i, line := range content {
