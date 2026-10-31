@@ -227,3 +227,50 @@ func TestMovementKeepsExplicitViewportAlignment(t *testing.T) {
 		t.Fatalf("viewport did not scroll when approaching the bottom: before %d after %d", top, after)
 	}
 }
+
+func TestStepsScrollOneRowAcrossPinnedHeaders(t *testing.T) {
+	m := model{width: 40, height: 12, wrap: true, snapshot: snapshot{unstaged: []change{longFile("first.go"), longFile("second.go"), longFile("third.go")}}}
+	m.rebuild()
+	for _, key := range []string{"j", "k"} {
+		for range m.rows {
+			before := m.viewTop
+			m = keys(t, m, key)
+			if step := m.viewTop - before; step > 1 || step < -1 {
+				t.Fatalf("%s at row %d scrolled %d rows", key, m.pos, step)
+			}
+		}
+	}
+}
+
+func TestJKMoveByWrappedLine(t *testing.T) {
+	long := strings.Repeat("x", 50)
+	changes := []change{{path: "a.go", diff: "@@ -1,3 +1,3 @@\n " + long + "\n short\n " + long + "\n"}}
+	m := model{width: 40, height: 12, wrap: true, screen: "commit", history: historyState{changes: changes}}
+	m.rebuildCommit()
+	// Rows: 0 header, 1-2 first long line, 3 short, 4-5 last long line.
+	for _, step := range []struct {
+		key  string
+		want int
+	}{{"j", 1}, {"j", 3}, {"j", 4}, {"j", 4}, {"k", 3}, {"k", 1}, {"k", 0}} {
+		m = keys(t, m, step.key)
+		if m.history.pos != step.want {
+			t.Fatalf("%s: at row %d, want %d", step.key, m.history.pos, step.want)
+		}
+	}
+	m = keys(t, m, "2", "j")
+	if m.history.pos != 3 {
+		t.Fatalf("2j landed on row %d", m.history.pos)
+	}
+	view := m.commitModel()
+	numbers := map[int]string{0: "2", 1: "1", 2: "", 4: "1", 5: ""}
+	for i, want := range numbers {
+		fields := strings.Fields(plain(view.renderNumberedDiffRow(view.rows[i], i)))
+		got := ""
+		if len(fields) > 0 && !strings.HasPrefix(fields[0], "x") {
+			got = fields[0]
+		}
+		if got != want {
+			t.Errorf("row %d numbered %q, want %q", i, got, want)
+		}
+	}
+}

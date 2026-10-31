@@ -804,11 +804,53 @@ func wrapLine(s string, width int) []string {
 }
 
 func (m *model) clamp() { m.pos = max(0, min(m.pos, len(m.rows)-1)) }
+
+// lineStart returns the first row of the wrapped line containing row i.
+func (m model) lineStart(i int) int {
+	for i > 0 && i < len(m.rows) && m.rows[i].offset > 0 {
+		i--
+	}
+	return i
+}
+
+// lineRows converts a count of whole lines from the active line into a row
+// delta, so j and k step over wrapped continuation rows.
+func (m model) lineRows(n int) int {
+	if len(m.rows) == 0 {
+		return 0
+	}
+	pos := m.lineStart(m.pos)
+	for ; n > 0; n-- {
+		next := pos + 1
+		for next < len(m.rows) && m.rows[next].offset > 0 {
+			next++
+		}
+		if next >= len(m.rows) {
+			break
+		}
+		pos = next
+	}
+	for ; n < 0 && pos > 0; n++ {
+		pos = m.lineStart(pos - 1)
+	}
+	return pos - m.pos
+}
+
+// move moves the active row by n rows, landing on the start of a line.
 func (m *model) move(n int) {
-	top, visible, _ := m.diffViewport(max(1, m.height-2))
+	visible := max(1, m.height-2)
+	top := m.viewportStart(visible)
 	wasVisible := m.pos >= top && m.pos < top+visible
+	from := m.pos
 	m.pos += n
 	m.clamp()
+	if start := m.lineStart(m.pos); start > from || n <= 0 {
+		m.pos = start
+	} else if next := m.pos + m.lineRows(1); next > m.pos {
+		// A downward move that would snap back to where it started skips to
+		// the next line instead.
+		m.pos = next
+	}
 	m.reveal()
 	if wasVisible {
 		if n > 0 {
@@ -1051,18 +1093,32 @@ func (m model) diffContentWidth() int {
 	return max(1, m.width-diffMargin(m.width)-extra)
 }
 
+// lineDistance counts whole lines between row index and the active row,
+// matching how j and k move.
+func (m model) lineDistance(index int) int {
+	active := m.lineStart(m.pos)
+	from, to := min(index, active), max(index, active)
+	distance := 0
+	for i := from + 1; i <= to; i++ {
+		if m.rows[i].offset == 0 {
+			distance++
+		}
+	}
+	return distance
+}
+
 func (m model) renderNumberedDiffRow(r row, index int) string {
 	width := m.relativeGutterWidth()
 	if width > 0 {
 		if r.gutter != "" {
 			width = max(width, len(r.gutter)-3)
-		} else if r.kind == 'f' {
-			// Line up the header's number with the line numbers below it.
+		} else {
+			// Line up headers and separators with the line numbers.
 			width = max(width, r.numberWidth)
 		}
 		number := strings.Repeat(" ", width)
-		if index >= 0 {
-			value := max(index-m.pos, m.pos-index)
+		if index >= 0 && r.offset == 0 {
+			value := m.lineDistance(index)
 			if index == m.pos && r.sourceLine > 0 {
 				value = r.sourceLine
 			}

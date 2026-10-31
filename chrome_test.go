@@ -133,7 +133,7 @@ func TestNumberColumnSharedAcrossFiles(t *testing.T) {
 	m := model{width: 40, height: 10, wrap: true, screen: "commit", history: historyState{changes: changes}}
 	m.rebuildCommit()
 	lines := strings.Split(plain(m.View()), "\n")
-	if !strings.HasPrefix(lines[2], "     1   x") || !strings.HasPrefix(lines[4], "     3  large.go") || !strings.HasPrefix(lines[5], "     4   y") {
+	if !strings.HasPrefix(lines[2], "     1   x") || strings.TrimRight(lines[3], " ") != "     2" || !strings.HasPrefix(lines[4], "     3  large.go") || !strings.HasPrefix(lines[5], "     4   y") {
 		t.Fatalf("number column moved between files: %q", lines[1:6])
 	}
 }

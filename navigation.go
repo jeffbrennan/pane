@@ -1,7 +1,8 @@
 package main
 
 func (m *model) reveal() {
-	top, available, _ := m.diffViewport(max(1, m.height-2))
+	available := max(1, m.height-2)
+	top := m.viewportStart(available)
 	margin := min(3, (available-1)/2)
 	if m.pos < top+margin {
 		top = m.pos - margin
@@ -15,7 +16,8 @@ func (m *model) scrollViewport(amount int) {
 	if len(m.rows) == 0 {
 		return
 	}
-	top, available, _ := m.diffViewport(max(1, m.height-2))
+	available := max(1, m.height-2)
+	top := m.viewportStart(available)
 	m.viewTop = max(0, min(top+amount, max(0, len(m.rows)-available)))
 	m.pos = max(m.viewTop, min(m.pos, m.viewTop+available-1))
 	m.clamp()
@@ -150,9 +152,9 @@ func (m *model) handleDiffNavigation(key string) bool {
 		m.move(-m.pos)
 		jump = true
 	case "j", "down":
-		m.move(count)
+		m.move(m.lineRows(count))
 	case "k", "up":
-		m.move(-count)
+		m.move(m.lineRows(-count))
 	case "}":
 		for range min(count, len(m.rows)) {
 			m.paragraphJump(1)

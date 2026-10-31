@@ -11,17 +11,17 @@ func (m model) fileHeaderAt(index int) *row {
 	return nil
 }
 
+// diffViewport returns the first row of the viewport, the number of rows
+// shown below a pinned file header, and that header. The header covers the
+// viewport's first row rather than shrinking it, so pinning never changes
+// which rows fit and scrolling stays one row per step.
 func (m model) diffViewport(available int) (int, int, *row) {
 	if available <= 0 {
 		return 0, 0, nil
 	}
 	start := m.viewportStart(available)
-	if available < 2 || m.fileHeaderAt(start) == nil {
-		return start, available, nil
-	}
-	start = m.viewportStart(available - 1)
 	header := m.fileHeaderAt(start)
-	if header == nil {
+	if available < 2 || header == nil {
 		return start, available, nil
 	}
 	return start, available - 1, header

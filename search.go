@@ -67,7 +67,8 @@ func (m model) findMatch(query string, from, direction int) (int, bool) {
 }
 
 func (m *model) showMatch(index int) {
-	top, available, _ := m.diffViewport(max(1, m.height-2))
+	available := max(1, m.height-2)
+	top := m.viewportStart(available)
 	m.pos = index
 	if index < top || index >= top+available {
 		m.positionViewport("z")

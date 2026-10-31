@@ -23,10 +23,15 @@ func buildRows(changes []change, width int, wrap bool) []row {
 }
 
 func buildRowsExpanded(changes []change, width int, wrap bool, expanded map[string]bool) []row {
+	return buildRowsNumbered(changes, width, wrap, expanded, 0)
+}
+
+// buildRowsNumbered builds rows whose line numbers are at least gutterWidth
+// wide, so rows rebuilt for one file line up with the rest of the diff.
+func buildRowsNumbered(changes []change, width int, wrap bool, expanded map[string]bool, gutterWidth int) []row {
 	var rows []row
 	// Share one line number width across files so the number column stays
 	// put when moving between them.
-	gutterWidth := 0
 	for _, c := range changes {
 		gutterWidth = max(gutterWidth, lineNumberWidth(strings.Split(c.diff, "\n")))
 	}
@@ -167,6 +172,9 @@ func buildRowsExpanded(changes []change, width int, wrap bool, expanded map[stri
 				}
 			}
 		}
+	}
+	for i := range rows {
+		rows[i].numberWidth = gutterWidth
 	}
 	indexRowHeaders(rows)
 	return rows
