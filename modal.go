@@ -8,6 +8,7 @@ import (
 
 var shortcuts = []string{
 	"j / k       Scroll down / up",
+	"} / {       Next / previous paragraph",
 	"J / K       Next / previous file",
 	"tab         Switch staged / unstaged",
 	"space       Stage / unstage file",

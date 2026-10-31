@@ -173,3 +173,28 @@ func TestSuccessfulCommitOpensHistory(t *testing.T) {
 		t.Fatalf("history did not open after commit: %#v", got)
 	}
 }
+
+func TestParagraphHistoryAndCommitJumps(t *testing.T) {
+	m := model{screen: "history", history: historyState{commits: make([]commitInfo, 7)}}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("}")})
+	m = updated.(model)
+	if m.history.selected != 1 {
+		t.Fatalf("history jump: %d", m.history.selected)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("}")})
+	m = updated.(model)
+	if m.history.selected != 2 {
+		t.Fatalf("history end: %d", m.history.selected)
+	}
+	m.screen = "commit"
+	m.history.rows = []row{{text: "first"}, {text: ""}, {text: "second"}}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("}")})
+	m = updated.(model)
+	if m.history.pos != 1 {
+		t.Fatalf("commit jump: %d", m.history.pos)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("{")})
+	if updated.(model).history.pos != 0 {
+		t.Fatal("commit jump back failed")
+	}
+}

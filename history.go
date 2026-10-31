@@ -98,6 +98,10 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.history.selected = min(m.history.selected+1, max(0, len(matches)-1))
 	case "k", "up":
 		m.history.selected = max(0, m.history.selected-1)
+	case "}":
+		m.history.selected = min(m.history.selected+1, max(0, len(matches)-1))
+	case "{":
+		m.history.selected = max(0, m.history.selected-1)
 	case "enter":
 		if len(matches) == 0 || m.history.loading {
 			break
@@ -135,6 +139,10 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		view.move(1)
 	case "k", "up":
 		view.move(-1)
+	case "}":
+		view.paragraphJump(1)
+	case "{":
+		view.paragraphJump(-1)
 	case "J":
 		view.jump(1)
 	case "K":

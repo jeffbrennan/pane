@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 func TestNavigationAndRefreshAnchor(t *testing.T) {
 	m := model{width: 20, height: 10, wrap: true, snapshot: snapshot{unstaged: []change{{path: "one", diff: "@@ -0,0 +1,2 @@\n+first\n+second\n"}, {path: "two", diff: "@@ -0,0 +1 @@\n+other\n"}}}}
@@ -27,5 +31,31 @@ func TestWrapAndSanitize(t *testing.T) {
 	}
 	if got := clean("a\x1b[31m"); got != "a�[31m" {
 		t.Fatalf("unsafe text: %q", got)
+	}
+}
+
+func TestParagraphDiffJumps(t *testing.T) {
+	m := model{pos: 1, rows: []row{
+		{kind: 'f', text: "file one"}, {text: "first"}, {text: "second"}, {text: ""}, {text: "  "},
+		{text: "third"}, {kind: '@', text: "  ···"}, {text: "fourth"}, {kind: 'f', text: "file two"}, {text: "last"},
+	}}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("}")})
+	m = updated.(model)
+	if m.pos != 3 {
+		t.Fatalf("jump down: %d", m.pos)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("}")})
+	m = updated.(model)
+	if m.pos != 6 {
+		t.Fatalf("jump past blank lines: %d", m.pos)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("{")})
+	m = updated.(model)
+	if m.pos != 4 {
+		t.Fatalf("jump up: %d", m.pos)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("{")})
+	if updated.(model).pos != 0 {
+		t.Fatal("jump to file boundary failed")
 	}
 }

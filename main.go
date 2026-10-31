@@ -159,6 +159,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.move(1)
 		case "k", "up":
 			m.move(-1)
+		case "}":
+			m.paragraphJump(1)
+		case "{":
+			m.paragraphJump(-1)
 		case "J":
 			m.jump(1)
 		case "K":
@@ -360,6 +364,27 @@ func wrapLine(s string, width int) []string {
 
 func (m *model) clamp()     { m.pos = max(0, min(m.pos, len(m.rows)-1)) }
 func (m *model) move(n int) { m.pos += n; m.clamp() }
+
+func (m *model) paragraphJump(direction int) {
+	if len(m.rows) == 0 {
+		return
+	}
+	i := m.pos + direction
+	if paragraphBoundary(m.rows[m.pos]) {
+		for i >= 0 && i < len(m.rows) && paragraphBoundary(m.rows[i]) {
+			i += direction
+		}
+	}
+	for i >= 0 && i < len(m.rows) && !paragraphBoundary(m.rows[i]) {
+		i += direction
+	}
+	m.pos = max(0, min(i, len(m.rows)-1))
+}
+
+func paragraphBoundary(r row) bool {
+	return r.kind == 'f' || (r.kind == '@' && strings.TrimSpace(r.text) == "···") || strings.TrimSpace(r.text) == ""
+}
+
 func (m *model) jump(direction int) {
 	if len(m.rows) == 0 {
 		return
