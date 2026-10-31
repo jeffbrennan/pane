@@ -9,6 +9,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.4
 	github.com/charmbracelet/x/ansi v0.8.0
 	github.com/charmbracelet/x/term v0.2.1
+	github.com/creack/pty v1.1.24
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mattn/go-runewidth v0.0.16
 	github.com/sergi/go-diff v1.4.0

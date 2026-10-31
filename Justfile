@@ -22,7 +22,7 @@ pgo:
     if [ -f default.pgo ]; then go tool pprof -proto default.pgo .scratch/session.pprof > .scratch/merged.pprof && mv .scratch/merged.pprof default.pgo; else cp .scratch/session.pprof default.pgo; fi
 
 fmt:
-    gofmt -w *.go
+    gofmt -w *.go perf/firstpaint/*.go
 
 lint:
     go vet ./...
@@ -38,3 +38,5 @@ check: fmt lint typecheck test
 perf:
     mkdir -p .scratch
     PANE_PERF=1 PANE_PERF_LOG=.scratch/perf-log.tsv go test -run '^TestPerf$' -count=1 -v .
+    go build -o .scratch/perf-pane .
+    go run ./perf/firstpaint -repo "${PANE_PERF_REPO:-.}" -revision "${PANE_PERF_COMMIT:-HEAD}" -idle "${PANE_PERF_IDLE:-60s}" -log .scratch/perf-log.tsv
