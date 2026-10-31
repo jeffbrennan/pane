@@ -14,7 +14,7 @@ type historyState struct {
 	rows                                                []row
 	selected, offset, pos, horizontal, viewTop, request int
 	filter, draft                                       string
-	searching, loading                                  bool
+	searching, loading, stale                           bool
 	current                                             commitInfo
 }
 
@@ -31,12 +31,18 @@ type commitLoaded struct {
 
 func (m model) openHistory() (tea.Model, tea.Cmd) {
 	m.screen = "history"
-	m.history.request++
 	m.history.commits = nil
 	m.history.filter = ""
+	m.history.searching = false
 	m.history.selected, m.history.offset = 0, 0
 	m.pending = ""
+	return m.reloadHistory()
+}
+
+func (m model) reloadHistory() (model, tea.Cmd) {
 	m.history.loading = true
+	m.history.stale = false
+	m.history.request++
 	repo, request := m.repo, m.history.request
 	return m, func() tea.Msg { commits, err := repo.history(); return historyLoaded{commits, err, request} }
 }
@@ -104,7 +110,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
-	page := max(1, (m.height-3)/3)
+	page := max(1, (m.historyAvailable()-1)/3)
 	switch key.String() {
 	case "esc", "q":
 		m.screen = ""
@@ -114,6 +120,19 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "?":
 		m.modal = "help"
 		m.helpPos = 0
+	case "p":
+		if !m.busy {
+			m.modal = "push"
+		}
+	case "P":
+		if !m.busy {
+			m.modal = "pull"
+		}
+	case "r":
+		var refreshCmd, historyCmd tea.Cmd
+		m, refreshCmd = m.refresh()
+		m, historyCmd = m.reloadHistory()
+		return m, tea.Batch(refreshCmd, historyCmd)
 	case "/":
 		m.history.searching = true
 		m.history.draft = m.history.filter
@@ -167,6 +186,9 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.screen = "history"
 		m.history.request++
 		m.history.loading = false
+		if m.history.stale {
+			return m.reloadHistory()
+		}
 		return m, nil
 	}
 	if key.String() == "ctrl+c" {
@@ -227,8 +249,8 @@ func (m model) historyView() string {
 	if m.width <= 0 || m.height <= 0 {
 		return ""
 	}
-	lines := []string{fit(" pane  HISTORY", m.width)}
-	available := max(0, m.height-2)
+	lines := m.historyHeader()
+	available := max(0, m.height-len(lines)-1)
 	matches := m.filteredHistory()
 	selected := min(m.history.selected, max(0, len(matches)-1))
 	spacing := 0
@@ -290,7 +312,7 @@ func (m model) historyView() string {
 	}
 	lines = append(lines, fit(status, m.width))
 	if m.modal == "help" {
-		for i := 1; i <= available; i++ {
+		for i := 1; i < len(lines)-1; i++ {
 			lines[i] = ""
 		}
 		showHelpDialog(lines, m.width, m.helpPos)

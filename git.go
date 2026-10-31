@@ -17,6 +17,7 @@ type change struct {
 type snapshot struct {
 	unstaged []change
 	staged   []change
+	branch   branchStatus
 }
 
 type repository struct{ root string }
@@ -46,6 +47,10 @@ func (r repository) load() (snapshot, error) {
 		return snapshot{}, gitError(out, err)
 	}
 	var result snapshot
+	result.branch, err = r.branchStatus()
+	if err != nil {
+		return snapshot{}, err
+	}
 	for _, entry := range bytes.Split(out, []byte{0}) {
 		if len(entry) < 4 {
 			continue

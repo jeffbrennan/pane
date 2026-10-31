@@ -106,8 +106,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.message = msg.err.Error()
 			break
 		}
+		headChanged := m.snapshot.branch.available && msg.snapshot.branch.available && m.snapshot.branch.head != msg.snapshot.branch.head
 		m.snapshot = msg.snapshot
 		m.rebuild()
+		if headChanged && m.screen == "commit" {
+			m.history.stale = true
+		}
+		if headChanged && m.screen == "history" {
+			if m.history.loading {
+				m.history.stale = true
+			} else {
+				return m.reloadHistory()
+			}
+		}
 		if m.startup {
 			m.startup = false
 			if len(msg.snapshot.unstaged) == 0 && len(msg.snapshot.staged) == 0 && m.screen == "" && m.modal == "" {
@@ -132,6 +143,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.resultAction = msg.action
 			m.resultText = msg.message
 			m.resultPos = 0
+			if msg.action == "pull" && m.screen == "commit" {
+				m.history.stale = true
+			}
+			if msg.action == "pull" && m.screen == "history" {
+				var refreshCmd, historyCmd tea.Cmd
+				m, refreshCmd = m.refresh()
+				m, historyCmd = m.reloadHistory()
+				return m, tea.Batch(refreshCmd, historyCmd)
+			}
 		} else {
 			m.message = msg.message
 		}
@@ -148,7 +168,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.history.commits = msg.commits
-		m.history.selected = 0
+		m.history.selected = min(m.history.selected, max(0, len(m.filteredHistory())-1))
+		if m.history.stale {
+			return m.reloadHistory()
+		}
 	case commitLoaded:
 		if m.screen != "commit" || msg.request != m.history.request {
 			break
