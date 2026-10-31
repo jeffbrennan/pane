@@ -1,6 +1,6 @@
 # diffy
 
-A narrow, keyboard-first terminal viewer for Git changes. Run `diffy` anywhere inside a Git working tree.
+A narrow, keyboard-first terminal viewer for Git changes. Diffs show file headers, line numbers, and added and removed lines without Git's patch metadata. Run `diffy` anywhere inside a Git working tree.
 
 Build with `go build -o diffy .`. Go and Git must be installed. The initial target is macOS.
 

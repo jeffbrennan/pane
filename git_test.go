@@ -130,3 +130,16 @@ func TestBinaryAndDeletedFile(t *testing.T) {
 		t.Fatalf("deletion: %#v", s)
 	}
 }
+
+func TestUntrackedDiffPresentation(t *testing.T) {
+	r := testRepo(t)
+	writeFile(t, r, "new.txt", "first\nsecond\n")
+	s, err := r.load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := buildRows(s.unstaged, 80, true)
+	if len(rows) != 3 || rows[1].gutter != "  1 + " || rows[1].text != "first" || rows[2].text != "second" {
+		t.Fatalf("unexpected rows: %#v", rows)
+	}
+}

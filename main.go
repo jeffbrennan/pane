@@ -12,10 +12,11 @@ import (
 )
 
 type row struct {
-	path string
-	line int
-	text string
-	kind byte
+	path   string
+	line   int
+	gutter string
+	text   string
+	kind   byte
 }
 
 type loaded struct {
@@ -256,34 +257,6 @@ func (m *model) rebuild() {
 	m.clamp()
 }
 
-func buildRows(changes []change, width int, wrap bool) []row {
-	var rows []row
-	for _, c := range changes {
-		rows = append(rows, row{path: c.path, line: -1, text: "── " + clean(c.path) + " ──", kind: 'f'})
-		for i, line := range strings.Split(strings.TrimSuffix(c.diff, "\n"), "\n") {
-			line = clean(line)
-			kind := byte(' ')
-			if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
-				kind = '+'
-			}
-			if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
-				kind = '-'
-			}
-			if strings.HasPrefix(line, "@@") {
-				kind = '@'
-			}
-			parts := []string{line}
-			if wrap {
-				parts = wrapLine(line, width)
-			}
-			for _, part := range parts {
-				rows = append(rows, row{c.path, i, part, kind})
-			}
-		}
-	}
-	return rows
-}
-
 func clean(s string) string {
 	return strings.Map(func(r rune) rune {
 		if r == '\t' {
@@ -391,10 +364,11 @@ func (m model) View() string {
 		r := m.rows[index]
 		text := r.text
 		if !m.wrap {
-			text = sliceWidth(text, m.horizontal, m.width)
+			text = sliceWidth(text, m.horizontal, max(0, m.width-runewidth.StringWidth(r.gutter)))
 		} else {
-			text = fit(text, m.width)
+			text = fit(text, max(0, m.width-runewidth.StringWidth(r.gutter)))
 		}
+		text = fit(r.gutter+text, m.width)
 		color := ""
 		switch r.kind {
 		case '+':

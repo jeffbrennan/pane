@@ -3,7 +3,7 @@ package main
 import "testing"
 
 func TestNavigationAndRefreshAnchor(t *testing.T) {
-	m := model{width: 20, height: 10, wrap: true, snapshot: snapshot{unstaged: []change{{path: "one", diff: "+first\n+second\n"}, {path: "two", diff: "+other\n"}}}}
+	m := model{width: 20, height: 10, wrap: true, snapshot: snapshot{unstaged: []change{{path: "one", diff: "@@ -0,0 +1,2 @@\n+first\n+second\n"}, {path: "two", diff: "@@ -0,0 +1 @@\n+other\n"}}}}
 	m.rebuild()
 	m.jump(1)
 	if m.rows[m.pos].path != "two" {
@@ -15,7 +15,7 @@ func TestNavigationAndRefreshAnchor(t *testing.T) {
 	}
 	m.move(2)
 	m.rebuild()
-	if m.rows[m.pos].path != "one" || m.rows[m.pos].line != 1 {
+	if m.rows[m.pos].path != "one" || m.rows[m.pos].line != 2 {
 		t.Fatal("refresh anchor")
 	}
 }
