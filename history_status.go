@@ -61,6 +61,10 @@ func (m model) actionStatus() string {
 	}
 	switch m.activeAction {
 	case "push":
+		branch := m.snapshot.branch
+		if branch.available && branch.upstream != "" && branch.countsKnown && branch.ahead == 0 {
+			return "Checking push…"
+		}
 		return "Pushing…"
 	case "pull":
 		return "Pulling…"

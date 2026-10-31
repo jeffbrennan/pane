@@ -23,7 +23,7 @@ func TestPushPullStartImmediately(t *testing.T) {
 
 func TestPushPullProgressInSummary(t *testing.T) {
 	for _, tt := range []struct{ key, status string }{{"p", "Pushing…"}, {"P", "Pulling…"}} {
-		m := model{width: 60, height: 20, screen: "history", snapshot: snapshot{branch: branchStatus{available: true, upstream: "origin/main", countsKnown: true}}}
+		m := model{width: 60, height: 20, screen: "history", snapshot: snapshot{branch: branchStatus{available: true, upstream: "origin/main", countsKnown: true, ahead: 1}}}
 		updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(tt.key)})
 		m = updated.(model)
 		if cmd == nil || !strings.Contains(m.View(), tt.status) {
@@ -34,6 +34,15 @@ func TestPushPullProgressInSummary(t *testing.T) {
 		if m.activeAction != "" || m.busy || m.modal != "error" {
 			t.Error("failed action did not clear progress and show an error")
 		}
+	}
+}
+
+func TestPushWithoutAheadCommitsShowsChecking(t *testing.T) {
+	m := model{width: 60, height: 20, screen: "history", snapshot: snapshot{branch: branchStatus{available: true, upstream: "origin/main", countsKnown: true}}}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+	got := updated.(model)
+	if cmd == nil || !strings.Contains(got.View(), "Checking push…") || strings.Contains(got.View(), "Pushing…") {
+		t.Fatal("push with no ahead commits should show that the remote is being checked")
 	}
 }
 
