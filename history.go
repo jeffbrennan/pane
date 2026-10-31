@@ -62,7 +62,7 @@ func loadCommitSyntax(repo repository, hash string, request int, changes []chang
 	var indexes []int
 	var plain []change
 	for i, c := range changes {
-		if c.syntaxDiff == "" && syntaxLexer(c.path) != nil {
+		if c.syntaxDiff == "" && !c.syntaxSkipped && syntaxLexer(c.path) != nil {
 			indexes = append(indexes, i)
 			plain = append(plain, c)
 		}

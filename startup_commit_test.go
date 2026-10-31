@@ -218,3 +218,93 @@ func TestCommitFirstScreenIsHighlighted(t *testing.T) {
 		t.Fatal("nothing should be left to highlight")
 	}
 }
+
+func TestSkippedFilesHighlightNearViewport(t *testing.T) {
+	r := testRepo(t)
+	// a.go fills the screen. The rest exceed the syntax budget, so they
+	// highlight on demand: b.go through d.go as lookahead, f.go once visible.
+	writeFile(t, r, "a.go", "package main\n"+strings.Repeat("var a = 1\n", 30))
+	for _, name := range []string{"b", "f"} {
+		writeFile(t, r, name+".go", "package main\n"+strings.Repeat("var "+name+" = 1\n", syntaxBudgetLines))
+	}
+	for _, name := range []string{"c", "d", "e"} {
+		writeFile(t, r, name+".go", "package main\nvar "+name+" = 1\n")
+	}
+	if _, err := r.commit("first"); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := r.action("rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := initialModel(r, []string{hash})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m = update(t, m, tea.WindowSizeMsg{Width: 80, Height: 20})
+	changes, err := r.commitChangesFirstScreen(hash, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, c := range changes {
+		if c.syntaxSkipped != (i > 0) || (c.syntaxDiff != "") != (i == 0) {
+			t.Fatalf("%s: skipped %t, highlighted %t", c.path, c.syntaxSkipped, c.syntaxDiff != "")
+		}
+	}
+	highlighted := func(m model, path string) bool {
+		for _, r := range m.history.rows {
+			if r.path == path && r.kind == '+' && len(r.syntax) == 0 {
+				return false
+			}
+		}
+		return true
+	}
+	updated, cmd := m.Update(commitLoaded{changes, nil, m.history.request})
+	m = runCmd(t, updated.(model), cmd)
+	for path, want := range map[string]bool{"a.go": true, "b.go": true, "c.go": true, "d.go": true, "e.go": false, "f.go": false} {
+		if highlighted(m, path) != want {
+			t.Fatalf("%s highlighted %t after opening", path, !want)
+		}
+	}
+	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	if cmd == nil {
+		t.Fatal("no syntax load for the visible file")
+	}
+	m = runCmd(t, updated.(model), cmd)
+	if !highlighted(m, "f.go") {
+		t.Fatal("visible skipped file was not highlighted")
+	}
+	if updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")}); cmd != nil {
+		t.Fatal("loaded file was requested again")
+	}
+	m = keys(t, updated.(model), "w", "w")
+	for _, path := range []string{"b.go", "f.go"} {
+		if !highlighted(m, path) {
+			t.Fatalf("rebuild lost on-demand highlighting of %s", path)
+		}
+	}
+}
+
+func update(t *testing.T, m model, msg tea.Msg) model {
+	t.Helper()
+	updated, _ := m.Update(msg)
+	return updated.(model)
+}
+
+// runCmd runs cmd, including batched commands, and applies their messages.
+func runCmd(t *testing.T, m model, cmd tea.Cmd) model {
+	t.Helper()
+	if cmd == nil {
+		return m
+	}
+	switch msg := cmd().(type) {
+	case tea.BatchMsg:
+		for _, c := range msg {
+			m = runCmd(t, m, c)
+		}
+	case nil:
+	default:
+		m = update(t, m, msg)
+	}
+	return m
+}

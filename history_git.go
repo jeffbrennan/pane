@@ -196,7 +196,8 @@ func (r repository) commitChanges(hash string) ([]change, error) {
 // commitChangesFirstScreen loads a commit's changes with the files on its
 // first screen highlighted, so opening it paints in color. The first screen
 // starts at focus when a change has that path. Later files start plain for
-// loadCommitSyntax; see startupSyntaxLines.
+// loadCommitSyntax, or in a commit over the syntax budget for syntaxDemand;
+// see startupSyntaxLines.
 func (r repository) commitChangesFirstScreen(hash, focus string) ([]change, error) {
 	changes, err := r.commitChangesWithoutSyntax(hash)
 	if err != nil {
@@ -216,6 +217,13 @@ func (r repository) commitChangesFirstScreen(hash, focus string) ([]change, erro
 	first := changes[start:end]
 	r.loadSyntaxDiffs(first, contextKey{commit: hash})
 	warmSyntax(first)
+	// Past the first screen, a commit over the syntax budget highlights files
+	// as they near the viewport instead of all at once.
+	rest := append(append([]change(nil), changes[:start]...), changes[end:]...)
+	if syntaxBudgetEnd(rest) < len(rest) {
+		markSyntaxSkipped(changes[:start], 0)
+		markSyntaxSkipped(changes[end:], 0)
+	}
 	return changes, nil
 }
 

@@ -274,6 +274,7 @@ func (r repository) loadChanges(previous *refreshCache, deferOffscreen bool) (*r
 				for i := range changes {
 					changes[i].syntaxDiff = diffs[i]
 				}
+				markSyntaxSkipped(changes, syntaxBudgetEnd(group.paths))
 			}
 			for i := range changes {
 				if group.untracked {

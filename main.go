@@ -107,6 +107,7 @@ type model struct {
 	collapsedFiles        map[contextKey]bool
 	contextRequest        int
 	contextCommit         string
+	syntaxDemand          *syntaxDemand
 	recentCommits         []commitInfo
 	recentCommitRequest   int
 	recentCommitLoading   bool
@@ -344,7 +345,22 @@ func (m model) refresh() (model, tea.Cmd) {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	view, ok := next.(model)
+	if !ok {
+		return next, cmd
+	}
+	if load := view.loadVisibleSyntax(); load != nil {
+		return view, tea.Batch(cmd, load)
+	}
+	return view, cmd
+}
+
+func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case syntaxDemandLoaded:
+		m.applySyntaxDemandLoaded(msg)
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.rebuild()
@@ -1013,6 +1029,7 @@ func (m *model) rebuild() {
 	if m.staged {
 		changes = m.snapshot.staged
 	}
+	changes = m.applySyntaxDemand(contextKey{commit: m.contextCommit, staged: m.staged, base: m.contextBase}, changes)
 	m.rows = buildRowsDisplay(changes, m.diffContentWidth(), m.wrap, m.expandedDeleted, 0, m.shortPaths)
 	m.rows = m.localContextRows(m.rows, changes)
 	m.rows = m.foldContextFiles(m.rows)

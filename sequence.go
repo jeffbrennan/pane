@@ -141,7 +141,8 @@ func (m *model) rebuildSequence() {
 			for _, c := range m.sequence.changes[i] {
 				expanded[c.path] = true
 			}
-			files = buildRowsDisplay(m.sequence.changes[i], width, m.wrap, expanded, 0, m.shortPaths)
+			changes := m.applySyntaxDemand(contextKey{commit: m.sequence.commits[i].hash}, m.sequence.changes[i])
+			files = buildRowsDisplay(changes, width, m.wrap, expanded, 0, m.shortPaths)
 			if len(files) == 0 {
 				files = append(files, row{kind: '@', text: "  No file changes"})
 			}
