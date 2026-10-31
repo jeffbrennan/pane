@@ -107,6 +107,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.rebuild()
 		m.rebuildCommit()
+		m.revealHistorySelection()
+		if m.modal == "files" {
+			m = m.inDiff(func(view *model) { view.revealPickerSelection() })
+		}
 		return m.loadHistoryBackground()
 	case tick:
 		var cmd tea.Cmd
@@ -222,6 +226,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.history.more = len(msg.commits) == msg.limit
 		m.history.selected = min(m.history.selected, max(0, len(m.filteredHistory())-1))
+		m.revealHistorySelection()
 		if m.history.stale {
 			return m.reloadHistory()
 		}
@@ -289,9 +294,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.screen != "" {
 			updated, cmd := m.handleHistoryKey(msg)
-			next, more := updated.(model).loadHistoryBackground()
+			next := updated.(model)
+			next.revealHistorySelection()
+			next, more := next.loadHistoryBackground()
 			if more == nil {
-				return updated, cmd
+				return next, cmd
 			}
 			if cmd == nil {
 				return next, more

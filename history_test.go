@@ -199,6 +199,31 @@ func TestHistorySelectionPresentationAndScrolling(t *testing.T) {
 	}
 }
 
+func TestHistoryReverseScrollKeepsViewportStill(t *testing.T) {
+	m := model{width: 60, height: 12, screen: "history", history: historyState{commits: make([]commitInfo, 12)}}
+	for i := 0; i < 8; i++ {
+		m = keys(t, m, "j")
+	}
+	offset := m.history.offset
+	if offset == 0 {
+		t.Fatal("history did not scroll down")
+	}
+	m = keys(t, m, "k")
+	if m.history.offset != offset || m.history.selected != 7 {
+		t.Fatalf("history scrolled instead of moving selection: offset=%d selected=%d", m.history.offset, m.history.selected)
+	}
+	for m.history.selected > offset {
+		m = keys(t, m, "k")
+	}
+	if m.history.offset != offset {
+		t.Fatal("history scrolled before the selection reached the top")
+	}
+	m = keys(t, m, "k")
+	if m.history.offset != offset-1 {
+		t.Fatal("history did not scroll after the selection reached the top")
+	}
+}
+
 func TestHistoryEmptyAndBinaryCommits(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "binary", "\x00\x01\x02")

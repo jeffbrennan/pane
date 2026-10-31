@@ -467,6 +467,12 @@ func (m model) historyViewport(count int) (int, int) {
 	return min(offset, count), visible
 }
 
+func (m *model) revealHistorySelection() {
+	if m.screen == "history" {
+		m.history.offset, _ = m.historyViewport(len(m.filteredHistory()))
+	}
+}
+
 func historyMetadata(c commitInfo, date string, width int, selected bool) string {
 	type segment struct{ text, style string }
 	green, red, cyan := "\x1b[32m", "\x1b[31m", "\x1b[36m"

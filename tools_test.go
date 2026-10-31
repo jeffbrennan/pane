@@ -125,6 +125,29 @@ func TestFilePickerDirectoryTree(t *testing.T) {
 	}
 }
 
+func TestFilePickerReverseScrollKeepsViewportStill(t *testing.T) {
+	m := keys(t, toolModel(), "f", "j", "j", "j", "j")
+	offset := m.picker.offset
+	selected := m.picker.selected
+	if offset == 0 {
+		t.Fatal("picker did not scroll down")
+	}
+	m = keys(t, m, "k")
+	if m.picker.offset != offset || m.picker.selected != selected-1 {
+		t.Fatal("picker scrolled instead of moving the selection")
+	}
+	for m.picker.selected > offset {
+		m = keys(t, m, "k")
+	}
+	if m.picker.offset != offset {
+		t.Fatal("picker scrolled before the selection reached the top")
+	}
+	m = keys(t, m, "k")
+	if m.picker.offset != offset-1 {
+		t.Fatal("picker did not scroll after the selection reached the top")
+	}
+}
+
 func TestFilePickerUsesWiderDialog(t *testing.T) {
 	m := toolModel()
 	m.width, m.height = 130, 20

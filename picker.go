@@ -12,6 +12,7 @@ import (
 type pickerState struct {
 	query     string
 	selected  int
+	offset    int
 	searching bool
 	collapsed map[string]bool
 }
@@ -92,6 +93,7 @@ func (m *model) openPicker() {
 			m.picker.selected = i
 		}
 	}
+	m.revealPickerSelection()
 }
 
 func (m model) pickerItems() []pickerItem {
@@ -101,6 +103,7 @@ func (m model) pickerItems() []pickerItem {
 func (m *model) resetPickerSearch() {
 	m.picker.collapsed = nil
 	m.picker.selected = 0
+	m.picker.offset = 0
 	for i, item := range m.pickerItems() {
 		if !item.directory {
 			m.picker.selected = i
@@ -190,6 +193,23 @@ func (m *model) handlePickerKey(key string, runes []rune) {
 			}
 		}
 	}
+	m.revealPickerSelection()
+}
+
+func (m model) pickerViewport(count int) (int, int) {
+	visible := max(1, m.height-8)
+	selected := min(m.picker.selected, max(0, count-1))
+	offset := min(m.picker.offset, max(0, count-1))
+	if selected < offset {
+		offset = selected
+	} else if selected >= offset+visible {
+		offset = selected - visible + 1
+	}
+	return offset, visible
+}
+
+func (m *model) revealPickerSelection() {
+	m.picker.offset, _ = m.pickerViewport(len(m.pickerItems()))
 }
 
 func (m model) showFilesDialog(lines []string) {
@@ -210,8 +230,7 @@ func (m model) showFilesDialog(lines []string) {
 	}
 	boxWidth := min(120, m.width-2)
 	innerWidth := boxWidth - 4
-	visible := max(1, len(lines)-8)
-	start := max(0, min(selected-visible+1, len(items)-visible))
+	start, visible := m.pickerViewport(len(items))
 	countWidth := len("Changes")
 	for _, item := range pickerTree(matches, nil) {
 		countWidth = max(countWidth, len(fmt.Sprintf("+%d -%d", item.added, item.deleted)))
