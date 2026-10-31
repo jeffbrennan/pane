@@ -9,7 +9,7 @@ import (
 )
 
 func TestCommitDialogCenteredAndEditable(t *testing.T) {
-	m := model{width: 60, height: 20, wrap: true, modal: "commit", input: "a commit"}
+	m := model{width: 60, height: 20, wrap: true, modal: "commit", input: "a commit", inputCursor: 8}
 	view := m.View()
 	lines := strings.Split(view, "\n")
 	if len(lines) != 20 || !strings.Contains(view, "┌") || !strings.Contains(view, "Commit changes") || !strings.Contains(view, "a commit") {
@@ -19,13 +19,17 @@ func TestCommitDialogCenteredAndEditable(t *testing.T) {
 		t.Fatalf("unwanted stage-all help: %q", view)
 	}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if !updated.(model).inputNormal {
+		t.Fatal("escape did not enter normal mode")
+	}
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if updated.(model).modal != "" {
-		t.Fatal("escape did not dismiss dialog")
+		t.Fatal("escape in normal mode did not dismiss dialog")
 	}
 }
 
 func TestCommitDialogLongInputAndSmallTerminal(t *testing.T) {
-	m := model{width: 24, height: 9, modal: "commit", input: "a very long commit message 世界"}
+	m := model{width: 24, height: 9, modal: "commit", input: "a very long commit message 世界", inputCursor: len([]rune("a very long commit message 世界"))}
 	view := m.View()
 	if !strings.Contains(view, "世界") || !strings.Contains(view, "\x1b[7m \x1b[0m") {
 		t.Fatalf("input cursor not visible: %q", view)
@@ -149,7 +153,7 @@ func TestCommitDialogRecentHistoryEmptyAndStale(t *testing.T) {
 	r := testRepo(t)
 	m := model{repo: r, width: 60, height: 15, snapshot: snapshot{unstaged: []change{{path: "file"}}}}
 	updated, oldCmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
-	m = keys(t, updated.(model), "esc")
+	m = keys(t, updated.(model), "esc", "esc")
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	m = updated.(model)
 	updated, _ = m.Update(oldCmd())

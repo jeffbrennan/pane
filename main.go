@@ -80,6 +80,10 @@ type model struct {
 	startup               bool
 	generation            int
 	modal, input, message string
+	inputCursor           int
+	inputBody             string
+	inputNormal           bool
+	inputPending          string
 	errorText             string
 	errorPos              int
 	helpPos               int
@@ -576,6 +580,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.modal = "commit"
 				m.input = ""
+				m.inputCursor = 0
+				m.inputBody = ""
+				m.inputNormal = false
+				m.inputPending = ""
 				m.message = ""
 				m.recentCommits = nil
 				m.recentCommitLoading = true
@@ -687,18 +695,31 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.modal == "commit" && key.String() == "esc" && !m.inputNormal {
+		m.inputNormal = true
+		m.inputCursor = max(0, m.inputCursor-1)
+		return m, nil
+	}
+	if m.modal == "commit" && key.String() == "esc" && m.inputPending != "" {
+		m.inputPending = ""
+		return m, nil
+	}
 	if key.String() == "esc" || key.String() == "ctrl+c" {
 		m.modal = ""
 		return m, nil
 	}
 	if m.modal == "commit" {
+		if m.inputNormal && key.String() != "enter" {
+			m.handleCommitNormal(key)
+			return m, nil
+		}
 		switch key.String() {
 		case "enter":
 			if strings.TrimSpace(m.input) == "" {
 				m.message = "Commit message cannot be empty"
 				return m, nil
 			}
-			message := m.input
+			message := m.input + m.inputBody
 			m.modal = ""
 			m.busy = true
 			m.generation++
@@ -707,19 +728,24 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 				output, err := repo.commit(message)
 				return completed{message: output, commitMessage: message, err: err}
 			}
-		case "backspace", "ctrl+h":
-			m.message = ""
-			runes := []rune(m.input)
-			if len(runes) > 0 {
-				m.input = string(runes[:len(runes)-1])
-			}
 		default:
+			var inserted []rune
 			if key.Type == tea.KeyRunes {
-				m.message = ""
-				m.input += string(key.Runes)
+				text := strings.ReplaceAll(string(key.Runes), "\r\n", "\n")
+				if key.Paste {
+					if subject, body, ok := strings.Cut(text, "\n"); ok {
+						text = subject
+						m.inputBody += "\n" + body
+					}
+				}
+				inserted = []rune(text)
 			} else if key.Type == tea.KeySpace {
+				inserted = []rune{' '}
+			}
+			var handled bool
+			m.input, m.inputCursor, handled = editLine(m.input, m.inputCursor, key.String(), inserted)
+			if handled {
 				m.message = ""
-				m.input += " "
 			}
 		}
 		return m, nil
@@ -1011,7 +1037,11 @@ func (m model) View() string {
 	case "commit":
 		status, hints = "", ""
 		if m.width < 24 || m.height < 9 {
-			status = prompt("Commit message: ", m.input) + "  (↵ commit, esc cancel)"
+			mode := "INSERT"
+			if m.inputNormal {
+				mode = "NORMAL"
+			}
+			status = prompt("Commit message ["+mode+"]: ", m.input)
 		}
 	case "help", "files":
 		status, hints = "", ""

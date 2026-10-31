@@ -63,6 +63,18 @@ var shortcutSections = []struct {
 		{"?", "Show shortcuts"},
 		{"q", "Quit"},
 	}},
+	{"Commit input", []shortcut{
+		{"esc / i / a", "Normal mode / insert before or after cursor"},
+		{"h / l, w / b, 0 / $", "Normal mode: move in subject"},
+		{"x / dw / dd / D", "Normal mode: delete character, word, or line"},
+		{"I / A", "Insert at start / end"},
+		{"← / →, ctrl-b / ctrl-f", "Move cursor"},
+		{"alt-b / alt-f", "Move by word"},
+		{"home / end, ctrl-a / ctrl-e", "Start / end of subject"},
+		{"ctrl-w / alt-backspace", "Delete previous word"},
+		{"ctrl-u / ctrl-k", "Delete to start / end"},
+		{"backspace / delete, ctrl-d", "Delete character"},
+	}},
 }
 
 const helpBoxWidth = 60
@@ -177,22 +189,43 @@ func (m model) commitScope() string {
 func (m model) showCommitDialog(lines []string) {
 	boxWidth := min(64, m.width-2)
 	innerWidth := boxWidth - 4
-	input := clean(m.input)
-	fieldWidth := innerWidth - 1
-	start := max(0, runewidth.StringWidth(input)-fieldWidth)
-	body := []string{"", sliceWidth(input, start, fieldWidth) + cursor}
+	runes := []rune(m.input)
+	pos := max(0, min(m.inputCursor, len(runes)))
+	before := clean(string(runes[:pos]))
+	after := clean(string(runes[pos:]))
+	cell := " "
+	if pos < len(runes) {
+		cell = clean(string(runes[pos]))
+		after = clean(string(runes[pos+1:]))
+	}
+	cellWidth := max(1, runewidth.StringWidth(cell))
+	start := max(0, runewidth.StringWidth(before)+cellWidth-innerWidth)
+	visibleBefore := sliceWidth(before, start, innerWidth-cellWidth)
+	remaining := max(0, innerWidth-runewidth.StringWidth(visibleBefore)-cellWidth)
+	body := []string{"", visibleBefore + "\x1b[7m" + cell + styleReset + sliceWidth(after, 0, remaining)}
+	if m.inputBody != "" {
+		body = append(body, styleDim+"Body pasted"+styleReset)
+	}
 	if m.message != "" {
 		for _, line := range wrapLine(clean(m.message), innerWidth)[:min(2, len(wrapLine(clean(m.message), innerWidth)))] {
 			body = append(body, m.danger()+line+styleReset)
 		}
 	}
 	body = append(body, "")
+	mode, hint := "INSERT", keyHints("↵", "commit", "esc", "normal")
+	if m.inputNormal {
+		mode, hint = "NORMAL", keyHints("i/a", "insert", "↵", "commit", "esc", "cancel")
+	}
+	info := mode
+	if scope := m.commitScope(); scope != "" {
+		info += " · " + scope
+	}
 	content := dialog{
 		width: boxWidth,
 		title: "Commit changes",
-		info:  m.commitScope(),
+		info:  info,
 		body:  body,
-		hint:  keyHints("↵", "commit", "esc", "cancel"),
+		hint:  hint,
 	}.render()
 	room := max(0, len(lines)-2-len(content)-1)
 	commits := m.recentCommits

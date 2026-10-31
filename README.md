@@ -46,6 +46,11 @@ For development, `just b` builds pane, installs it, and runs it in the current r
 | `h` / `l` | On a file header, collapse / reopen the file; on a diff line or `···`, hide / reveal nearby context |
 | `zh` / `zl` | Scroll horizontally when wrapping is off |
 | `c` | Commit staged changes |
+| Commit input: `esc`, `i` / `a`, `I` / `A` | Switch to normal mode; insert before / after the cursor or at the start / end |
+| Commit input normal mode: `h` / `l`, `w` / `b`, `0` / `$` | Move by character, word, or to the start / end |
+| Commit input normal mode: `x`, `dw`, `dd`, `D` | Delete a character, word, whole subject, or to the end |
+| Commit input: `←` / `→`, `ctrl-b` / `ctrl-f`, `alt-b` / `alt-f`, `home` / `end`, `ctrl-a` / `ctrl-e` | Move the subject cursor by character, word, or to the start / end |
+| Commit input: `backspace` / `delete`, `ctrl-d`, `ctrl-w` / `alt-backspace`, `ctrl-u` / `ctrl-k` | Delete a character, previous word, or text to the start / end |
 | `p` / `P` | Push / pull |
 | `r` | Refresh |
 | `H` | Open commit history |
@@ -54,7 +59,7 @@ For development, `just b` builds pane, installs it, and runs it in the current r
 
 The active line is marked with `▸`. Use `s` to stage or unstage its hunk; untracked and deleted files are staged or unstaged as whole files. The viewport keeps surrounding lines visible as you navigate and pins a file header when its diff scrolls beyond the viewport. Changes are refreshed by background polling approximately every 1.5 seconds, preserving the current file and approximate position. Syntax highlighting uses the terminal's color palette for Go, Python, SQL, Rust, Scala, Java, Kotlin, R, Julia, Groovy, JavaScript, TypeScript, shell scripts, PowerShell, JSON (including notebooks and Avro schemas), YAML, TOML, INI, properties, HCL, Terraform, XML, Protocol Buffers, Dockerfiles, and Makefiles. Added and removed lines use subtle dark-background tints, with stronger highlights for changes within paired lines. Git operations use the repository's existing configuration; authentication failures and conflicts must be handled outside pane. Line-level staging and conflict resolution are not supported.
 
-Commits include only staged changes if any are staged. Otherwise, pane stages all non-ignored changes, including untracked files, before committing. If the commit fails, the automatically staged changes remain staged. After a successful commit, pane opens history with the new commit selected.
+Commits include only staged changes if any are staged. Otherwise, pane stages all non-ignored changes, including untracked files, before committing. The commit subject starts in insert mode; press `esc` for normal mode, and `esc` again to cancel. Enter commits in either mode; `ctrl-c` cancels directly. Pasting a multiline message puts the first line in the editable subject and preserves the remaining lines as the body. If the commit fails, the automatically staged changes remain staged. After a successful commit, pane opens history with the new commit selected.
 
 Detected renames show the old and new paths on separate lines in staged changes and commit views, with removed path text highlighted in red and added text in green. Press `B` to shorten displayed paths to the parent directory and filename; an ellipsis indicates omitted directories and is highlighted when they differ. The file picker displays the new path and can search either full name. Unstaged moves appear as a deletion and an untracked file, as in Git status.
 
