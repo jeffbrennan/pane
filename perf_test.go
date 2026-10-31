@@ -57,6 +57,17 @@ func TestPerf(t *testing.T) {
 	measurePerf(t, scenario, "resize_width_apply_ns", func() { _, _ = m.Update(resizeRebuild{request: m.resizeRequest}) })
 	recordPerf(t, scenario, "rows", int64(len(view.rows)))
 	recordPerf(t, scenario, "row_bytes", int64(unsafe.Sizeof(row{})))
+	idle := model{screen: "commit"}
+	refreshes := int64(0)
+	for i := 0; i < 120; i++ {
+		next, _ := idle.update(tick{})
+		idle = next.(model)
+		if idle.loading {
+			refreshes++
+			idle.loading = false
+		}
+	}
+	recordPerf(t, scenario, "idle_refreshes_per_minute", refreshes)
 }
 
 func measurePerf(t *testing.T, scenario, metric string, f func()) {

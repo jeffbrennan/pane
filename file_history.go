@@ -111,6 +111,7 @@ func (m model) leaveFileHistory() (tea.Model, tea.Cmd) {
 		return previous, previous.nextSequenceLoad()
 	default:
 		previous.rebuild()
+		return previous.refresh()
 	}
 	return previous, nil
 }

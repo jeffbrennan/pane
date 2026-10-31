@@ -338,6 +338,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.history.stream.close()
 		m.history.stream = nil
 		m.history.request++
+		return m.refresh()
 	case "ctrl+c":
 		m.closeHistoryStreams()
 		return m, tea.Quit
@@ -542,17 +543,22 @@ func (m model) returnToHistory() (tea.Model, tea.Cmd) {
 	}
 	if m.history.directCommit {
 		m.history.directCommit = false
-		return m.openHistory()
+		next, historyCmd := m.openHistory()
+		refreshed, refreshCmd := next.(model).refresh()
+		return refreshed, tea.Batch(historyCmd, refreshCmd)
 	}
 	m.screen = "history"
 	m.pickerReturn, m.pickerBackToHistory = false, false
 	m.history.request++
 	m.history.loading = false
 	m.history.fetching = false
+	m, refreshCmd := m.refresh()
 	if m.history.stale {
-		return m.reloadHistory()
+		next, historyCmd := m.reloadHistory()
+		return next, tea.Batch(historyCmd, refreshCmd)
 	}
-	return m.loadHistoryBackground()
+	next, historyCmd := m.loadHistoryBackground()
+	return next, tea.Batch(historyCmd, refreshCmd)
 }
 
 func (m model) commitModel() model {

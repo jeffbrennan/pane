@@ -403,10 +403,10 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.ticks++
 		interval := refreshTicks
-		if m.blurred {
+		if m.blurred || m.screen == "history" {
 			interval = blurredRefreshTicks
 		}
-		if m.ticks%interval == 0 {
+		if (m.screen == "" || m.screen == "base" || (m.screen == "history" && m.history.path == "")) && m.ticks%interval == 0 {
 			m, cmd = m.refresh()
 		}
 		return m, tea.Batch(cmd, nextTick(), m.queryTheme())
