@@ -25,6 +25,7 @@ func buildRows(changes []change, width int, wrap bool) []row {
 func buildRowsExpanded(changes []change, width int, wrap bool, expanded map[string]bool) []row {
 	var rows []row
 	for i, c := range changes {
+		oldSyntax, newSyntax := syntaxLines(c.path, c.syntaxDiff)
 		if i > 0 {
 			rows = append(rows, row{path: c.path, line: -2, kind: 's'})
 		}
@@ -60,6 +61,7 @@ func buildRowsExpanded(changes []change, width int, wrap bool, expanded map[stri
 			}
 		}
 		lines := strings.Split(strings.TrimSuffix(c.diff, "\n"), "\n")
+		inline := inlineChanges(lines)
 		gutterWidth := lineNumberWidth(lines)
 		oldLine, newLine, hunks := 0, 0, 0
 		inHunk, hasContent := false, false
@@ -121,12 +123,22 @@ func buildRowsExpanded(changes []change, width int, wrap bool, expanded map[stri
 				parts = wrapLine(text, max(1, width-len(gutter)))
 			}
 			offset := 0
+			byteOffset := 0
 			for partIndex, part := range parts {
 				prefix := gutter
 				if partIndex > 0 {
 					prefix = strings.Repeat(" ", len(gutter))
 				}
-				rows = append(rows, row{path: c.path, line: i, offset: offset, target: target, gutter: prefix, text: part, kind: kind})
+				lineSyntax, syntaxOK := newSyntax[number]
+				if kind == '-' || kind == 'd' {
+					lineSyntax, syntaxOK = oldSyntax[number]
+				}
+				var spans []syntaxSpan
+				if syntaxOK && lineSyntax.text == text {
+					spans = clipSyntax(lineSyntax.spans, byteOffset, byteOffset+len(part))
+				}
+				rows = append(rows, row{path: c.path, line: i, offset: offset, target: target, gutter: prefix, text: part, kind: kind, syntax: spans, inline: clipSyntax(inline[i], byteOffset, byteOffset+len(part))})
+				byteOffset += len(part)
 				for _, r := range part {
 					offset += runewidth.RuneWidth(r)
 				}

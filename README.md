@@ -41,7 +41,7 @@ For development, `just b` builds pane, installs it, and runs it in the current r
 | `?` | Show keyboard shortcuts |
 | `q` | Quit |
 
-The active line is marked with `▸`; staging applies to the file containing it. The viewport keeps surrounding lines visible as you navigate and pins a file header when its diff scrolls beyond the viewport. Changes are refreshed by background polling approximately every 1.5 seconds, preserving the current file and approximate position. Git operations use the repository's existing configuration; authentication failures and conflicts must be handled outside pane. Syntax highlighting, partial staging, and conflict resolution are not supported.
+The active line is marked with `▸`; staging applies to the file containing it. The viewport keeps surrounding lines visible as you navigate and pins a file header when its diff scrolls beyond the viewport. Changes are refreshed by background polling approximately every 1.5 seconds, preserving the current file and approximate position. Go diffs use syntax highlighting with the terminal's color palette; other files retain normal diff colors. Git operations use the repository's existing configuration; authentication failures and conflicts must be handled outside pane. Partial staging and conflict resolution are not supported.
 
 Commits include only staged changes if any are staged. Otherwise, pane stages all non-ignored changes, including untracked files, before committing. If the commit fails, the automatically staged changes remain staged. After a successful commit, pane opens history with the new commit selected.
 
