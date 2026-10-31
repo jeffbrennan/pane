@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -279,7 +280,9 @@ func (m *model) handlePickerKey(key string, runes []rune) bool {
 }
 
 func (m model) pickerViewport(count int) (int, int) {
-	visible := max(1, m.height-8)
+	// Size the list by every file rather than the filtered or folded items so
+	// the dialog keeps its shape while searching and folding.
+	visible := max(1, min(m.height-8, len(pickerTree(m.fileEntries(), nil))))
 	selected := min(m.picker.selected, max(0, count-1))
 	offset := min(m.picker.offset, max(0, count-1))
 	if selected < offset {
@@ -327,25 +330,26 @@ func (m model) showFilesDialog(lines []string) {
 		return number + " " + name + strings.Repeat(" ", max(0, nameWidth-runewidth.StringWidth(name))) + " │ " + counts
 	}
 	query := sliceWidth(clean(m.picker.query), max(0, runewidth.StringWidth(m.picker.query)-innerWidth+2), max(0, innerWidth-2))
-	queryLine := dialogLine("/"+query, innerWidth)
-	hint := "j/k select  h/l fold  / search  ↵ open  esc close"
+	queryLine := styleDim + "/" + query + styleReset
+	if query == "" {
+		queryLine = styleDim + "/ to filter" + styleReset
+	}
+	hint := keyHints("j/k", "move", "h/l", "fold", "/", "filter", "↵", "open", "esc", "close")
 	if m.picker.searching {
-		queryLine = dialogLineWithCursor("/"+query, innerWidth)
-		hint = "↑↓ select  ↵ jump  esc navigate"
+		queryLine = "/" + query + cursor
+		hint = keyHints("↑/↓", "move", "↵", "open", "esc", "done")
+	} else if ansi.StringWidth(hint) > innerWidth {
+		hint = keyHints("/", "filter", "↵", "open", "esc", "close")
 	}
-	title := fmt.Sprintf("Files  %d/%d", len(matches), len(entries))
+	info := fmt.Sprintf("%d/%d", len(matches), len(entries))
 	if m.picker.commitScoped && m.picker.commitIndex >= 0 && m.picker.commitIndex < len(m.sequence.commits) {
-		title += "  · " + shortHash(m.sequence.commits[m.picker.commitIndex].hash)
+		info = shortHash(m.sequence.commits[m.picker.commitIndex].hash) + " · " + info
 	}
-	content := []string{
-		"┌" + strings.Repeat("─", boxWidth-2) + "┐",
-		dialogLine(title, innerWidth),
-		queryLine,
-		dialogLine(columns(strings.Repeat(" ", numberWidth), "Files", "Changes"), innerWidth),
-	}
+	var body []string
+	body = append(body, queryLine, styleDim+columns(strings.Repeat(" ", numberWidth), "Files", "Changes")+styleReset)
 	shown := 0
 	if len(matches) == 0 {
-		content = append(content, dialogLine("  No matching files", innerWidth))
+		body = append(body, styleDim+"  No matching files"+styleReset)
 		shown++
 	}
 	for i := start; i < min(len(items), start+visible); i++ {
@@ -356,30 +360,37 @@ func (m model) showFilesDialog(lines []string) {
 			arrow := "▾ "
 			if e.collapsed {
 				arrow = "▸ "
-				counts = fmt.Sprintf("+%*d -%*d", addedWidth, e.added, deletedWidth, e.deleted)
+				counts = changeCounts(addedWidth, e.added, deletedWidth, e.deleted, i == selected)
 			}
 			name += arrow + clean(e.name) + "/"
 		} else {
-			counts = fmt.Sprintf("+%*d -%*d", addedWidth, e.file.added, deletedWidth, e.file.deleted)
+			counts = changeCounts(addedWidth, e.file.added, deletedWidth, e.file.deleted, i == selected)
 			name += "  " + clean(e.name)
 		}
 		distance := max(i-selected, selected-i)
-		text := fit(columns(fmt.Sprintf("%*d", numberWidth, distance), name, counts), innerWidth)
-		line := dialogLine(text, innerWidth)
+		number := styleDim + fmt.Sprintf("%*d", numberWidth, distance) + styleReset
 		if i == selected {
-			line = "│ \x1b[7m" + text + strings.Repeat(" ", max(0, innerWidth-runewidth.StringWidth(text))) + "\x1b[0m │"
+			number = fmt.Sprintf("%*d", numberWidth, distance)
 		}
-		content = append(content, line)
+		text := columns(number, name, counts)
+		if i == selected {
+			text = "\x1b[7m" + text + strings.Repeat(" ", max(0, innerWidth-ansi.StringWidth(text))) + styleReset
+		}
+		body = append(body, text)
 		shown++
 	}
 	for shown < visible {
-		content = append(content, dialogLine("", innerWidth))
+		body = append(body, "")
 		shown++
 	}
-	content = append(content, dialogLine(hint, innerWidth), "└"+strings.Repeat("─", boxWidth-2)+"┘")
-	left := strings.Repeat(" ", max(0, (m.width-boxWidth)/2))
-	top := max(0, (len(lines)-len(content))/2)
-	for i, line := range content {
-		lines[top+i] = left + line
+	placeDialog(lines, m.width, dialog{width: boxWidth, title: "Files", info: info, body: body, hint: hint}.render())
+}
+
+// changeCounts formats aligned addition and deletion counts, colored unless
+// the row is selected and already highlighted.
+func changeCounts(addedWidth, added, deletedWidth, deleted int, selected bool) string {
+	if selected {
+		return fmt.Sprintf("+%*d -%*d", addedWidth, added, deletedWidth, deleted)
 	}
+	return fmt.Sprintf("\x1b[32m+%*d\x1b[39m \x1b[31m-%*d\x1b[39m", addedWidth, added, deletedWidth, deleted)
 }

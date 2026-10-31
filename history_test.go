@@ -204,8 +204,8 @@ func TestCommitLoadsDiffBeforeSyntax(t *testing.T) {
 
 func TestCommitHeadingShowsHashAndSubject(t *testing.T) {
 	m := model{width: 60, height: 10, screen: "commit", history: historyState{current: commitInfo{hash: "123456789abcdef", subject: "commit subject"}}}
-	header := strings.Split(m.View(), "\n")[0]
-	if header != " 12345678  commit subject" {
+	header := strings.Split(plain(m.View()), "\n")[0]
+	if !strings.HasPrefix(header, " 12345678  commit subject ") || !strings.HasSuffix(header, "read-only") || strings.Contains(header, "pane") {
 		t.Fatalf("unexpected commit heading: %q", header)
 	}
 }
@@ -308,12 +308,12 @@ func TestHistorySelectionPresentationAndScrolling(t *testing.T) {
 		{hash: "cccccccc", author: "Carol", subject: "third", statsLoaded: true},
 	}}}
 	view := m.historyView()
-	if !strings.Contains(view, "\x1b[1m▸ first") || !strings.Contains(view, "\x1b[2m  second") || !strings.Contains(view, "\x1b[32m+0") || !strings.Contains(view, "\x1b[31m -0") {
+	if !strings.Contains(view, "▸ \x1b[0m\x1b[1mfirst") || !strings.Contains(view, "\x1b[2m  second") || !strings.Contains(view, "\x1b[32m+0") || !strings.Contains(view, "\x1b[31m -0") {
 		t.Fatalf("missing selection styles or spacing: %q", view)
 	}
 	m.history.selected = 2
 	view = m.historyView()
-	if !strings.Contains(view, "\x1b[1m▸ third") {
+	if !strings.Contains(view, "▸ \x1b[0m\x1b[1mthird") {
 		t.Fatalf("selected commit not visible: %q", view)
 	}
 }

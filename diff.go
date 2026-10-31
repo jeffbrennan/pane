@@ -41,7 +41,9 @@ func buildRowsExpanded(changes []change, width int, wrap bool, expanded map[stri
 				}
 			}
 		}
-		header := row{path: c.path, line: -1, text: " " + clean(c.path), kind: 'f'}
+		lines := strings.Split(strings.TrimSuffix(c.diff, "\n"), "\n")
+		gutterWidth := lineNumberWidth(lines)
+		header := row{path: c.path, line: -1, text: " " + clean(c.path), kind: 'f', numberWidth: gutterWidth}
 		if deletedFile && !expanded[c.path] {
 			header.deletedLines = deletedLines
 		}
@@ -60,9 +62,7 @@ func buildRowsExpanded(changes []change, width int, wrap bool, expanded map[stri
 				continue
 			}
 		}
-		lines := strings.Split(strings.TrimSuffix(c.diff, "\n"), "\n")
 		inline := inlineChanges(lines)
-		gutterWidth := lineNumberWidth(lines)
 		oldLine, newLine, hunks := 0, 0, 0
 		inHunk, hasContent := false, false
 		var metadata []string

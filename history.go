@@ -399,6 +399,7 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		view.wrap = !view.wrap
 		view.horizontal = 0
 		view.rebuild()
+		m.flash = wrapFlash(view.wrap)
 	}
 	if m.wrap != view.wrap {
 		m.wrap = view.wrap
@@ -434,10 +435,12 @@ func (m model) commitModel() model {
 	view.expandedDeleted = m.history.expandedDeleted
 	view.staged = false
 	view.rows, view.pos, view.horizontal, view.viewTop = m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop
-	view.viewTitle = " " + shortHash(m.history.current.hash) + "  " + clean(m.history.current.subject)
-	view.message = "Read-only · esc/q back"
+	view.viewTitle = m.accent() + shortHash(m.history.current.hash) + styleReset + "  " + clean(m.history.current.subject)
+	view.viewBadge = styleDim + "read-only" + styleReset
+	view.viewHints = keyHints("esc", "back", "?", "help")
+	view.message = ""
 	if m.history.loading && m.history.commitLoadingVisible {
-		view.message = "Loading commit… · esc/q back"
+		view.message = "Loading commit…"
 	}
 	return view
 }
@@ -480,16 +483,13 @@ func (m model) historyView() string {
 	now := time.Now()
 	for i := offset; i < len(matches); i++ {
 		c := matches[i]
-		marker := "  "
-		style := "\x1b[2m"
+		subject := styleDim + "  " + fit(clean(c.subject), max(0, m.width-2)) + styleReset
 		if i == selected {
-			marker = "▸ "
-			style = "\x1b[1m"
+			subject = styleBold + m.accent() + "▸ " + styleReset + styleBold + fit(clean(c.subject), max(0, m.width-2)) + styleReset
 		}
 		date := historyCommitTime(c.date, now)
-		subject := fit(marker+clean(c.subject), m.width)
-		meta := historyMetadata(c, date, m.width, i == selected)
-		content = append(content, style+subject+"\x1b[0m", meta, "")
+		meta := historyMetadata(c, date, m.width, i == selected, m.accent())
+		content = append(content, subject, meta, "")
 		if len(content) >= available {
 			break
 		}
@@ -510,24 +510,25 @@ func (m model) historyView() string {
 			lines = append(lines, "")
 		}
 	}
-	status := ""
+	status, hints := "", keyHints("↵", "open", "/", "search", "?", "help")
 	if m.history.searching {
-		status = "/" + clean(m.history.draft) + "_"
+		status, hints = prompt("/", m.history.draft), keyHints("↵", "open", "esc", "cancel")
 	} else if m.history.filter != "" {
-		status = "/" + clean(m.history.filter)
+		status, hints = "/"+clean(m.history.filter), keyHints("↵", "open", "/", "edit", "esc", "back")
 	}
 	if m.flash != "" {
-		status = m.flash
+		status = clean(m.flash)
 	}
 	if m.history.fetching && m.historyQuery() != "" {
-		status += "  searching older commits…"
+		status += styleDim + "  searching older commits…" + styleReset
 	}
-	lines = append(lines, fit(status, m.width))
 	if m.modal == "help" {
-		for i := 1; i < len(lines)-1; i++ {
-			lines[i] = ""
-		}
-		showHelpDialog(lines, m.width, m.helpPos)
+		status, hints = "", ""
+	}
+	lines = append(lines, m.statusBar(status, hints))
+	if m.modal == "help" {
+		clearBody(lines)
+		m.showHelpDialog(lines)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -556,11 +557,11 @@ func (m *model) revealHistorySelection() {
 	}
 }
 
-func historyMetadata(c commitInfo, date string, width int, selected bool) string {
+func historyMetadata(c commitInfo, date string, width int, selected bool, accent string) string {
 	type segment struct{ text, style string }
-	green, red, cyan := "\x1b[32m", "\x1b[31m", "\x1b[36m"
+	green, red, cyan := "\x1b[32m", "\x1b[31m", accent
 	if !selected {
-		green, red, cyan = "\x1b[2;32m", "\x1b[2;31m", "\x1b[2;36m"
+		green, red, cyan = "\x1b[2;32m", "\x1b[2;31m", styleDim+accent
 	}
 	segments := []segment{{"  ", ""}}
 	if c.statsLoaded {

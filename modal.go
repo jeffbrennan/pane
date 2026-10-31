@@ -1,123 +1,208 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
 )
 
-var shortcuts = []string{
-	"j / k       Scroll down / up",
-	"gg / G      First / last line",
-	"ctrl-d/u    Half-page down / up",
-	"ctrl-f/b    Page down / up",
-	"ctrl-e/y    Scroll viewport down / up",
-	"zt / zz / zb  Align active line",
-	"zh / zl     Horizontal scroll",
-	"} / {       Paragraph / 5 commits",
-	"J / K       Next / previous file",
-	"h / l       Collapse / expand file or nearby context",
-	"tab         Switch staged / unstaged",
-	"space       Stage / unstage file",
-	"d           Discard unstaged hunk / file",
-	"count + motion  Repeat a motion",
-	"count + gg/G  Jump to source line",
-	"gH / gM / gL  Top / middle / bottom of screen",
-	"[c / ]c     Previous / next change",
-	"ctrl-o / gi  Jump back / forward",
-	"w           Toggle line wrapping",
-	"T           Toggle light / dark colors",
-	"e           Expand / collapse deleted file",
-	"f           File tree (j/k, h/l, / search)",
-	"/           Search diff or history",
-	"g?          Search diff backward",
-	"n / N       Next / previous diff match",
-	"o           Open file in $EDITOR",
-	"y           Copy file path / commit hash",
-	"c           Commit changes",
-	"p / P       Push / pull",
-	"r           Refresh changes",
-	"H           Open commit history",
-	"enter/space Open selected commit",
-	"esc / q     Back from history",
-	"?           Show shortcuts",
-	"q           Quit",
+type shortcut struct{ keys, action string }
+
+var shortcutSections = []struct {
+	title string
+	keys  []shortcut
+}{
+	{"Changes", []shortcut{
+		{"tab", "Switch unstaged / staged"},
+		{"space", "Stage / unstage file"},
+		{"d", "Discard hunk / file"},
+		{"c", "Commit changes"},
+		{"p / P", "Push / pull"},
+		{"r", "Refresh"},
+	}},
+	{"Move", []shortcut{
+		{"j / k", "Down / up"},
+		{"gg / G", "First / last line"},
+		{"ctrl-d / ctrl-u", "Half page down / up"},
+		{"ctrl-f / ctrl-b", "Page down / up"},
+		{"ctrl-e / ctrl-y", "Scroll viewport down / up"},
+		{"} / {", "Next / previous paragraph"},
+		{"J / K", "Next / previous file"},
+		{"]c / [c", "Next / previous change"},
+		{"gH / gM / gL", "Top / middle / bottom of screen"},
+		{"zt / zz / zb", "Align active line"},
+		{"zh / zl", "Scroll horizontally"},
+		{"ctrl-o / gi", "Jump back / forward"},
+		{"count + motion", "Repeat a motion"},
+		{"count + gg / G", "Jump to source line"},
+	}},
+	{"View", []shortcut{
+		{"f", "File tree (j/k, h/l fold, / filter)"},
+		{"/ / g?", "Search forward / backward"},
+		{"n / N", "Next / previous match"},
+		{"h / l", "Fold file / reveal nearby context"},
+		{"e", "Expand / collapse deleted file"},
+		{"w", "Toggle line wrapping"},
+		{"T", "Toggle light / dark colors"},
+	}},
+	{"History", []shortcut{
+		{"H", "Open commit history"},
+		{"↵ / space", "Open selected commit"},
+		{"} / {", "Jump five commits"},
+		{"/", "Search commits"},
+		{"esc / q", "Back"},
+	}},
+	{"General", []shortcut{
+		{"o", "Open file in $EDITOR"},
+		{"y", "Copy file path / commit hash"},
+		{"?", "Show shortcuts"},
+		{"q", "Quit"},
+	}},
 }
 
-func helpVisibleRows(height int) int { return max(1, height-5) }
+const helpBoxWidth = 60
 
-func shortcutLines(width int) []string {
-	innerWidth := max(1, min(54, width-2)-4)
-	var lines []string
-	for _, shortcut := range shortcuts {
-		if innerWidth < 30 {
-			shortcut = strings.Join(strings.Fields(shortcut), " ")
+// helpVisibleRows is the number of shortcut rows shown in a help dialog on a
+// screen of height rows: the title and status bars, the dialog border, title
+// and hint take the rest.
+func helpVisibleRows(height int) int { return max(1, height-6) }
+
+func shortcutLines(width int, accent string) []string {
+	innerWidth := max(1, min(helpBoxWidth, width-2)-4)
+	keyWidth := 0
+	for _, section := range shortcutSections {
+		for _, s := range section.keys {
+			keyWidth = max(keyWidth, runewidth.StringWidth(s.keys))
 		}
-		lines = append(lines, wrapLine(shortcut, innerWidth)...)
+	}
+	keyWidth += 2
+	var lines []string
+	for i, section := range shortcutSections {
+		if i > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, styleBold+section.title+styleReset)
+		for _, s := range section.keys {
+			if innerWidth < keyWidth+16 {
+				for j, part := range wrapLine(s.keys+"  "+s.action, innerWidth) {
+					if j == 0 {
+						part = accent + part + styleReset
+					}
+					lines = append(lines, part)
+				}
+				continue
+			}
+			for j, part := range wrapWords(s.action, innerWidth-keyWidth) {
+				key := ""
+				if j == 0 {
+					key = s.keys
+				}
+				lines = append(lines, accent+key+styleReset+strings.Repeat(" ", keyWidth-runewidth.StringWidth(key))+part)
+			}
+		}
 	}
 	return lines
 }
 
-func showHelpDialog(lines []string, width, pos int) {
-	if width < 8 || len(lines) < 5 {
-		return
+// wrapWords wraps s at spaces where possible, falling back to wrapLine for
+// words wider than width.
+func wrapWords(s string, width int) []string {
+	var lines []string
+	line := ""
+	for _, word := range strings.Fields(s) {
+		switch {
+		case line == "":
+			line = word
+		case runewidth.StringWidth(line)+1+runewidth.StringWidth(word) <= width:
+			line += " " + word
+		default:
+			lines = append(lines, line)
+			line = word
+		}
+		for runewidth.StringWidth(line) > width {
+			parts := wrapLine(line, width)
+			lines = append(lines, parts[:len(parts)-1]...)
+			line = parts[len(parts)-1]
+		}
 	}
-	boxWidth := min(54, width-2)
-	innerWidth := boxWidth - 4
-	entries := shortcutLines(width)
-	visible := min(len(entries), helpVisibleRows(len(lines)))
-	pos = min(pos, max(0, len(entries)-visible))
-	content := []string{
-		"┌" + strings.Repeat("─", boxWidth-2) + "┐",
-		dialogLine("Keyboard shortcuts", innerWidth),
-	}
-	for _, shortcut := range entries[pos : pos+visible] {
-		content = append(content, dialogLine(shortcut, innerWidth))
-	}
-	content = append(content, "└"+strings.Repeat("─", boxWidth-2)+"┘")
-	left := strings.Repeat(" ", max(0, (width-boxWidth)/2))
-	top := max(0, (len(lines)-len(content))/2)
-	for i, line := range content {
-		lines[top+i] = left + line
-	}
+	return append(lines, line)
 }
 
-func showCommitDialog(lines []string, width int, input, message string, commits []commitInfo, loading, failed bool) {
-	boxWidth := min(64, width-2)
+func (m model) showHelpDialog(lines []string) {
+	if m.width < 8 || len(lines) < 6 {
+		return
+	}
+	boxWidth := min(helpBoxWidth, m.width-2)
+	entries := shortcutLines(m.width, m.accent())
+	visible := min(len(entries), helpVisibleRows(len(lines)))
+	pos := min(m.helpPos, max(0, len(entries)-visible))
+	info := ""
+	if pos > 0 {
+		info += "↑"
+	}
+	if pos+visible < len(entries) {
+		info += "↓"
+	}
+	placeDialog(lines, m.width, dialog{
+		width: boxWidth,
+		title: "Keyboard shortcuts",
+		info:  info,
+		body:  entries[pos : pos+visible],
+		hint:  keyHints("j/k", "scroll", "esc", "close"),
+	}.render())
+}
+
+// commitScope describes which changes a commit will include.
+func (m model) commitScope() string {
+	files := func(n int) string {
+		if n == 1 {
+			return "1 file"
+		}
+		return fmt.Sprintf("%d files", n)
+	}
+	if staged := len(m.snapshot.staged); staged > 0 {
+		return files(staged) + " staged"
+	}
+	if n := len(m.snapshot.unstaged); n > 0 {
+		return "all " + files(n)
+	}
+	return ""
+}
+
+func (m model) showCommitDialog(lines []string) {
+	boxWidth := min(64, m.width-2)
 	innerWidth := boxWidth - 4
-	input = clean(input)
+	input := clean(m.input)
 	fieldWidth := innerWidth - 1
 	start := max(0, runewidth.StringWidth(input)-fieldWidth)
-	visible := sliceWidth(input, start, fieldWidth)
-	infoLines := wrapLine(message, innerWidth)
-	infoFirst := infoLines[0]
-	infoSecond := ""
-	if len(infoLines) > 1 {
-		infoSecond = infoLines[1]
+	body := []string{"", sliceWidth(input, start, fieldWidth) + cursor}
+	if m.message != "" {
+		for _, line := range wrapLine(clean(m.message), innerWidth)[:min(2, len(wrapLine(clean(m.message), innerWidth)))] {
+			body = append(body, m.danger()+line+styleReset)
+		}
 	}
-	content := []string{
-		"┌" + strings.Repeat("─", boxWidth-2) + "┐",
-		dialogLine("Commit changes", innerWidth),
-		dialogLine("", innerWidth),
-		dialogLineWithCursor(visible, innerWidth),
-	}
-	if infoFirst != "" {
-		content = append(content, dialogLine(infoFirst, innerWidth))
-	}
-	if infoSecond != "" {
-		content = append(content, dialogLine(infoSecond, innerWidth))
-	}
-	content = append(content, dialogLine("↵ commit  esc exit", innerWidth), "└"+strings.Repeat("─", boxWidth-2)+"┘")
-	room := max(0, len(lines)-2-len(content))
-	if room >= 1 && (loading || failed || commits != nil) {
+	body = append(body, "")
+	content := dialog{
+		width: boxWidth,
+		title: "Commit changes",
+		info:  m.commitScope(),
+		body:  body,
+		hint:  keyHints("↵", "commit", "esc", "cancel"),
+	}.render()
+	room := max(0, len(lines)-2-len(content)-1)
+	commits := m.recentCommits
+	if room >= 1 && (m.recentCommitLoading || m.recentCommitError || commits != nil) {
+		content = append(content, "")
 		switch {
-		case loading:
-			content = append(content, "  Loading…")
-		case failed:
-			content = append(content, "  Recent commits unavailable")
+		case m.recentCommitLoading:
+			content = append(content, styleDim+"  Loading…"+styleReset)
+		case m.recentCommitError:
+			content = append(content, styleDim+"  Recent commits unavailable"+styleReset)
 		case len(commits) == 0:
-			content = append(content, "  No previous commits")
+			content = append(content, styleDim+"  No previous commits"+styleReset)
 		default:
 			count := min(5, len(commits), room)
 			spaced := room >= 2*count-1
@@ -125,11 +210,11 @@ func showCommitDialog(lines []string, width int, input, message string, commits 
 			for i, commit := range commits[:count] {
 				metadata := relativeCommitTime(commit.date, time.Now()) + " · " + clean(commit.author)
 				if twoLines {
-					content = append(content, fit("  "+clean(commit.subject), boxWidth), fit("  "+metadata, boxWidth))
+					content = append(content, fit("  "+clean(commit.subject), boxWidth), styleDim+fit("  "+metadata, boxWidth)+styleReset)
 				} else {
 					metadata = fit(metadata, max(1, boxWidth/2))
 					available := max(0, boxWidth-4-runewidth.StringWidth(metadata))
-					content = append(content, fit("  "+fit(clean(commit.subject), available)+"  "+metadata, boxWidth))
+					content = append(content, "  "+fit(clean(commit.subject), available)+"  "+styleDim+metadata+styleReset)
 				}
 				if spaced && i < count-1 {
 					content = append(content, "")
@@ -137,18 +222,70 @@ func showCommitDialog(lines []string, width int, input, message string, commits 
 			}
 		}
 	}
-	left := strings.Repeat(" ", max(0, (width-boxWidth)/2))
-	top := max(0, (len(lines)-len(content))/2)
+	// Center the box itself; the recent commits hang below it.
+	left := strings.Repeat(" ", max(0, (m.width-boxWidth)/2))
+	top := 1 + max(0, (len(lines)-2-len(content))/2)
 	for i, line := range content {
-		lines[top+i] = left + line
+		if top+i < len(lines)-1 {
+			lines[top+i] = left + line
+		}
 	}
 }
 
-func dialogLine(text string, width int) string {
-	text = fit(text, width)
-	return "│ " + text + strings.Repeat(" ", max(0, width-runewidth.StringWidth(text))) + " │"
+// showDiscardDialog asks for confirmation before discarding changes.
+func (m model) showDiscardDialog(lines []string) {
+	title := "Discard hunk?"
+	if m.discard.whole {
+		title = "Discard all unstaged changes in file?"
+	}
+	if m.discard.change.untracked {
+		title = "Delete untracked file from disk?"
+	}
+	boxWidth := min(max(48, ansi.StringWidth(title)+6), m.width-2)
+	placeDialog(lines, m.width, dialog{
+		width:      boxWidth,
+		title:      title,
+		titleStyle: m.danger(),
+		body:       []string{"", clean(m.discard.change.path), styleDim + "This cannot be undone." + styleReset, ""},
+		hint:       keyHints("y", "discard", "n/esc", "cancel"),
+	}.render())
 }
 
-func dialogLineWithCursor(text string, width int) string {
-	return "│ " + text + "\x1b[7m \x1b[0m" + strings.Repeat(" ", max(0, width-runewidth.StringWidth(text)-1)) + " │"
+// errorLines wraps the error text for a dialog of inner width.
+func (m model) errorLines(width int) []string {
+	var content []string
+	for _, line := range strings.Split(strings.TrimRight(m.errorText, "\n"), "\n") {
+		content = append(content, wrapLine(clean(line), max(1, width))...)
+	}
+	return content
+}
+
+// errorMaxPos is the last scroll position that still fills the error view.
+func (m model) errorMaxPos() int {
+	if m.width < 24 || m.height < 8 {
+		return max(0, len(m.errorLines(m.width))-1)
+	}
+	return max(0, len(m.errorLines(min(100, m.width-2)-4))-max(1, m.height-6))
+}
+
+func (m model) showErrorDialog(lines []string) {
+	boxWidth := min(100, m.width-2)
+	content := m.errorLines(boxWidth - 4)
+	visible := min(len(content), max(1, len(lines)-6))
+	start := min(m.errorPos, max(0, len(content)-visible))
+	info := ""
+	if start > 0 {
+		info += "↑"
+	}
+	if start+visible < len(content) {
+		info += "↓"
+	}
+	placeDialog(lines, m.width, dialog{
+		width:      boxWidth,
+		title:      "Git error",
+		titleStyle: m.danger(),
+		info:       info,
+		body:       content[start : start+visible],
+		hint:       keyHints("j/k", "scroll", "↵/esc", "dismiss"),
+	}.render())
 }

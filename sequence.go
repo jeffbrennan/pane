@@ -188,10 +188,12 @@ func (m model) sequenceView() string {
 		index := m.rows[start].commitIndex
 		if index >= 0 && index < len(m.sequence.commits) {
 			commit := m.sequence.commits[index]
-			view.viewTitle = " " + shortHash(commit.hash) + "  " + clean(commit.subject)
+			view.viewTitle = m.accent() + shortHash(commit.hash) + styleReset + "  " + clean(commit.subject)
+			view.viewBadge = styleDim + fmt.Sprintf("%d/%d", index+1, len(m.sequence.commits)) + styleReset
 		}
 	}
-	view.message = "Read-only · esc/q back"
+	view.viewHints = keyHints("esc", "back", "?", "help")
+	view.message = ""
 	if m.sequence.loading {
 		view.message = "Loading commits…"
 	}
@@ -224,6 +226,7 @@ func (m model) handleSequenceKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "w":
 		m.wrap = !m.wrap
 		m.horizontal = 0
+		m.flash = wrapFlash(m.wrap)
 		m.rebuildSequence()
 	case "?":
 		m.modal = "help"

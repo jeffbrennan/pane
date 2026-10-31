@@ -26,6 +26,7 @@ type row struct {
 	syntax       []syntaxSpan
 	inline       []syntaxSpan
 	commitIndex  int
+	numberWidth  int
 }
 
 type loaded struct {
@@ -73,6 +74,7 @@ type model struct {
 	errorPos              int
 	helpPos               int
 	screen, viewTitle     string
+	viewBadge, viewHints  string
 	history               historyState
 	picker                pickerState
 	pickerReturn          bool
@@ -443,6 +445,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "T" && m.pending == "" && !(m.screen == "history" && m.history.searching) {
 			m.lightTheme = !m.lightTheme
 			m.themeAuto = false
+			m.flash = "Dark colors"
+			if m.lightTheme {
+				m.flash = "Light colors"
+			}
 			return m, nil
 		}
 		if m.screen != "" {
@@ -497,6 +503,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "w":
 			m.wrap = !m.wrap
 			m.horizontal = 0
+			m.flash = wrapFlash(m.wrap)
 			m.rebuild()
 		case "r":
 			return m.refresh()
@@ -622,7 +629,7 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "esc", "?", "q":
 			m.modal = ""
 		case "j", "down":
-			m.helpPos = min(m.helpPos+1, max(0, len(shortcutLines(m.width))-helpVisibleRows(m.height)))
+			m.helpPos = min(m.helpPos+1, max(0, len(shortcutLines(m.width, ""))-helpVisibleRows(m.height)))
 		case "k", "up":
 			m.helpPos = max(0, m.helpPos-1)
 		}
@@ -631,7 +638,7 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.modal == "error" {
 		switch key.String() {
 		case "j", "down":
-			m.errorPos++
+			m.errorPos = min(m.errorPos+1, m.errorMaxPos())
 		case "k", "up":
 			m.errorPos = max(0, m.errorPos-1)
 		case "esc", "enter", "q":
@@ -859,25 +866,8 @@ func (m model) View() string {
 	if m.width <= 0 || m.height <= 0 {
 		return ""
 	}
-	if m.modal == "error" {
-		var content []string
-		for _, line := range strings.Split(m.errorText, "\n") {
-			content = append(content, wrapLine(clean(line), max(1, m.width))...)
-		}
-		start := min(m.errorPos, max(0, len(content)-1))
-		lines := []string{fit(" Git error", m.width)}
-		for i := 0; i < max(0, m.height-2); i++ {
-			if start+i < len(content) {
-				lines = append(lines, content[start+i])
-			} else {
-				lines = append(lines, "")
-			}
-		}
-		lines = append(lines, fit("j/k scroll  enter/esc dismiss", m.width))
-		return strings.Join(lines, "\n")
-	}
-	if m.modal == "discard" {
-		return m.discardView()
+	if m.modal == "error" || m.modal == "discard" {
+		return m.confirmationView()
 	}
 	if m.screen == "history" {
 		return m.historyView()
@@ -888,23 +878,12 @@ func (m model) View() string {
 	if m.screen == "sequence" {
 		return m.sequenceView()
 	}
-	mode := "UNSTAGED"
-	if m.staged {
-		mode = "STAGED"
-	}
-	header := " pane  " + mode
-	if m.viewTitle != "" {
-		header = m.viewTitle
-	}
-	if m.busy {
-		if action := m.actionStatus(); action != "" {
-			header += "  " + action
-		} else {
-			header += "  working…"
-		}
+	title := " " + m.viewTitle
+	if m.viewTitle == "" {
+		title = m.brand(m.stageTabs())
 	}
 	var lines []string
-	lines = append(lines, fit(header, m.width))
+	lines = append(lines, m.titleBar(title, m.viewBadge))
 	available := max(0, m.height-2)
 	start, visible, pinned := m.diffViewport(available)
 	if pinned != nil {
@@ -923,14 +902,7 @@ func (m model) View() string {
 		index := start + i
 		if index >= len(m.rows) {
 			if index == 0 {
-				empty := " No changes"
-				if m.relativeLines && m.history.loading {
-					empty = ""
-					if m.history.commitLoadingVisible {
-						empty = " Loading commit…"
-					}
-				}
-				lines = append(lines, fit(empty, m.width))
+				lines = append(lines, fit(m.emptyText(), m.width))
 			} else {
 				lines = append(lines, "")
 			}
@@ -938,43 +910,121 @@ func (m model) View() string {
 		}
 		lines = append(lines, m.renderNumberedDiffRow(m.rows[index], index))
 	}
-	status := m.message
+	status := clean(strings.ReplaceAll(m.message, "\n", " | "))
 	if m.flash != "" {
-		status = m.flash
+		status = clean(strings.ReplaceAll(m.flash, "\n", " | "))
 	}
-	if m.modal == "search" {
+	hints := m.viewHints
+	if hints == "" {
+		hints = keyHints("?", "help")
+	}
+	switch m.modal {
+	case "search":
 		prefix := "/"
 		if m.search.draftDirection < 0 {
 			prefix = "?"
 		}
-		status = prefix + m.search.draft + "_"
-	}
-	if m.modal == "commit" {
+		status, hints = prompt(prefix, m.search.draft), keyHints("↵", "search", "esc", "cancel")
+	case "commit":
+		status, hints = "", ""
 		if m.width < 24 || m.height < 9 {
-			status = "Commit message: " + m.input + "_  (enter: commit, esc: cancel)"
-		} else {
-			status = ""
+			status = prompt("Commit message: ", m.input) + "  (↵ commit, esc cancel)"
 		}
+	case "help", "files":
+		status, hints = "", ""
 	}
-	if m.modal == "help" {
-		status = "j/k scroll  ?/esc close"
-	}
-	lines = append(lines, fit(clean(strings.ReplaceAll(status, "\n", " | ")), m.width))
+	lines = append(lines, m.statusBar(status, hints))
 	if m.modal == "commit" || m.modal == "help" || m.modal == "files" {
-		for i := 1; i <= available; i++ {
-			lines[i] = ""
-		}
+		clearBody(lines)
 	}
 	if m.modal == "commit" && m.width >= 24 && m.height >= 9 {
-		showCommitDialog(lines, m.width, m.input, m.message, m.recentCommits, m.recentCommitLoading, m.recentCommitError)
+		m.showCommitDialog(lines)
 	}
 	if m.modal == "help" {
-		showHelpDialog(lines, m.width, m.helpPos)
+		m.showHelpDialog(lines)
 	}
 	if m.modal == "files" {
 		m.showFilesDialog(lines)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// confirmationView shows an error or discard confirmation over the current
+// screen's title and status bars.
+func (m model) confirmationView() string {
+	under := m
+	under.modal = ""
+	lines := strings.Split(under.View(), "\n")
+	small := m.width < 24 || m.height < 8
+	if m.modal == "discard" && small {
+		return m.discardView()
+	}
+	if m.modal == "error" && small {
+		content := m.errorLines(m.width)
+		start := min(m.errorPos, max(0, len(content)-1))
+		lines := []string{fit(" Git error", m.width)}
+		for i := 0; i < max(0, m.height-2); i++ {
+			if start+i < len(content) {
+				lines = append(lines, content[start+i])
+			} else {
+				lines = append(lines, "")
+			}
+		}
+		lines = append(lines, fit("j/k scroll  enter/esc dismiss", m.width))
+		return strings.Join(lines, "\n")
+	}
+	clearBody(lines)
+	lines[len(lines)-1] = ""
+	if m.modal == "error" {
+		m.showErrorDialog(lines)
+	} else {
+		m.showDiscardDialog(lines)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// stageTabs shows the unstaged and staged views with the active one
+// emphasized, so tab's effect is visible before pressing it.
+func (m model) stageTabs() string {
+	tab := func(name string, count int, active bool) string {
+		if active {
+			return styleBold + name + " " + fmt.Sprint(count) + styleReset
+		}
+		return styleDim + name + " " + fmt.Sprint(count) + styleReset
+	}
+	return tab("unstaged", len(m.snapshot.unstaged), !m.staged) + styleDim + " · " + styleReset + tab("staged", len(m.snapshot.staged), m.staged)
+}
+
+func (m model) emptyText() string {
+	if m.relativeLines && m.history.loading {
+		if m.history.commitLoadingVisible {
+			return " Loading commit…"
+		}
+		return ""
+	}
+	if m.viewTitle != "" {
+		return " No changes"
+	}
+	if m.loading && m.startup {
+		return ""
+	}
+	if m.staged {
+		if n := len(m.snapshot.unstaged); n > 0 {
+			return fmt.Sprintf(" No staged changes · tab shows %d unstaged", n)
+		}
+		return " No staged changes"
+	}
+	if n := len(m.snapshot.staged); n > 0 {
+		return fmt.Sprintf(" No unstaged changes · tab shows %d staged", n)
+	}
+	return " No changes · H opens history"
+}
+
+func wrapFlash(wrap bool) string {
+	if wrap {
+		return "Line wrapping on"
+	}
+	return "Line wrapping off"
 }
 
 func (m model) relativeGutterWidth() int {
@@ -994,6 +1044,9 @@ func (m model) renderNumberedDiffRow(r row, index int) string {
 	if width > 0 {
 		if r.gutter != "" {
 			width = max(width, len(r.gutter)-3)
+		} else if r.kind == 'f' {
+			// Line up the header's number with the line numbers below it.
+			width = max(width, r.numberWidth)
 		}
 		number := strings.Repeat(" ", width)
 		if index >= 0 {
@@ -1073,7 +1126,7 @@ func (m model) renderDiffRow(r row, active bool) string {
 	}
 	prefix := strings.Repeat(" ", margin)
 	if active {
-		prefix = "\x1b[1;36m▸" + strings.Repeat(" ", margin-1) + "\x1b[0m"
+		prefix = styleBold + m.accent() + "▸" + strings.Repeat(" ", margin-1) + styleReset
 	}
 	return prefix + text
 }

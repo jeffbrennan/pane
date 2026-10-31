@@ -174,7 +174,7 @@ func TestSequencePickerUsesHoveredCommit(t *testing.T) {
 				t.Fatalf("picker has wrong scope: %#v", m.picker)
 			}
 			view := m.View()
-			if !strings.Contains(view, "22222222") || !strings.Contains(view, "only-second.go") || strings.Contains(view, "only-first.go") || !strings.Contains(view, "Files  2/2") {
+			if !strings.Contains(view, "22222222") || !strings.Contains(view, "only-second.go") || strings.Contains(view, "only-first.go") || !strings.Contains(plain(view), "22222222 · 2/2") {
 				t.Fatalf("picker shows wrong files: %q", view)
 			}
 			m = keys(t, m, "/", "o", "n", "l", "y", "-", "s", "e", "c", "o", "n", "d", "enter")

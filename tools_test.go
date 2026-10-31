@@ -44,7 +44,7 @@ func keys(t *testing.T, m model, input ...string) model {
 func TestFilePickerFiltersAndJumps(t *testing.T) {
 	m := toolModel()
 	m = keys(t, m, "f")
-	if m.modal != "files" || !strings.Contains(m.View(), "Files  3/3") || !strings.Contains(m.View(), "+ 1 -1") {
+	if m.modal != "files" || !strings.Contains(plain(m.View()), "3/3 │") || !strings.Contains(plain(m.View()), "+ 1 -1") {
 		t.Fatalf("picker: %q", m.View())
 	}
 	m = keys(t, m, "/", "t", "y", "p")
@@ -116,7 +116,7 @@ func TestWorkingDiffNormalQuitAndTabReset(t *testing.T) {
 
 func TestFilePickerNavigationAndSearchModes(t *testing.T) {
 	m := keys(t, toolModel(), "f")
-	if !strings.Contains(m.View(), "j/k select") || !strings.Contains(m.View(), "/ search") {
+	if !strings.Contains(plain(m.View()), "j/k move") || !strings.Contains(plain(m.View()), "/ filter") {
 		t.Fatalf("missing navigation hints: %q", m.View())
 	}
 	initial := m.picker.selected
@@ -271,8 +271,8 @@ func TestFilePickerHighlightsEntireSelectedRow(t *testing.T) {
 				continue
 			}
 			start := strings.Index(line, "\x1b[7m")
-			end := strings.Index(line, "\x1b[0m")
-			if end < start || !strings.Contains(line[start:end], item.name) || !strings.HasSuffix(line, "\x1b[0m │") {
+			end := start + strings.Index(line[start:], "\x1b[0m")
+			if end < start || !strings.Contains(line[start:end], item.name) || !strings.HasSuffix(plain(line), "│") || strings.TrimRight(plain(line[end:]), " │") != "" {
 				t.Fatalf("selection does not span row for %q: %q", item.path, line)
 			}
 		}
@@ -331,7 +331,7 @@ func TestFilePickerAlignsChangeCounts(t *testing.T) {
 	}}}
 	m.rebuild()
 	m = keys(t, m, "f")
-	view := m.View()
+	view := plain(m.View())
 	for _, counts := range []string{"+   2 -0", "+1001 -0", "+   0 -1"} {
 		if !strings.Contains(view, counts) {
 			t.Errorf("missing aligned counts %q in %q", counts, view)
@@ -399,7 +399,7 @@ func TestCollapsedDirectoryShowsNestedChangeTotals(t *testing.T) {
 func TestDiffSearch(t *testing.T) {
 	m := toolModel()
 	m = keys(t, m, "/", "v", "a", "l")
-	if m.modal != "search" || !strings.Contains(m.rows[m.pos].text, "Value") || !strings.Contains(m.View(), "/val_") {
+	if m.modal != "search" || !strings.Contains(m.rows[m.pos].text, "Value") || !strings.Contains(m.View(), "/val"+cursor) {
 		t.Fatalf("incremental search: %#v", m.rows[m.pos])
 	}
 	view := regexp.MustCompile("\\x1b\\[(39|48;2;[0-9;]+)m").ReplaceAllString(m.View(), "")

@@ -8,12 +8,9 @@ import (
 
 func (m model) historyHeader() []string {
 	branch := m.snapshot.branch
-	lines := []string{historyTitle(branch, m.width)}
+	lines := []string{m.titleBar(m.brand(historyTitle(branch, max(0, m.width-7))), "")}
 	limit := min(2, max(0, m.height-4))
 	if limit == 0 {
-		if action := m.actionStatus(); action != "" {
-			lines[0] = fit(" pane  "+action, m.width)
-		}
 		return lines
 	}
 	type statusLine struct{ text, style string }
@@ -41,9 +38,6 @@ func (m model) historyHeader() []string {
 			changeStyle = ""
 		}
 		status = append(status, statusLine{"  " + changes, changeStyle})
-	}
-	if action := m.actionStatus(); action != "" {
-		status[0] = statusLine{"  " + action, "\x1b[33m"}
 	}
 	for _, line := range status[:min(limit, len(status))] {
 		text := fit(line.text, m.width)
@@ -73,20 +67,20 @@ func (m model) actionStatus() string {
 	}
 }
 
+// historyTitle shows the branch and its upstream within width columns.
 func historyTitle(branch branchStatus, width int) string {
-	prefix := fit(" pane  ", width)
-	if !branch.available {
-		return prefix
+	if !branch.available || width <= 0 {
+		return ""
 	}
 	name := branch.name
 	if name == "" {
 		name = "unknown"
 	}
-	name = fit(clean(name), max(0, width-runewidth.StringWidth(prefix)))
-	result := prefix + "\x1b[1m" + name + "\x1b[0m"
-	remaining := max(0, width-runewidth.StringWidth(prefix)-runewidth.StringWidth(name))
+	name = fit(clean(name), width)
+	result := styleBold + name + styleReset
+	remaining := max(0, width-runewidth.StringWidth(name))
 	if branch.upstream != "" && remaining > 0 {
-		result += "\x1b[2m" + fit(" → "+clean(branch.upstream), remaining) + "\x1b[0m"
+		result += styleDim + fit(" → "+clean(branch.upstream), remaining) + styleReset
 	}
 	return result
 }
