@@ -204,7 +204,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				path, staged, repo := m.rows[m.pos].path, m.staged, m.repo
 				for _, c := range m.snapshot.unstaged {
 					if c.path == path && c.conflict {
-						m.message = "Resolve conflicts outside diffy"
+						m.message = "Resolve conflicts outside pane"
 						return m, nil
 					}
 				}
@@ -467,7 +467,7 @@ func (m model) View() string {
 	if m.staged {
 		mode = "STAGED"
 	}
-	header := " diffy  " + mode
+	header := " pane  " + mode
 	if m.viewTitle != "" {
 		header = m.viewTitle
 	}

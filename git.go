@@ -53,7 +53,7 @@ func (r repository) load() (snapshot, error) {
 		status, path := string(entry[:2]), string(entry[3:])
 		switch status {
 		case "DD", "AU", "UD", "UA", "DU", "AA", "UU":
-			c := change{path: path, diff: "Merge conflict: resolve outside diffy.", conflict: true}
+			c := change{path: path, diff: "Merge conflict: resolve outside pane.", conflict: true}
 			result.unstaged = append(result.unstaged, c)
 			continue
 		}
@@ -146,7 +146,7 @@ func (r repository) commit(message string) (string, error) {
 			return "", gitError(conflicts, conflictErr)
 		}
 		if len(conflicts) > 0 {
-			return "", fmt.Errorf("resolve merge conflicts outside diffy before committing")
+			return "", fmt.Errorf("resolve merge conflicts outside pane before committing")
 		}
 		out, err = r.command("add", "--all")
 		if err != nil {

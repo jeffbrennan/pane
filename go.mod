@@ -1,4 +1,4 @@
-module diffy
+module pane
 
 go 1.22.0
 

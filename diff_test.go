@@ -37,7 +37,7 @@ func TestNonTextChanges(t *testing.T) {
 		{"diff --git a/x b/x\nnew file mode 100644\nindex 000..abc\nBinary files /dev/null and b/x differ\n", "Binary file changed"},
 		{"diff --git a/x b/x\nnew file mode 100644\nindex 000..abc\n", "New empty file"},
 		{"diff --git a/x b/x\nold mode 100644\nnew mode 100755\n", "old mode 100644"},
-		{"Merge conflict: resolve outside diffy.", "Merge conflict"},
+		{"Merge conflict: resolve outside pane.", "Merge conflict"},
 	}
 	for _, tt := range tests {
 		rows := buildRows([]change{{path: "x", diff: tt.diff}}, 80, true)

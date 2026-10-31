@@ -184,7 +184,7 @@ func (m model) commitModel() model {
 	view.snapshot = snapshot{unstaged: m.history.changes}
 	view.staged = false
 	view.rows, view.pos, view.horizontal = m.history.rows, m.history.pos, m.history.horizontal
-	view.viewTitle = " diffy  COMMIT " + shortHash(m.history.current.hash) + "  " + clean(m.history.current.subject)
+	view.viewTitle = " pane  COMMIT " + shortHash(m.history.current.hash) + "  " + clean(m.history.current.subject)
 	view.message = "Read-only · esc/q back"
 	if m.history.loading {
 		view.message = "Loading commit…"
@@ -214,7 +214,7 @@ func (m model) historyView() string {
 	if m.width <= 0 || m.height <= 0 {
 		return ""
 	}
-	lines := []string{fit(" diffy  HISTORY", m.width)}
+	lines := []string{fit(" pane  HISTORY", m.width)}
 	available := max(0, m.height-2)
 	matches := m.filteredHistory()
 	selected := min(m.history.selected, max(0, len(matches)-1))
