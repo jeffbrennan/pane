@@ -101,12 +101,17 @@ func (m model) openHistory() (tea.Model, tea.Cmd) {
 
 func (m model) reloadHistory() (model, tea.Cmd) {
 	m.history.stream.close()
-	m.history.stream = newHistoryStream(m.repo, m.history.path)
 	m.history.loading = true
 	m.history.stale = false
 	m.history.fetching = false
 	m.history.statsFetching = false
 	m.history.request++
+	if prefetch := m.prefetch; prefetch != nil && m.history.path == "" {
+		m.prefetch = nil
+		m.history.stream = prefetch.stream
+		return m, prefetch.loadHistory(m.history.request)
+	}
+	m.history.stream = newHistoryStream(m.repo, m.history.path)
 	return m, m.fetchHistory(0, max(historyPage, len(m.history.commits)))
 }
 
@@ -164,15 +169,30 @@ func (m model) fetchHistory(skip, limit int) tea.Cmd {
 				}
 			}
 		}
-		commits, err := stream.nextPage(limit)
-		count := 0
-		if skip == 0 {
-			if entries, stashErr := repo.stashes(); stashErr == nil {
-				count = len(entries)
-			}
-		}
+		commits, count, err := historyPageWithStashes(repo, stream, limit, skip == 0)
 		return historyLoaded{commits: commits, err: err, request: request, skip: skip, limit: limit, stashCount: count}
 	}
+}
+
+// historyPageWithStashes reads the next page from stream with stored line
+// counts filled in, counting stashes alongside when stashes is set.
+func historyPageWithStashes(repo repository, stream *historyStream, limit int, stashes bool) ([]commitInfo, int, error) {
+	count := make(chan int, 1)
+	if stashes {
+		go func() {
+			entries, err := repo.stashes()
+			if err != nil {
+				count <- 0
+				return
+			}
+			count <- len(entries)
+		}()
+	} else {
+		count <- 0
+	}
+	commits, err := stream.nextPage(limit)
+	repo.stats.fill(commits)
+	return commits, <-count, err
 }
 
 // loadMoreHistory fetches the next page when the selection nears the end of

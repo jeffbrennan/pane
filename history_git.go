@@ -132,7 +132,11 @@ func (r repository) historyStats(hashes []string) ([]commitInfo, error) {
 	if err != nil {
 		return nil, gitError(out, err)
 	}
-	return parseHistory(out, true)
+	commits, err := parseHistory(out, true)
+	if err == nil {
+		r.stats.put(commits)
+	}
+	return commits, err
 }
 
 func parseHistory(out []byte, statsLoaded bool) ([]commitInfo, error) {

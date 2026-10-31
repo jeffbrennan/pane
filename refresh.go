@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -126,30 +127,50 @@ func (r repository) loadCached(previous *refreshCache) (*refreshCache, bool, err
 			}
 		}
 	}
-	for _, group := range []struct {
+	groups := []struct {
 		paths             []change
 		staged, untracked bool
-	}{{staged, true, false}, {changesForPaths(unstaged), false, false}, {changesForPaths(untracked), false, true}} {
-		var changes []change
-		if group.untracked {
-			changes, err = parallelDiffs(untracked, r.untrackedDiff)
-		} else {
-			changes, err = r.diffsForChanges(group.paths, group.staged)
+		changes           []change
+		err               error
+	}{{paths: staged, staged: true}, {paths: changesForPaths(unstaged)}, {paths: changesForPaths(untracked), untracked: true}}
+	// The groups are independent, so their Git commands and tokenizing overlap.
+	var wg sync.WaitGroup
+	for i := range groups {
+		group := &groups[i]
+		if len(group.paths) == 0 {
+			continue
 		}
-		if err != nil {
-			return nil, false, err
-		}
-		for i := range changes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var changes []change
 			if group.untracked {
-				changes[i].untracked = true
-				if strings.Contains(changes[i].diff, "Binary files ") {
-					changes[i].untrackedHash, changes[i].untrackedHashValid = untrackedDigest(filepath.Join(r.root, changes[i].path))
+				changes, group.err = parallelDiffs(untracked, r.untrackedDiff)
+			} else {
+				changes, group.err = r.diffsForChanges(group.paths, group.staged)
+			}
+			if group.err != nil {
+				return
+			}
+			for i := range changes {
+				if group.untracked {
+					changes[i].untracked = true
+					if strings.Contains(changes[i].diff, "Binary files ") {
+						changes[i].untrackedHash, changes[i].untrackedHashValid = untrackedDigest(filepath.Join(r.root, changes[i].path))
+					}
 				}
 			}
+			r.loadSyntaxDiffs(changes, contextKey{staged: group.staged})
+			warmSyntax(changes)
+			group.changes = changes
+		}()
+	}
+	wg.Wait()
+	for _, group := range groups {
+		if group.err != nil {
+			return nil, false, group.err
 		}
-		r.loadSyntaxDiffs(changes, contextKey{staged: group.staged})
-		warmSyntax(changes)
-		for _, c := range changes {
+		for _, c := range group.changes {
 			key := changeKey{c.path, group.staged}
 			cached := next.changes[key]
 			cached.change = c

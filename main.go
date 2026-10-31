@@ -118,6 +118,7 @@ type model struct {
 	base                  baseState
 	contextBase           bool
 	fileHistoryReturn     *model
+	prefetch              *startupPrefetch
 }
 
 func main() {
@@ -127,6 +128,10 @@ func main() {
 		os.Exit(1)
 	}
 	piped := !isatty.IsTerminal(os.Stdin.Fd()) && !isatty.IsCygwinTerminal(os.Stdin.Fd())
+	var prefetch *startupPrefetch
+	if !piped && len(os.Args) == 1 {
+		prefetch = startPrefetch(repo)
+	}
 	var m model
 	if piped && len(os.Args) == 1 {
 		m, err = initialSequence(repo, os.Stdin)
@@ -137,6 +142,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	m.prefetch = prefetch
 	theme, colorFGBG := strings.ToLower(strings.TrimSpace(os.Getenv("PANE_THEME"))), os.Getenv("COLORFGBG")
 	m.lightTheme = lightThemeFromEnv(theme, colorFGBG)
 	if theme != "light" && theme != "dark" {
@@ -195,6 +201,7 @@ func startCPUProfile(path string) func() {
 }
 
 func (m model) closeHistoryStreams() {
+	m.prefetch.close()
 	m.history.stream.close()
 	if m.fileHistoryReturn != nil {
 		m.fileHistoryReturn.history.stream.close()
@@ -259,7 +266,11 @@ func initialModel(repo repository, args []string) (model, error) {
 }
 
 func (m model) Init() tea.Cmd {
-	commands := []tea.Cmd{load(m.repo, m.generation, m.refreshCache), nextTick()}
+	initial := load(m.repo, m.generation, m.refreshCache)
+	if m.prefetch != nil {
+		initial = m.prefetch.loadStatus()
+	}
+	commands := []tea.Cmd{initial, nextTick()}
 	if m.screen == "history" && m.history.path != "" && m.history.loading {
 		commands = append(commands, m.fetchHistory(0, historyPage))
 	}
@@ -372,6 +383,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.err != nil {
 			m.message = msg.err.Error()
+			m.prefetch.close()
+			m.prefetch = nil
 			break
 		}
 		m.refreshCache = msg.cache
@@ -399,6 +412,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.openHistory()
 			}
 		}
+		m.prefetch.close()
+		m.prefetch = nil
 		if m.screen == "base" {
 			return m.refreshBase(changed)
 		}

@@ -37,6 +37,7 @@ type repository struct {
 	root        string
 	commandHook func([]string)
 	ignoreSpace bool
+	stats       *statsStore
 }
 
 func (r repository) diffOptions() []string {
@@ -53,7 +54,8 @@ func openRepository() (repository, error) {
 	if err != nil {
 		return repository{}, fmt.Errorf("not inside a Git working tree")
 	}
-	return repository{root: strings.TrimSuffix(string(out), "\n")}, nil
+	root := strings.TrimSuffix(string(out), "\n")
+	return repository{root: root, stats: newStatsStore(root)}, nil
 }
 
 func (r repository) command(args ...string) ([]byte, error) {

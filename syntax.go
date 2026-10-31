@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -143,11 +144,23 @@ func syntaxLines(path, diff string) (map[int]syntaxLine, map[int]syntaxLine) {
 	return old, new
 }
 
-// warmSyntax tokenizes changes ahead of time, off the UI goroutine.
+// warmSyntax tokenizes changes ahead of time, off the UI goroutine, one
+// file per core.
 func warmSyntax(changes []change) {
+	var wg sync.WaitGroup
+	limit := make(chan struct{}, runtime.GOMAXPROCS(0))
 	for _, c := range changes {
-		syntaxLines(c.path, c.syntaxDiff)
+		if c.syntaxDiff == "" {
+			continue
+		}
+		wg.Add(1)
+		limit <- struct{}{}
+		go func() {
+			defer func() { <-limit; wg.Done() }()
+			syntaxLines(c.path, c.syntaxDiff)
+		}()
 	}
+	wg.Wait()
 }
 
 func tokenizeDiff(path, diff string) (map[int]syntaxLine, map[int]syntaxLine) {
