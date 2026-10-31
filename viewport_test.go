@@ -177,3 +177,53 @@ func TestVimPositioningAccountsForPinnedHeader(t *testing.T) {
 		}
 	}
 }
+
+func TestPickerJumpDoesNotScrollBackwardOnNextLine(t *testing.T) {
+	for _, screen := range []string{"", "commit"} {
+		t.Run(screen, func(t *testing.T) {
+			changes := []change{longFile("first.go"), longFile("second.go"), longFile("third.go")}
+			m := model{width: 60, height: 10, wrap: true, screen: screen}
+			if screen == "commit" {
+				m.history.changes = changes
+				m.rebuildCommit()
+			} else {
+				m.snapshot.unstaged = changes
+				m.rebuild()
+			}
+			m = keys(t, m, "f", "/", "s", "e", "c", "o", "n", "d", "enter")
+			before := strings.Split(m.View(), "\n")
+			if !strings.Contains(before[1], "second.go") || !strings.Contains(before[1], "▸") {
+				t.Fatalf("picker did not select the file header: %q", m.View())
+			}
+			m = keys(t, m, "j")
+			after := strings.Split(m.View(), "\n")
+			if !strings.Contains(after[1], "second.go") || strings.Contains(after[1], "▸") || !strings.Contains(after[2], "▸") || strings.Contains(m.View(), "first.go") {
+				t.Fatalf("moving down shifted the viewport: %q", m.View())
+			}
+		})
+	}
+}
+
+func TestMovementKeepsExplicitViewportAlignment(t *testing.T) {
+	m := model{width: 40, height: 10, wrap: true, snapshot: snapshot{unstaged: []change{longFile("file.go"), longFile("next.go")}}}
+	m.rebuild()
+	m.pos = 10
+	m.positionViewport("b")
+	top, _, _ := m.diffViewport(m.height - 2)
+	m.move(-1)
+	if after, _, _ := m.diffViewport(m.height - 2); after != top {
+		t.Fatalf("moving up scrolled down: before %d after %d", top, after)
+	}
+	m.positionViewport("t")
+	top, _, _ = m.diffViewport(m.height - 2)
+	m.move(1)
+	if after, _, _ := m.diffViewport(m.height - 2); after != top {
+		t.Fatalf("moving down scrolled up: before %d after %d", top, after)
+	}
+	for range 10 {
+		m.move(1)
+	}
+	if after, _, _ := m.diffViewport(m.height - 2); after <= top {
+		t.Fatalf("viewport did not scroll when approaching the bottom: before %d after %d", top, after)
+	}
+}

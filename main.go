@@ -615,8 +615,21 @@ func wrapLine(s string, width int) []string {
 	return append(parts, b.String())
 }
 
-func (m *model) clamp()     { m.pos = max(0, min(m.pos, len(m.rows)-1)) }
-func (m *model) move(n int) { m.pos += n; m.clamp(); m.reveal() }
+func (m *model) clamp() { m.pos = max(0, min(m.pos, len(m.rows)-1)) }
+func (m *model) move(n int) {
+	top, visible, _ := m.diffViewport(max(1, m.height-2))
+	wasVisible := m.pos >= top && m.pos < top+visible
+	m.pos += n
+	m.clamp()
+	m.reveal()
+	if wasVisible {
+		if n > 0 {
+			m.viewTop = max(m.viewTop, top)
+		} else if n < 0 {
+			m.viewTop = min(m.viewTop, top)
+		}
+	}
+}
 
 func (m *model) paragraphJump(direction int) {
 	if len(m.rows) == 0 {
