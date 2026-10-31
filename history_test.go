@@ -31,6 +31,9 @@ func TestHistoryAndCommitChanges(t *testing.T) {
 	if !strings.Contains(commits[0].message, "Detailed body") {
 		t.Fatalf("missing body: %#v", commits[0])
 	}
+	if commits[0].added != 2 || commits[0].deleted != 1 || commits[1].added != 1 {
+		t.Fatalf("wrong line counts: %#v", commits)
+	}
 	changes, err := r.commitChanges(commits[0].hash)
 	if err != nil {
 		t.Fatal(err)
@@ -73,6 +76,9 @@ func TestHistoryMergeFirstParent(t *testing.T) {
 	commits, err := r.history()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if commits[0].added != 1 || commits[0].deleted != 0 {
+		t.Fatalf("merge counts: %#v", commits[0])
 	}
 	changes, err := r.commitChanges(commits[0].hash)
 	if err != nil {
@@ -131,13 +137,31 @@ func TestHistorySelectionPresentationAndScrolling(t *testing.T) {
 		{hash: "cccccccc", author: "Carol", subject: "third"},
 	}}}
 	view := m.historyView()
-	if !strings.Contains(view, "\x1b[1m▸ aaaaaaaa") || !strings.Contains(view, "\x1b[2m  bbbbbbbb") || !strings.Contains(view, "first\x1b[0m\n\n") {
+	if !strings.Contains(view, "\x1b[1m▸ first") || !strings.Contains(view, "\x1b[2m  second") || !strings.Contains(view, "\x1b[32m+0") || !strings.Contains(view, "\x1b[31m -0") {
 		t.Fatalf("missing selection styles or spacing: %q", view)
 	}
 	m.history.selected = 2
 	view = m.historyView()
-	if !strings.Contains(view, "\x1b[1m▸ cccccccc") || !strings.Contains(view, "third") {
+	if !strings.Contains(view, "\x1b[1m▸ third") {
 		t.Fatalf("selected commit not visible: %q", view)
+	}
+}
+
+func TestHistoryEmptyAndBinaryCommits(t *testing.T) {
+	r := testRepo(t)
+	writeFile(t, r, "binary", "\x00\x01\x02")
+	if _, err := r.commit("binary"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.action("commit", "--allow-empty", "-m", "empty"); err != nil {
+		t.Fatal(err)
+	}
+	commits, err := r.history()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(commits) != 2 || commits[0].subject != "empty" || commits[1].binary != 1 || commits[1].added != 0 {
+		t.Fatalf("history: %#v", commits)
 	}
 }
 

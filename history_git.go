@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
 type commitInfo struct {
 	hash, author, email, date, subject, message string
+	added, deleted, binary                      int
 }
 
 func (r repository) history() ([]commitInfo, error) {
@@ -19,17 +21,44 @@ func (r repository) history() ([]commitInfo, error) {
 		}
 		return nil, gitError(out, err)
 	}
-	out, err = r.command("log", "-z", "--format=%H%x00%an%x00%ae%x00%aI%x00%s%x00%B")
+	out, err = r.command("log", "-z", "--numstat", "--no-renames", "--no-ext-diff", "--no-textconv", "--diff-merges=first-parent", "--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00")
 	if err != nil {
 		return nil, gitError(out, err)
 	}
-	fields := bytes.Split(bytes.TrimSuffix(out, []byte{0}), []byte{0})
-	if len(fields)%6 != 0 {
-		return nil, fmt.Errorf("unexpected Git history format")
-	}
-	commits := make([]commitInfo, 0, len(fields)/6)
-	for i := 0; i < len(fields); i += 6 {
-		commits = append(commits, commitInfo{string(fields[i]), string(fields[i+1]), string(fields[i+2]), string(fields[i+3]), string(fields[i+4]), string(fields[i+5])})
+	fields := bytes.Split(out, []byte{0})
+	var commits []commitInfo
+	for i := 0; i < len(fields); {
+		if len(fields[i]) == 0 {
+			i++
+			continue
+		}
+		if i+6 > len(fields) {
+			return nil, fmt.Errorf("unexpected Git history format")
+		}
+		c := commitInfo{hash: string(fields[i]), author: string(fields[i+1]), email: string(fields[i+2]), date: string(fields[i+3]), subject: string(fields[i+4]), message: string(fields[i+5])}
+		i += 6
+		for i < len(fields) && len(fields[i]) == 0 {
+			i++
+		}
+		for i < len(fields) && len(fields[i]) > 0 && bytes.Contains(fields[i], []byte("\t")) {
+			parts := bytes.SplitN(bytes.TrimPrefix(fields[i], []byte("\n")), []byte("\t"), 3)
+			if len(parts) != 3 {
+				return nil, fmt.Errorf("unexpected Git history statistics")
+			}
+			if string(parts[0]) == "-" && string(parts[1]) == "-" {
+				c.binary++
+			} else {
+				added, addErr := strconv.Atoi(string(parts[0]))
+				deleted, delErr := strconv.Atoi(string(parts[1]))
+				if addErr != nil || delErr != nil {
+					return nil, fmt.Errorf("unexpected Git history statistics")
+				}
+				c.added += added
+				c.deleted += deleted
+			}
+			i++
+		}
+		commits = append(commits, c)
 	}
 	return commits, nil
 }

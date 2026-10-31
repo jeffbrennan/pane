@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mattn/go-runewidth"
 )
 
 type historyState struct {
@@ -227,9 +228,9 @@ func (m model) historyView() string {
 		if len(date) >= 10 {
 			date = date[:10]
 		}
-		meta := fit(clean(fmt.Sprintf("%s%s  %s  %s", marker, shortHash(c.hash), date, c.author)), m.width)
-		subject := fit("  "+clean(c.subject), m.width)
-		content = append(content, style+meta+"\x1b[0m", style+subject+"\x1b[0m", "")
+		subject := fit(marker+clean(c.subject), m.width)
+		meta := historyMetadata(c, date, m.width, i == selected)
+		content = append(content, style+subject+"\x1b[0m", meta, "")
 		if len(content) >= available {
 			break
 		}
@@ -264,4 +265,42 @@ func (m model) historyView() string {
 		showHelpDialog(lines, m.width, m.helpPos)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func historyMetadata(c commitInfo, date string, width int, selected bool) string {
+	type segment struct{ text, style string }
+	green, red, cyan := "\x1b[32m", "\x1b[31m", "\x1b[36m"
+	if !selected {
+		green, red, cyan = "\x1b[2;32m", "\x1b[2;31m", "\x1b[2;36m"
+	}
+	segments := []segment{
+		{"  ", ""},
+		{fmt.Sprintf("+%d", c.added), green},
+		{fmt.Sprintf(" -%d", c.deleted), red},
+	}
+	if c.binary > 0 {
+		segments = append(segments, segment{fmt.Sprintf("  %d binary", c.binary), "\x1b[2m"})
+	}
+	segments = append(segments,
+		segment{"  " + clean(date), "\x1b[2m"},
+		segment{"  " + clean(c.author), "\x1b[2m"},
+		segment{"  " + shortHash(c.hash), cyan},
+	)
+	var b strings.Builder
+	remaining := width
+	for _, part := range segments {
+		if remaining <= 0 {
+			break
+		}
+		text := fit(part.text, remaining)
+		if part.style != "" {
+			b.WriteString(part.style)
+		}
+		b.WriteString(text)
+		if part.style != "" {
+			b.WriteString("\x1b[0m")
+		}
+		remaining -= runewidth.StringWidth(text)
+	}
+	return b.String()
 }
