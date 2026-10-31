@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/mattn/go-runewidth"
 )
 
 var hunkHeader = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`)
@@ -71,12 +73,16 @@ func buildRows(changes []change, width int, wrap bool) []row {
 			if wrap {
 				parts = wrapLine(text, max(1, width-len(gutter)))
 			}
+			offset := 0
 			for partIndex, part := range parts {
 				prefix := gutter
 				if partIndex > 0 {
 					prefix = strings.Repeat(" ", len(gutter))
 				}
-				rows = append(rows, row{path: c.path, line: i, gutter: prefix, text: part, kind: kind})
+				rows = append(rows, row{path: c.path, line: i, offset: offset, gutter: prefix, text: part, kind: kind})
+				for _, r := range part {
+					offset += runewidth.RuneWidth(r)
+				}
 			}
 			hasContent = true
 		}

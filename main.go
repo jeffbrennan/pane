@@ -14,6 +14,7 @@ import (
 type row struct {
 	path   string
 	line   int
+	offset int
 	gutter string
 	text   string
 	kind   byte
@@ -315,13 +316,17 @@ func (m *model) rebuild() {
 	if anchor.path != "" {
 		best := -1
 		for i, r := range m.rows {
-			if r.path == anchor.path && r.line <= anchor.line {
+			if r.path != anchor.path {
+				continue
+			}
+			if r.line < anchor.line || (r.line == anchor.line && r.offset <= anchor.offset) {
+				best = i
+				continue
+			}
+			if best < 0 {
 				best = i
 			}
-			if r.path == anchor.path && r.line >= anchor.line {
-				best = i
-				break
-			}
+			break
 		}
 		if best >= 0 {
 			m.pos = best

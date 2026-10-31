@@ -41,6 +41,41 @@ func TestActiveLineShowsContext(t *testing.T) {
 	}
 }
 
+func TestWrappedActiveLineSurvivesRefreshAndResize(t *testing.T) {
+	s := snapshot{unstaged: []change{{path: "long", diff: "@@ -0,0 +1 @@\n+abcdefghijklmnopqrstuvwxyz0123456789\n"}}}
+	m := model{width: 16, height: 10, wrap: true, snapshot: s}
+	m.rebuild()
+	if len(m.rows) < 4 {
+		t.Fatalf("expected wrapped rows: %#v", m.rows)
+	}
+	m.pos = 3
+	original := m.rows[m.pos]
+	updated, _ := m.Update(loaded{snapshot: s, generation: m.generation})
+	m = updated.(model)
+	if got := m.rows[m.pos]; got.offset != original.offset || got.text != original.text {
+		t.Fatalf("refresh changed wrapped segment: got %#v, want %#v", got, original)
+	}
+	updated, _ = m.Update(tea.WindowSizeMsg{Width: 20, Height: 10})
+	m = updated.(model)
+	got := m.rows[m.pos]
+	if got.line != original.line || got.offset > original.offset || (m.pos+1 < len(m.rows) && m.rows[m.pos+1].line == got.line && m.rows[m.pos+1].offset <= original.offset) {
+		t.Fatalf("resize lost position: got %#v, original %#v", got, original)
+	}
+}
+
+func TestCommitWrappedLineSurvivesResize(t *testing.T) {
+	m := model{width: 16, height: 10, wrap: true, screen: "commit", history: historyState{changes: []change{{path: "long", diff: "@@ -0,0 +1 @@\n+abcdefghijklmnopqrstuvwxyz0123456789\n"}}}}
+	m.rebuildCommit()
+	m.history.pos = 3
+	original := m.history.rows[m.history.pos]
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 20, Height: 10})
+	m = updated.(model)
+	got := m.history.rows[m.history.pos]
+	if got.line != original.line || got.offset == 0 || got.offset > original.offset {
+		t.Fatalf("commit resize lost position: %#v", got)
+	}
+}
+
 func TestStagingUsesActiveLine(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "first", "first\n")
