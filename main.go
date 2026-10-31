@@ -145,19 +145,18 @@ func main() {
 	m.prefetch = prefetch
 	theme, colorFGBG := strings.ToLower(strings.TrimSpace(os.Getenv("PANE_THEME"))), os.Getenv("COLORFGBG")
 	m.lightTheme = lightThemeFromEnv(theme, colorFGBG)
-	if theme != "light" && theme != "dark" {
-		if light, ok := terminalLightBackground(); ok {
-			m.lightTheme = light
-		}
-	}
 	options := []tea.ProgramOption{tea.WithAltScreen(), tea.WithReportFocus()}
 	var tracking themeTracking
 	if theme != "light" && theme != "dark" {
 		tracking = startThemeTracking()
 		if tracking.input != nil {
+			// Init queries the background without blocking startup; terminals
+			// that never answer would otherwise delay every launch.
 			m.themeAuto, m.themeQuery = true, tracking.query
 			options = append(options, tea.WithInput(tracking.input))
 			defer tracking.close()
+		} else if light, ok := terminalLightBackground(); ok {
+			m.lightTheme = light
 		}
 	}
 	if piped && tracking.input == nil {
@@ -270,7 +269,7 @@ func (m model) Init() tea.Cmd {
 	if m.prefetch != nil {
 		initial = m.prefetch.loadStatus()
 	}
-	commands := []tea.Cmd{initial, nextTick()}
+	commands := []tea.Cmd{initial, nextTick(), m.queryTheme()}
 	if m.screen == "history" && m.history.path != "" && m.history.loading {
 		commands = append(commands, m.fetchHistory(0, historyPage))
 	}
@@ -290,6 +289,21 @@ func (m model) Init() tea.Cmd {
 		}
 	}
 	return tea.Batch(commands...)
+}
+
+// queryTheme asks the terminal for its background color; the answer arrives
+// as terminalBackgroundChanged.
+func (m model) queryTheme() tea.Cmd {
+	if !m.themeAuto || m.themeQuery == nil || editorRunning.Load() {
+		return nil
+	}
+	query := m.themeQuery
+	return func() tea.Msg {
+		if !editorRunning.Load() {
+			query()
+		}
+		return nil
+	}
 }
 
 func load(repo repository, generation int, cache *refreshCache) tea.Cmd {
@@ -346,16 +360,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.ticks%interval == 0 {
 			m, cmd = m.refresh()
 		}
-		var query tea.Cmd
-		if m.themeAuto && m.themeQuery != nil && !editorRunning.Load() {
-			query = func() tea.Msg {
-				if !editorRunning.Load() {
-					m.themeQuery()
-				}
-				return nil
-			}
-		}
-		return m, tea.Batch(cmd, nextTick(), query)
+		return m, tea.Batch(cmd, nextTick(), m.queryTheme())
 	case tea.BlurMsg:
 		m.blurred = true
 	case tea.FocusMsg:
