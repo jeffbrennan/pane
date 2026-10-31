@@ -139,7 +139,7 @@ func TestUntrackedDiffPresentation(t *testing.T) {
 		t.Fatal(err)
 	}
 	rows := buildRows(s.unstaged, 80, true)
-	if len(rows) != 3 || rows[1].gutter != "  1 + " || rows[1].text != "first" || rows[2].text != "second" {
+	if len(rows) != 3 || rowGutter(rows[1]) != "  1 + " || rows[1].text != "first" || rows[2].text != "second" {
 		t.Fatalf("unexpected rows: %#v", rows)
 	}
 }

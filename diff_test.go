@@ -12,7 +12,7 @@ func TestUnifiedDiffPresentation(t *testing.T) {
 	rows := buildRows([]change{{path: "x", diff: diff}}, 80, true)
 	var displayed []string
 	for _, row := range rows {
-		displayed = append(displayed, row.gutter+row.text)
+		displayed = append(displayed, rowGutter(row)+row.text)
 	}
 	got := strings.Join(displayed, "\n")
 	for _, expected := range []string{" 10   context", " 11 - old", " 11 + new", " 12   +++literal", "  ···", " 30 - removed", " 30 + added", "No newline at end of file"} {
@@ -53,8 +53,40 @@ func TestToggleDeletedFileInDiffViews(t *testing.T) {
 
 func TestWrappedLinesKeepGutter(t *testing.T) {
 	rows := buildRows([]change{{path: "x", diff: "@@ -0,0 +1 @@\n+abcdefgh\n"}}, 10, true)
-	if len(rows) != 3 || rows[1].gutter != "  1 + " || rows[1].text != "abcd" || rows[2].gutter != "      " || rows[2].text != "efgh" {
+	if len(rows) != 3 || rowGutter(rows[1]) != "  1 + " || rows[1].text != "abcd" || rowGutter(rows[2]) != "      " || rows[2].text != "efgh" {
 		t.Fatalf("rows: %#v", rows)
+	}
+}
+
+func TestRowGutterRendersLineKindsAndContinuations(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		row  row
+		want string
+	}{
+		{"addition", row{kind: '+', numberWidth: 3, sourceLine: 42}, " 42 + "},
+		{"context", row{kind: ' ', numberWidth: 4, sourceLine: 9}, "   9   "},
+		{"deletion", row{kind: '-', numberWidth: 3, sourceLine: 0}, "  0 - "},
+		{"deleted file", row{kind: 'd', numberWidth: 3, sourceLine: 3}, "  3 - "},
+		{"continuation", row{kind: '+', numberWidth: 3, sourceLine: 42, offset: 4}, "      "},
+		{"header", row{kind: 'f', numberWidth: 3}, ""},
+		{"uninitialized", row{kind: '+'}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := rowGutter(tc.row); got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSourceLineJumpUsesDerivedGutter(t *testing.T) {
+	changes := []change{{path: "file", diff: "@@ -10,2 +10,2 @@\n first\n-old\n+new\n"}}
+	rows := buildRows(changes, 80, true)
+	m := model{width: 80, height: 10, rows: rows}
+	m.sourceLineJump(11)
+	if got := m.rows[m.pos]; got.kind != '+' || got.sourceLine != 11 {
+		t.Fatalf("source line jump selected %#v", got)
 	}
 }
 

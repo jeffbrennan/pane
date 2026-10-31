@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -255,22 +254,17 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 		if kind != '-' {
 			newLine++
 		}
-		gutter := fmt.Sprintf("%*d %c ", gutterWidth, number, kind)
 		if deletedFile && kind == '-' {
 			kind = 'd'
 		}
 		text := clean(strings.ReplaceAll(line[1:], "\t", "    "))
 		parts := []string{text}
 		if wrap {
-			parts = wrapLine(text, max(1, width-len(gutter)))
+			parts = wrapLine(text, max(1, width-gutterWidth-3))
 		}
 		offset := 0
 		byteOffset := 0
-		for partIndex, part := range parts {
-			prefix := gutter
-			if partIndex > 0 {
-				prefix = strings.Repeat(" ", len(gutter))
-			}
+		for _, part := range parts {
 			lineSyntax, syntaxOK := newSyntax[number]
 			if kind == '-' || kind == 'd' {
 				lineSyntax, syntaxOK = oldSyntax[number]
@@ -279,7 +273,7 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 			if syntaxOK && lineSyntax.text == text {
 				spans = clipSyntax(lineSyntax.spans, byteOffset, byteOffset+len(part))
 			}
-			rows = append(rows, row{path: c.path, line: i, offset: offset, target: target, sourceLine: number, gutter: prefix, text: part, kind: kind, syntax: spans, inline: clipSyntax(inline[i], byteOffset, byteOffset+len(part))})
+			rows = append(rows, row{path: c.path, line: i, offset: offset, target: target, sourceLine: number, text: part, kind: kind, syntax: spans, inline: clipSyntax(inline[i], byteOffset, byteOffset+len(part))})
 			byteOffset += len(part)
 			for _, r := range part {
 				offset += runewidth.RuneWidth(r)

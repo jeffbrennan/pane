@@ -1,10 +1,5 @@
 package main
 
-import (
-	"strconv"
-	"strings"
-)
-
 type jumpLocation struct {
 	path, text string
 	line       int
@@ -100,14 +95,10 @@ func (m *model) sourceLineJump(number int) {
 		if r.path != path || r.offset != 0 {
 			continue
 		}
-		fields := strings.Fields(r.gutter)
-		if len(fields) == 0 {
+		if r.numberWidth == 0 || (r.kind != '+' && r.kind != '-' && r.kind != 'd' && r.kind != ' ') {
 			continue
 		}
-		line, err := strconv.Atoi(fields[0])
-		if err != nil {
-			continue
-		}
+		line := r.sourceLine
 		d := max(line-number, number-line)
 		if d < distance || (d == distance && best >= 0 && m.rows[best].kind == '-' && r.kind != '-') {
 			best, distance = i, d

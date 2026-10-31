@@ -24,7 +24,6 @@ type row struct {
 	offset       int
 	target       int
 	sourceLine   int
-	gutter       string
 	text         string
 	kind         byte
 	deletedLines int
@@ -1564,10 +1563,11 @@ func (m model) lineDistance(index int) int {
 }
 
 func (m model) renderNumberedDiffRow(r row, index int) string {
+	gutter := rowGutter(r)
 	width := m.relativeGutterWidth()
 	if width > 0 {
-		if r.gutter != "" {
-			width = max(width, len(r.gutter)-3)
+		if gutter != "" {
+			width = max(width, len(gutter)-3)
 		} else {
 			// Line up headers and separators with the line numbers.
 			width = max(width, r.numberWidth)
@@ -1580,27 +1580,48 @@ func (m model) renderNumberedDiffRow(r row, index int) string {
 			}
 			number = fmt.Sprintf("%*d", width, value)
 		}
-		if r.gutter != "" {
-			r.gutter = number + r.gutter[len(r.gutter)-3:]
+		if gutter != "" {
+			gutter = number + gutter[len(gutter)-3:]
 		} else {
-			r.gutter = number + " "
+			gutter = number + " "
 		}
 	}
-	return m.renderDiffRow(r, index >= 0 && index == m.pos)
+	return m.renderDiffRowWithGutter(r, index >= 0 && index == m.pos, gutter)
 }
 
 func (m model) renderDiffRow(r row, active bool) string {
+	return m.renderDiffRowWithGutter(r, active, rowGutter(r))
+}
+
+func rowGutter(r row) string {
+	if r.numberWidth == 0 {
+		return ""
+	}
+	kind := r.kind
+	if kind == 'd' {
+		kind = '-'
+	}
+	if kind != '+' && kind != '-' && kind != ' ' {
+		return ""
+	}
+	if r.offset > 0 {
+		return strings.Repeat(" ", r.numberWidth+3)
+	}
+	return fmt.Sprintf("%*d %c ", r.numberWidth, r.sourceLine, kind)
+}
+
+func (m model) renderDiffRowWithGutter(r row, active bool, gutter string) string {
 	margin := diffMargin(m.width)
 	text := r.text
 	contentWidth := max(0, m.width-margin)
 	if r.kind == 'f' || r.kind == 'F' {
 		text = fit(text, contentWidth)
 	} else if !m.wrap {
-		text = sliceWidth(text, m.horizontal, max(0, contentWidth-stringWidth(r.gutter)))
+		text = sliceWidth(text, m.horizontal, max(0, contentWidth-stringWidth(gutter)))
 	} else {
-		text = fit(text, max(0, contentWidth-stringWidth(r.gutter)))
+		text = fit(text, max(0, contentWidth-stringWidth(gutter)))
 	}
-	text = fit(r.gutter+text, contentWidth)
+	text = fit(gutter+text, contentWidth)
 	query := m.activeSearch()
 	color := ""
 	switch r.kind {
@@ -1620,7 +1641,7 @@ func (m model) renderDiffRow(r row, active bool) string {
 			color = renameHeaderLight
 		}
 	}
-	if (r.kind == 'f' || r.kind == 'F') && len(r.inline) > 0 && strings.HasPrefix(text, r.gutter) {
+	if (r.kind == 'f' || r.kind == 'F') && len(r.inline) > 0 && strings.HasPrefix(text, gutter) {
 		highlight := "\x1b[48;2;100;38;43m"
 		if r.renameAdded {
 			highlight = "\x1b[48;2;42;83;52m"
@@ -1631,13 +1652,13 @@ func (m model) renderDiffRow(r row, active bool) string {
 				highlight = "\x1b[48;2;175;220;181m"
 			}
 		}
-		text = color + r.gutter + renderSyntaxWithHighlight(text[len(r.gutter):], nil, r.inline, 0, query, color, m.lightTheme, highlight) + "\x1b[0m"
+		text = color + gutter + renderSyntaxWithHighlight(text[len(gutter):], nil, r.inline, 0, query, color, m.lightTheme, highlight) + "\x1b[0m"
 		color = ""
-	} else if (r.syntax != nil || r.kind == '+' || r.kind == '-' || r.kind == 'd') && strings.HasPrefix(text, r.gutter) {
-		visible := text[len(r.gutter):]
+	} else if (r.syntax != nil || r.kind == '+' || r.kind == '-' || r.kind == 'd') && strings.HasPrefix(text, gutter) {
+		visible := text[len(gutter):]
 		start := 0
 		if !m.wrap {
-			start = sliceStart(r.text, m.horizontal, max(0, contentWidth-stringWidth(r.gutter)))
+			start = sliceStart(r.text, m.horizontal, max(0, contentWidth-stringWidth(gutter)))
 		}
 		background := ""
 		switch r.kind {
@@ -1654,12 +1675,12 @@ func (m model) renderDiffRow(r row, active bool) string {
 		}
 		padding := ""
 		if background != "" {
-			padding = strings.Repeat(" ", max(0, contentWidth-stringWidth(r.gutter+visible)))
+			padding = strings.Repeat(" ", max(0, contentWidth-stringWidth(gutter+visible)))
 		}
-		text = background + r.gutter + renderSyntax(visible, r.syntax, r.inline, start, query, background, m.lightTheme) + padding + "\x1b[0m"
+		text = background + gutter + renderSyntax(visible, r.syntax, r.inline, start, query, background, m.lightTheme) + padding + "\x1b[0m"
 		color = ""
-	} else if query != "" && strings.HasPrefix(text, r.gutter) {
-		text = r.gutter + highlightMatches(text[len(r.gutter):], query)
+	} else if query != "" && strings.HasPrefix(text, gutter) {
+		text = gutter + highlightMatches(text[len(gutter):], query)
 	}
 	if color != "" {
 		text = color + text + "\x1b[0m"
