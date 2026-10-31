@@ -7,7 +7,7 @@ Build with `go build -o diffy .`. Go and Git must be installed. The initial targ
 | Key | Action |
 | --- | --- |
 | `j` / `k` | Scroll one line |
-| `}` / `{` | Jump to the next / previous paragraph boundary |
+| `}` / `{` | Jump to the next / previous paragraph boundary, or five commits in history |
 | `J` / `K` | Jump to the next / previous file |
 | `tab` | Switch unstaged / staged view |
 | `space` | Stage / unstage the current whole file |
@@ -24,4 +24,4 @@ The active line is marked with `▸`; staging applies to the file containing it.
 
 Commits include only staged changes if any are staged. Otherwise, diffy stages all non-ignored changes, including untracked files, before committing. If the commit fails, the automatically staged changes remain staged. After a successful commit, diffy opens history with the new commit selected.
 
-In diffs, paragraph boundaries are blank lines, file headers, and hunk separators. In history, `j` / `k` or `}` / `{` select commits, `/` searches author name or email, message, and hash, and Enter opens a read-only diff. Press `Esc` or `q` to go back. Addition and deletion counts omit binary files, which are counted separately. Merge commit counts and diffs are relative to their first parent.
+In diffs, paragraph boundaries are blank lines, file headers, and hunk separators. In history, `j` / `k` select commits, `}` / `{` jump five commits, `/` searches author name or email, message, and hash, and Enter opens a read-only diff. Press `Esc` or `q` to go back. Addition and deletion counts omit binary files, which are counted separately. Merge commit counts and diffs are relative to their first parent.

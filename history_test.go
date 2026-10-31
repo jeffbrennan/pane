@@ -178,13 +178,18 @@ func TestParagraphHistoryAndCommitJumps(t *testing.T) {
 	m := model{screen: "history", history: historyState{commits: make([]commitInfo, 7)}}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("}")})
 	m = updated.(model)
-	if m.history.selected != 1 {
+	if m.history.selected != 5 {
 		t.Fatalf("history jump: %d", m.history.selected)
 	}
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("}")})
 	m = updated.(model)
-	if m.history.selected != 2 {
+	if m.history.selected != 6 {
 		t.Fatalf("history end: %d", m.history.selected)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("{")})
+	m = updated.(model)
+	if m.history.selected != 1 {
+		t.Fatalf("history jump back: %d", m.history.selected)
 	}
 	m.screen = "commit"
 	m.history.rows = []row{{text: "first"}, {text: ""}, {text: "second"}}

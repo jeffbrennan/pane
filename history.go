@@ -99,9 +99,9 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "k", "up":
 		m.history.selected = max(0, m.history.selected-1)
 	case "}":
-		m.history.selected = min(m.history.selected+1, max(0, len(matches)-1))
+		m.history.selected = min(m.history.selected+5, max(0, len(matches)-1))
 	case "{":
-		m.history.selected = max(0, m.history.selected-1)
+		m.history.selected = max(0, m.history.selected-5)
 	case "enter":
 		if len(matches) == 0 || m.history.loading {
 			break
