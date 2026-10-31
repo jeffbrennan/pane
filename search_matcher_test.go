@@ -17,3 +17,23 @@ func TestSearchMatcherMatchesOriginalSemantics(t *testing.T) {
 		}
 	}
 }
+
+func TestSearchMissNarrowingInvalidatesForChangedRows(t *testing.T) {
+	m := model{height: 10, rows: []row{{text: "other"}, {text: "one"}}}
+	m.startSearch()
+	m.search.draft = "missing"
+	m.updateSearchDraft()
+	if m.search.missQuery != "missing" {
+		t.Fatal("miss was not remembered")
+	}
+	m.search.draft = "missingx"
+	m.updateSearchDraft()
+	if m.search.missQuery != "missing" {
+		t.Fatal("extension should reuse the miss")
+	}
+	m.rows = []row{{text: "other"}, {text: "missingx"}}
+	m.updateSearchDraft()
+	if m.pos != 1 || m.search.missQuery != "" {
+		t.Fatal("changed rows must be searched again")
+	}
+}

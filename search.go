@@ -11,6 +11,8 @@ type searchState struct {
 	origin, originTop         int
 	direction, draftDirection int
 	cursor                    int
+	missQuery                 string
+	missRows                  []row
 }
 
 // searchFold lowercases s unless the query contains an uppercase letter
@@ -100,6 +102,7 @@ func (m *model) startSearch() {
 func (m *model) startSearchDirection(direction int) {
 	m.modal = "search"
 	m.search.draft = ""
+	m.search.missQuery, m.search.missRows = "", nil
 	m.search.cursor = 0
 	m.search.draftDirection = direction
 	m.search.origin, m.search.originTop = m.pos, m.viewTop
@@ -141,6 +144,11 @@ func (m *model) showMatch(index int) {
 func (m *model) updateSearchDraft() {
 	m.pos, m.viewTop = min(m.search.origin, max(0, len(m.rows)-1)), m.search.originTop
 	if m.search.draft == "" || len(m.rows) == 0 {
+		m.search.missQuery, m.search.missRows = "", nil
+		return
+	}
+	if m.search.missQuery != "" && strings.HasPrefix(m.search.draft, m.search.missQuery) &&
+		len(m.search.missRows) == len(m.rows) && &m.search.missRows[0] == &m.rows[0] {
 		return
 	}
 	direction := m.search.draftDirection
@@ -148,7 +156,10 @@ func (m *model) updateSearchDraft() {
 		direction = 1
 	}
 	if index, _ := m.findMatch(m.search.draft, m.pos-direction, direction); index >= 0 {
+		m.search.missQuery, m.search.missRows = "", nil
 		m.showMatch(index)
+	} else {
+		m.search.missQuery, m.search.missRows = m.search.draft, m.rows
 	}
 }
 
@@ -193,9 +204,11 @@ func (m *model) handleSearchKey(key string, runes []rune) {
 	switch key {
 	case "esc", "ctrl+c":
 		m.modal = ""
+		m.search.missQuery, m.search.missRows = "", nil
 		m.pos, m.viewTop = min(m.search.origin, max(0, len(m.rows)-1)), m.search.originTop
 	case "enter":
 		m.modal = ""
+		m.search.missQuery, m.search.missRows = "", nil
 		if m.search.draft != "" {
 			m.search.query = m.search.draft
 			m.search.direction = m.search.draftDirection
