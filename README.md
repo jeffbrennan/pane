@@ -6,6 +6,8 @@ If the working tree and index are clean at startup, pane opens commit history. O
 
 Build with `go build -o pane .`. Go and Git must be installed. The initial target is macOS.
 
+For development, `just b` builds and runs pane in the current repository.
+
 | Key | Action |
 | --- | --- |
 | `j` / `k` | Scroll one line |

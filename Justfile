@@ -1,3 +1,7 @@
+b:
+    go build -o pane .
+    ./pane
+
 fmt:
     gofmt -w *.go
 
