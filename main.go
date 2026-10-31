@@ -110,13 +110,11 @@ type model struct {
 	discard               discardRequest
 	stageCursor           *stagingCursor
 	sequence              sequenceState
+	base                  baseState
+	contextBase           bool
 }
 
 func main() {
-	if len(os.Args) > 2 {
-		fmt.Fprintln(os.Stderr, "usage: pane [commit-or-range]")
-		os.Exit(1)
-	}
 	repo, err := openRepository()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -164,11 +162,32 @@ func main() {
 }
 
 func initialModel(repo repository, args []string) (model, error) {
-	if len(args) > 1 {
-		return model{}, fmt.Errorf("usage: pane [commit-or-range]")
+	if len(args) > 2 || (len(args) == 2 && args[0] != "--base" && args[0] != "-b") || (len(args) == 1 && (args[0] == "--base" || args[0] == "-b")) {
+		return model{}, fmt.Errorf("usage: pane [commit-or-range | --base <revision>]")
 	}
 	m := model{repo: repo, wrap: true, loading: true, startup: true}
 	if len(args) == 0 {
+		return m, nil
+	}
+	base := ""
+	if len(args) == 2 {
+		base = args[1]
+		if base == "" || strings.HasPrefix(base, "-") {
+			return model{}, fmt.Errorf("invalid base %q", base)
+		}
+	} else if strings.HasSuffix(args[0], "...") && !strings.Contains(strings.TrimSuffix(args[0], "..."), "..") {
+		base = strings.TrimSuffix(args[0], "...")
+		if base == "" {
+			return model{}, fmt.Errorf("base revision cannot be empty")
+		}
+	}
+	if base != "" {
+		hash, err := repo.mergeBase(base)
+		if err != nil {
+			return model{}, err
+		}
+		m.screen, m.base = "base", baseState{revision: base, hash: hash}
+		m.history.directCommit = true
 		return m, nil
 	}
 	if strings.Contains(args[0], "..") {
@@ -277,6 +296,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshCache = msg.cache
 		m.whitespaceRefreshing = false
 		m.restoreStagingCursor()
+		if m.screen == "base" {
+			return m.refreshBase(false)
+		}
 	case loaded:
 		m.loading = false
 		if msg.generation != m.generation {
@@ -289,7 +311,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshCache = msg.cache
 		m.whitespaceRefreshing = false
 		headChanged := m.snapshot.branch.available && msg.snapshot.branch.available && m.snapshot.branch.head != msg.snapshot.branch.head
-		if !m.snapshot.equal(msg.snapshot) {
+		changed := !m.snapshot.equal(msg.snapshot)
+		if changed {
 			m.snapshot = msg.snapshot
 			m.rebuild()
 		}
@@ -309,6 +332,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(msg.snapshot.unstaged) == 0 && len(msg.snapshot.staged) == 0 && m.screen == "" && m.modal == "" {
 				return m.openHistory()
 			}
+		}
+		if m.screen == "base" {
+			return m.refreshBase(changed)
+		}
+	case baseLoaded:
+		if m.screen != "base" || msg.request != m.base.request {
+			break
+		}
+		m.base.loading = false
+		if m.base.dirty {
+			m.base.dirty = false
+			return m.refreshBase(true)
+		}
+		if msg.err != nil {
+			m.flash = "Base review: " + msg.err.Error()
+			break
+		}
+		if msg.changed {
+			m.base.hash, m.base.initialized = msg.hash, true
+			m.history.changes = msg.changes
+			m.contextFiles = nil
+			m.rebuildCommit()
 		}
 	case completed:
 		m.busy = false
@@ -498,16 +543,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.modal != "" {
 			return m.handleModal(msg)
 		}
-		if msg.String() == "W" && m.pending == "" && (m.screen == "" || m.screen == "commit" || m.screen == "sequence") {
+		if msg.String() == "W" && m.pending == "" && (m.screen == "" || m.screen == "commit" || m.screen == "sequence" || m.screen == "base") {
 			return m.toggleWhitespace()
 		}
-		if msg.String() == "B" && m.pending == "" && (m.screen == "" || m.screen == "commit" || m.screen == "sequence") {
+		if msg.String() == "B" && m.pending == "" && (m.screen == "" || m.screen == "commit" || m.screen == "sequence" || m.screen == "base") {
 			m.shortPaths = !m.shortPaths
 			m.flash = "Full paths"
 			if m.shortPaths {
 				m.flash = "Short paths"
 			}
-			if m.screen == "commit" {
+			if m.screen == "commit" || m.screen == "base" {
 				m.rebuildCommit()
 			} else {
 				m.rebuild()
@@ -682,7 +727,7 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.pickerReturn = true
 			m.pickerBackToHistory = false
 		} else if m.modal == "" && m.pickerBackToHistory {
-			if m.screen == "commit" {
+			if m.screen == "commit" || m.screen == "base" {
 				return m.returnToHistory()
 			}
 			if m.screen == "sequence" {
@@ -995,7 +1040,7 @@ func (m model) View() string {
 	if m.screen == "history" {
 		return m.historyView()
 	}
-	if m.screen == "commit" {
+	if m.screen == "commit" || m.screen == "base" {
 		return m.commitView()
 	}
 	if m.screen == "sequence" {

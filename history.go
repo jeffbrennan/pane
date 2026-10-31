@@ -190,7 +190,7 @@ func (m model) filteredHistory() []commitInfo {
 }
 
 func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.screen == "commit" {
+	if m.screen == "commit" || m.screen == "base" {
 		return m.handleCommitKey(key)
 	}
 	if m.history.searching {
@@ -369,7 +369,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 // inDiff applies f to the diff currently on screen: the working tree, or the
 // commit being viewed, whose diff state lives in m.history.
 func (m model) inDiff(f func(*model)) model {
-	if m.screen != "commit" {
+	if m.screen != "commit" && m.screen != "base" {
 		f(&m)
 		return m
 	}
@@ -400,6 +400,9 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.flash = opened.flash
 		return m, cmd
 	case "y":
+		if m.screen == "base" {
+			return m, copyCmd(m.base.hash, shortHash(m.base.hash))
+		}
 		return m, copyCmd(m.history.current.hash, shortHash(m.history.current.hash))
 	}
 	if key.String() == "esc" || key.String() == "q" {
@@ -453,6 +456,9 @@ func (m model) commitModel() model {
 	view.screen = ""
 	view.relativeLines = true
 	view.contextCommit = m.history.current.hash
+	if m.screen == "base" {
+		view.contextCommit, view.contextBase = m.base.hash, true
+	}
 	view.jumps, view.jumpIndex = m.history.jumps, m.history.jumpIndex
 	view.snapshot = snapshot{unstaged: m.history.changes}
 	view.expandedDeleted = m.history.expandedDeleted
@@ -460,6 +466,10 @@ func (m model) commitModel() model {
 	view.rows, view.pos, view.horizontal, view.viewTop = m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop
 	view.viewTitle = m.accent() + shortHash(m.history.current.hash) + styleReset + "  " + clean(m.history.current.subject)
 	view.viewBadge = styleDim + "read-only" + styleReset
+	if m.screen == "base" {
+		view.viewTitle = clean(m.base.revision) + "…working tree"
+		view.viewBadge = styleDim + shortHash(m.base.hash) + " · read-only" + styleReset
+	}
 	view.viewHints = keyHints("esc", "back", "?", "help")
 	view.message = ""
 	if m.history.loading && m.history.commitLoadingVisible {
@@ -469,7 +479,7 @@ func (m model) commitModel() model {
 }
 
 func (m *model) rebuildCommit() {
-	if m.screen != "commit" {
+	if m.screen != "commit" && m.screen != "base" {
 		return
 	}
 	view := m.commitModel()

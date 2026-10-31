@@ -9,6 +9,7 @@ import (
 type contextKey struct {
 	path, commit string
 	staged       bool
+	base         bool
 }
 
 type contextFile struct {
@@ -39,7 +40,7 @@ func (m model) foldContextFiles(rows []row) []row {
 	collapsed := false
 	for _, r := range rows {
 		if r.kind == 'f' {
-			collapsed = m.collapsedFiles[contextKey{path: r.path, commit: m.contextCommit, staged: m.staged}]
+			collapsed = m.collapsedFiles[contextKey{path: r.path, commit: m.contextCommit, staged: m.staged, base: m.contextBase}]
 		}
 		if !collapsed || r.kind == 'f' || r.kind == 'F' || r.kind == 's' {
 			folded = append(folded, r)
@@ -70,7 +71,7 @@ func (m model) localContextRows(rows []row, changes []change) []row {
 		}
 		path := rows[start].path
 		c := byPath[path]
-		file, ok := m.contextFiles[contextKey{path: path, commit: m.contextCommit, staged: m.staged}]
+		file, ok := m.contextFiles[contextKey{path: path, commit: m.contextCommit, staged: m.staged, base: m.contextBase}]
 		if !ok || file.base != c.diff || file.diff == "" || len(file.ranges) == 0 {
 			result = append(result, rows[start:end]...)
 			start = end
@@ -119,14 +120,14 @@ func (m model) localContextRows(rows []row, changes []change) []row {
 func (m model) changeContext(key string) (tea.Model, tea.Cmd) {
 	m.count = 0
 	view := m
-	if m.screen == "commit" {
+	if m.screen == "commit" || m.screen == "base" {
 		view = m.commitModel()
 	}
 	if !view.onDiffFile() {
 		return m, nil
 	}
 	path := view.rows[view.pos].path
-	fileKey := contextKey{path: path, commit: view.contextCommit, staged: view.staged}
+	fileKey := contextKey{path: path, commit: view.contextCommit, staged: view.staged, base: view.contextBase}
 	selected := view.rows[view.pos]
 	if (selected.kind == 'f' || selected.kind == 'F') && key == "h" {
 		delete(m.contextFiles, fileKey)
@@ -231,7 +232,9 @@ func (r repository) fullContext(key contextKey, base, oldPath string) (string, e
 	}
 	args := append([]string{"diff"}, r.diffOptions()...)
 	args = append(args, "--unified=1000000")
-	if key.commit != "" {
+	if key.base {
+		args = append(args, key.commit)
+	} else if key.commit != "" {
 		args = append([]string{"show", "--first-parent", "--format="}, r.diffOptions()...)
 		args = append(args, "--unified=1000000", key.commit)
 	} else if key.staged {
@@ -265,7 +268,7 @@ func (m model) applyContext(msg contextLoaded) model {
 	file.request = 0
 	m.contextFiles[msg.key] = file
 	m.flash = ""
-	if (m.screen == "commit" && m.history.current.hash == msg.key.commit) || (m.screen == "" && msg.key.commit == "" && m.staged == msg.key.staged) {
+	if (m.screen == "base" && msg.key.base && m.base.hash == msg.key.commit) || (m.screen == "commit" && !msg.key.base && m.history.current.hash == msg.key.commit) || (m.screen == "" && msg.key.commit == "" && m.staged == msg.key.staged) {
 		return m.rebuildContext()
 	}
 	return m

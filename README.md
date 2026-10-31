@@ -10,6 +10,8 @@ Run `pane <commit>` to open a commit's read-only diff directly. A full or abbrev
 
 Run `pane <start>..<end>` for a continuous review of a Git commit range, for example `pane HEAD~3..HEAD`. Git's usual range semantics apply: the start is excluded and the end is included. Symmetric ranges such as `main...feature` are also supported.
 
+Run `pane --base main`, `pane -b main`, or `pane main...` for one read-only review from the merge base of `main` and `HEAD` to the working tree. It includes committed, staged, unstaged, and untracked changes, and refreshes as the working tree changes. Press `Esc` or `q` to return to history.
+
 Pipe commit lines into pane for a continuous read-only review, for example `git log --oneline -n 10 | pane`. Commits appear in input order with a pinned commit heading and file header. The first field of each nonempty line must be a commit hash. Pane loads the first and last commits first, then fills in the rest in the background; invalid hashes are shown in place. Search covers the diffs loaded so far. The file picker shows files in the commit containing the active line. Deleted files are expanded, and context expansion is not available in this view; normal diff navigation works across commits. Press `Esc` or `q` to return to history.
 
 Install with `go install github.com/jeffbrennan/pane@latest`, or run `go install .` from a checkout; either places `pane` in `$(go env GOPATH)/bin`, which must be on your `PATH`. Go and Git must be installed. The initial target is macOS.

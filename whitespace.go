@@ -17,6 +17,13 @@ func (m model) toggleWhitespace() (tea.Model, tea.Cmd) {
 	m, refreshCmd = m.refresh()
 	commands := []tea.Cmd{refreshCmd}
 	switch m.screen {
+	case "base":
+		m.base.request++
+		m.base.loading = false
+		m.base.dirty = false
+		var cmd tea.Cmd
+		m, cmd = m.refreshBase(true)
+		commands = append(commands, cmd)
 	case "commit":
 		m.history.request++
 		m.history.loading = true
