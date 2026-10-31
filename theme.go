@@ -16,6 +16,11 @@ type themeTracking struct {
 
 type terminalBackgroundChanged bool
 
+const (
+	darkAddedBackground   = "\x1b[48;2;30;55;40m"
+	darkRemovedBackground = "\x1b[48;2;65;37;41m"
+)
+
 func lightBackgroundResponse(response string) (bool, bool) {
 	start := strings.Index(response, "\x1b]11;rgb:")
 	if start < 0 {

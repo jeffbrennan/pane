@@ -1049,12 +1049,12 @@ func (m model) renderDiffRow(r row, active bool) string {
 		background := ""
 		switch r.kind {
 		case '+':
-			background = "\x1b[48;2;34;40;35m"
+			background = darkAddedBackground
 			if m.lightTheme {
 				background = "\x1b[48;2;221;242;224m"
 			}
 		case '-', 'd':
-			background = "\x1b[48;2;43;34;36m"
+			background = darkRemovedBackground
 			if m.lightTheme {
 				background = "\x1b[48;2;250;225;225m"
 			}

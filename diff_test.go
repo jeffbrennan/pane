@@ -75,7 +75,7 @@ func TestDeletedFilePresentation(t *testing.T) {
 	}
 
 	modified := buildRows([]change{{path: "x", diff: "diff --git a/x b/x\n@@ -1 +0,0 @@\n-first\n"}}, 80, true)
-	if modified[1].kind != '-' || !strings.Contains(m.renderDiffRow(modified[1], false), "\x1b[48;2;43;34;36m") {
+	if modified[1].kind != '-' || !strings.Contains(m.renderDiffRow(modified[1], false), "\x1b[48;2;65;37;41m") {
 		t.Fatal("ordinary line removals should have a red tint")
 	}
 }

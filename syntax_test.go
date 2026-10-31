@@ -56,12 +56,12 @@ func TestSyntaxDiffBackgrounds(t *testing.T) {
 		background := ""
 		switch r.kind {
 		case '+':
-			background = "\x1b[48;2;34;40;35m"
+			background = "\x1b[48;2;30;55;40m"
 		case '-':
-			background = "\x1b[48;2;43;34;36m"
+			background = "\x1b[48;2;65;37;41m"
 		}
 		if background == "" {
-			if strings.Contains(rendered, "\x1b[48;2;43;34;36m") || strings.Contains(rendered, "\x1b[48;2;34;40;35m") {
+			if strings.Contains(rendered, "\x1b[48;2;65;37;41m") || strings.Contains(rendered, "\x1b[48;2;30;55;40m") {
 				t.Fatalf("context has diff background: %q", rendered)
 			}
 			continue

@@ -256,7 +256,7 @@ func renderSyntax(text string, spans, inline []syntaxSpan, start int, query, bac
 					b.WriteString("\x1b[48;2;175;220;181m")
 				} else if background == "\x1b[48;2;250;225;225m" {
 					b.WriteString("\x1b[48;2;239;182;182m")
-				} else if background == "\x1b[48;2;34;40;35m" {
+				} else if background == darkAddedBackground {
 					b.WriteString("\x1b[48;2;42;83;52m")
 				} else {
 					b.WriteString("\x1b[48;2;100;38;43m")
