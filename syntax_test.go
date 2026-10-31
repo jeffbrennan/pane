@@ -122,11 +122,100 @@ func TestSyntaxWrappingScrollingAndSearch(t *testing.T) {
 
 func TestSyntaxFallbackForMissingContextAndOtherLanguages(t *testing.T) {
 	diff := "@@ -5 +5 @@\n-old\n+new\n"
-	for _, c := range []change{{path: "file.go", diff: diff, syntaxDiff: diff}, {path: "file.py", diff: diff, syntaxDiff: diff}} {
+	for _, c := range []change{{path: "file.go", diff: diff, syntaxDiff: diff}, {path: "file.py", diff: diff, syntaxDiff: diff}, {path: "file.rs", diff: "@@ -0,0 +1 @@\n+fn main() {}\n", syntaxDiff: "@@ -0,0 +1 @@\n+fn main() {}\n"}} {
 		for _, r := range buildRows([]change{c}, 80, true) {
 			if r.syntax != nil {
 				t.Fatalf("unexpected syntax for %s: %#v", c.path, r)
 			}
+		}
+	}
+}
+
+func TestPythonSyntaxTokensAndExtensions(t *testing.T) {
+	diff := "@@ -0,0 +1,3 @@\n+def greet(name):\n+    return \"hello\"\n+    # comment\n"
+	for _, path := range []string{"file.py", "file.pyi", "file.pyw"} {
+		rows := buildRows([]change{{path: path, diff: diff, syntaxDiff: diff}}, 80, true)
+		for _, test := range []struct {
+			row   int
+			text  string
+			color string
+		}{{1, "def", "\x1b[35m"}, {1, "greet", "\x1b[34m"}, {2, "hello", "\x1b[32m"}, {3, "# comment", "\x1b[90m"}} {
+			found := false
+			for _, span := range rows[test.row].syntax {
+				if span.color == test.color && strings.Contains(rows[test.row].text[span.start:span.end], test.text) {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("%s: missing highlighted %q in %#v", path, test.text, rows[test.row].syntax)
+			}
+		}
+	}
+}
+
+func TestPythonMultilineSyntaxAcrossDiffViews(t *testing.T) {
+	r := testRepo(t)
+	prefix := "message = \"\"\"\n" + strings.Repeat("text\n", 8)
+	writeFile(t, r, "file.py", prefix+"old text\n\"\"\"\n")
+	if err := r.stage("file.py", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.action("commit", "-m", "initial"); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, r, "file.py", prefix+"staged text\n\"\"\"\n")
+	if err := r.stage("file.py", false); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, r, "file.py", prefix+"working text\n\"\"\"\n")
+	s, err := r.load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertStringRows(t, s.staged, "old text", "staged text")
+	assertStringRows(t, s.unstaged, "staged text", "working text")
+	if _, err := r.action("commit", "-m", "change"); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := r.action("rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	changes, err := r.commitChanges(hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertStringRows(t, changes, "old text", "staged text")
+}
+
+func TestUntrackedPythonSyntax(t *testing.T) {
+	r := testRepo(t)
+	writeFile(t, r, "new.py", "def example():\n    return 42\n")
+	s, err := r.load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := buildRows(s.unstaged, 80, true)
+	if len(rows) < 2 || len(rows[1].syntax) == 0 || rows[1].syntax[0].color != "\x1b[35m" {
+		t.Fatalf("untracked Python file missing keyword highlighting: %#v", rows)
+	}
+}
+
+func assertStringRows(t *testing.T, changes []change, texts ...string) {
+	t.Helper()
+	rows := buildRows(changes, 80, true)
+	for _, text := range texts {
+		found := false
+		for _, r := range rows {
+			if r.text == text {
+				found = true
+				if len(r.syntax) == 0 || r.syntax[0].color != "\x1b[32m" {
+					t.Errorf("%q not highlighted as string: %#v", text, r.syntax)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("missing row %q", text)
 		}
 	}
 }

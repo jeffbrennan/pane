@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,11 +21,22 @@ type syntaxLine struct {
 	spans []syntaxSpan
 }
 
+func syntaxLexer(path string) chroma.Lexer {
+	switch filepath.Ext(path) {
+	case ".go":
+		return lexers.Get("go")
+	case ".py", ".pyi", ".pyw":
+		return lexers.Get("python")
+	default:
+		return nil
+	}
+}
+
 func (r repository) loadSyntaxDiffs(changes []change, key contextKey) {
 	var wg sync.WaitGroup
 	limit := make(chan struct{}, 8)
 	for i := range changes {
-		if !strings.HasSuffix(changes[i].path, ".go") || changes[i].conflict {
+		if syntaxLexer(changes[i].path) == nil || changes[i].conflict {
 			continue
 		}
 		wg.Add(1)
@@ -43,7 +55,8 @@ func (r repository) loadSyntaxDiffs(changes []change, key contextKey) {
 }
 
 func syntaxLines(path, diff string) (map[int]syntaxLine, map[int]syntaxLine) {
-	if !strings.HasSuffix(path, ".go") || diff == "" {
+	lexer := syntaxLexer(path)
+	if lexer == nil || diff == "" {
 		return nil, nil
 	}
 	var old, new []string
@@ -72,10 +85,10 @@ func syntaxLines(path, diff string) (map[int]syntaxLine, map[int]syntaxLine) {
 			new = append(new, text)
 		}
 	}
-	return tokenizeLines(old), tokenizeLines(new)
+	return tokenizeLines(lexer, old), tokenizeLines(lexer, new)
 }
 
-func tokenizeLines(lines []string) map[int]syntaxLine {
+func tokenizeLines(lexer chroma.Lexer, lines []string) map[int]syntaxLine {
 	result := make(map[int]syntaxLine, len(lines))
 	for i, text := range lines {
 		result[i+1] = syntaxLine{text: text, spans: []syntaxSpan{}}
@@ -83,7 +96,7 @@ func tokenizeLines(lines []string) map[int]syntaxLine {
 	if len(lines) == 0 {
 		return result
 	}
-	iterator, err := lexers.Get("go").Tokenise(nil, strings.Join(lines, "\n")+"\n")
+	iterator, err := lexer.Tokenise(nil, strings.Join(lines, "\n")+"\n")
 	if err != nil {
 		return nil
 	}
