@@ -14,7 +14,7 @@ func TestCommitDialogCenteredAndEditable(t *testing.T) {
 	if len(lines) != 20 || !strings.Contains(lines[6], "┌") || !strings.Contains(view, "Commit changes") || !strings.Contains(view, "a commit") {
 		t.Fatalf("dialog not centered: %q", view)
 	}
-	if !strings.Contains(lines[18], "Nothing staged? All changes will be staged.") {
+	if !strings.Contains(lines[19], "Nothing staged? All changes will be staged.") {
 		t.Fatalf("stage-all help not outside dialog: %q", view)
 	}
 	for _, line := range lines[6:14] {

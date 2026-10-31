@@ -42,6 +42,7 @@ type model struct {
 	modal, input, message string
 	errorText             string
 	errorPos              int
+	helpPos               int
 }
 
 func main() {
@@ -139,6 +140,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "r":
 			return m.refresh()
+		case "?":
+			m.modal = "help"
+			m.helpPos = 0
 		case " ":
 			if !m.busy && len(m.rows) > 0 {
 				path, staged, repo := m.rows[m.pos].path, m.staged, m.repo
@@ -172,6 +176,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.modal == "help" {
+		switch key.String() {
+		case "esc", "?", "q":
+			m.modal = ""
+		case "j", "down":
+			m.helpPos = min(m.helpPos+1, max(0, len(shortcutLines(m.width))-helpVisibleRows(m.height)))
+		case "k", "up":
+			m.helpPos = max(0, m.helpPos-1)
+		}
+		return m, nil
+	}
 	if m.modal == "error" {
 		switch key.String() {
 		case "j", "down":
@@ -354,13 +369,13 @@ func (m model) View() string {
 	if m.staged {
 		mode = "STAGED"
 	}
-	header := " diffy  " + mode + "  [tab: switch]"
+	header := " diffy  " + mode
 	if m.busy {
 		header += "  working…"
 	}
 	var lines []string
 	lines = append(lines, fit(header, m.width))
-	available := max(0, m.height-3)
+	available := max(0, m.height-2)
 	for i := 0; i < available; i++ {
 		index := m.pos + i
 		if index >= len(m.rows) {
@@ -406,15 +421,20 @@ func (m model) View() string {
 	if m.modal == "push" || m.modal == "pull" {
 		status = m.modal + "? [y/enter: confirm, n/esc: cancel]"
 	}
+	if m.modal == "help" {
+		status = "j/k scroll  ?/esc close"
+	}
 	lines = append(lines, fit(clean(strings.ReplaceAll(status, "\n", " | ")), m.width))
-	lines = append(lines, fit("j/k scroll  J/K file  space stage  w wrap  c commit  p/P push/pull  q quit", m.width))
-	if m.modal == "commit" {
+	if m.modal == "commit" || m.modal == "help" {
 		for i := 1; i <= available; i++ {
 			lines[i] = ""
 		}
 	}
 	if m.modal == "commit" && m.width >= 24 && m.height >= 9 {
 		showCommitDialog(lines, m.width, m.input, m.message)
+	}
+	if m.modal == "help" {
+		showHelpDialog(lines, m.width, m.helpPos)
 	}
 	return strings.Join(lines, "\n")
 }
