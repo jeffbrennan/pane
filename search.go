@@ -2,7 +2,10 @@ package main
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"unicode"
 )
 
@@ -31,12 +34,13 @@ func searchMatches(text, query string) bool {
 }
 
 func rowMatches(r row, query string) bool {
-	return newSearchMatcher(query).rowMatches(r)
+	return newSearchMatcher(query).rowMatches(&r)
 }
 
 type searchMatcher struct {
 	needle string
 	fold   bool
+	ascii  bool
 }
 
 func newSearchMatcher(query string) searchMatcher {
@@ -45,7 +49,15 @@ func newSearchMatcher(query string) searchMatcher {
 			return searchMatcher{needle: query}
 		}
 	}
-	return searchMatcher{needle: strings.ToLower(query), fold: true}
+	needle := strings.ToLower(query)
+	ascii := true
+	for i := 0; i < len(needle); i++ {
+		if needle[i] >= 0x80 {
+			ascii = false
+			break
+		}
+	}
+	return searchMatcher{needle: needle, fold: true, ascii: ascii}
 }
 
 func (s searchMatcher) matches(text string) bool {
@@ -56,20 +68,26 @@ func (s searchMatcher) matches(text string) bool {
 		return strings.Contains(text, s.needle)
 	}
 	// Preserve strings.ToLower's Unicode semantics whenever either operand is non-ASCII.
-	for i := 0; i < len(s.needle); i++ {
-		if s.needle[i] >= 0x80 {
-			return strings.Contains(strings.ToLower(text), s.needle)
-		}
+	if !s.ascii {
+		return strings.Contains(strings.ToLower(text), s.needle)
 	}
 	for i := 0; i < len(text); i++ {
-		if text[i] >= 0x80 {
+		c := text[i]
+		if c >= 0x80 {
 			return strings.Contains(strings.ToLower(text), s.needle)
 		}
-	}
-	for i := 0; i+len(s.needle) <= len(text); i++ {
-		j := 0
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		if c != s.needle[0] || len(text)-i < len(s.needle) {
+			continue
+		}
+		j := 1
 		for ; j < len(s.needle); j++ {
 			c := text[i+j]
+			if c >= 0x80 {
+				return strings.Contains(strings.ToLower(text), s.needle)
+			}
 			if c >= 'A' && c <= 'Z' {
 				c += 'a' - 'A'
 			}
@@ -84,7 +102,7 @@ func (s searchMatcher) matches(text string) bool {
 	return false
 }
 
-func (s searchMatcher) rowMatches(r row) bool {
+func (s searchMatcher) rowMatches(r *row) bool {
 	return s.matches(r.text) || (r.kind == 'f' && (s.matches(r.path) || s.matches(r.oldPath)))
 }
 
@@ -118,16 +136,69 @@ func (m model) searchDirection() int {
 // findMatch returns the next row matching query after from in direction,
 // wrapping around the diff, and whether the search wrapped.
 func (m model) findMatch(query string, from, direction int) (int, bool) {
+	if query == "" || len(m.rows) == 0 {
+		return -1, false
+	}
 	matcher := newSearchMatcher(query)
-	for step := 1; step <= len(m.rows); step++ {
+	sequential := len(m.rows)
+	if len(m.rows) >= 100000 && (direction == 1 || direction == -1) && runtime.GOMAXPROCS(0) > 1 {
+		sequential = 2048
+	}
+	for step := 1; step <= sequential; step++ {
 		i := from + direction*step
 		wrapped := i < 0 || i >= len(m.rows)
 		i = ((i % len(m.rows)) + len(m.rows)) % len(m.rows)
-		if matcher.rowMatches(m.rows[i]) {
+		if matcher.rowMatches(&m.rows[i]) {
 			return i, wrapped
 		}
 	}
+	if sequential < len(m.rows) {
+		step := parallelSearch(m.rows, matcher, from, direction, sequential+1)
+		if step <= len(m.rows) {
+			i := from + direction*step
+			return ((i % len(m.rows)) + len(m.rows)) % len(m.rows), i < 0 || i >= len(m.rows)
+		}
+	}
 	return -1, false
+}
+
+func parallelSearch(rows []row, matcher searchMatcher, from, direction, first int) int {
+	workers := min(runtime.GOMAXPROCS(0), 8)
+	remaining := len(rows) - first + 1
+	chunk := (remaining + workers - 1) / workers
+	var best atomic.Int64
+	best.Store(int64(len(rows) + 1))
+	var wg sync.WaitGroup
+	for start := first; start <= len(rows); start += chunk {
+		end := min(len(rows)+1, start+chunk)
+		wg.Add(1)
+		go func(start, end int) {
+			defer wg.Done()
+			index := from + direction*start
+			index = ((index % len(rows)) + len(rows)) % len(rows)
+			for step := start; step < end; step++ {
+				if (step-start)%64 == 0 && int64(step) >= best.Load() {
+					return
+				}
+				if matcher.rowMatches(&rows[index]) {
+					for old := best.Load(); int64(step) < old; old = best.Load() {
+						if best.CompareAndSwap(old, int64(step)) {
+							break
+						}
+					}
+					return
+				}
+				index += direction
+				if index < 0 {
+					index = len(rows) - 1
+				} else if index == len(rows) {
+					index = 0
+				}
+			}
+		}(start, end)
+	}
+	wg.Wait()
+	return int(best.Load())
 }
 
 func (m *model) showMatch(index int) {
@@ -182,8 +253,8 @@ func (m *model) searchJump(direction int) {
 	m.recordJump(before)
 	current, total := 0, 0
 	matcher := newSearchMatcher(query)
-	for i, r := range m.rows {
-		if matcher.rowMatches(r) {
+	for i := range m.rows {
+		if matcher.rowMatches(&m.rows[i]) {
 			total++
 			if i <= index {
 				current = total

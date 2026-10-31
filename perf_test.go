@@ -111,6 +111,10 @@ func TestPerf(t *testing.T) {
 	recordPerf(t, scenario, "rebuild_alloc_bytes", int64(memory.TotalAlloc-beforeAlloc))
 	view := m.commitModel()
 	measurePerf(t, scenario, "view_ns", func() { _ = view.View() })
+	if len(view.rows) > 0 {
+		query := view.rows[0].path
+		measurePerf(t, scenario, "search_first_hit_ns", func() { _, _ = view.findMatch(query, -1, 1) })
+	}
 	measurePerf(t, scenario, "search_miss_ns", func() { _, _ = view.findMatch("unlikelymissingpattern", -1, 1) })
 	measurePerf(t, scenario, "search_smartcase_miss_ns", func() { _, _ = view.findMatch("UnlikelyMissingPattern", -1, 1) })
 	view.startSearch()
