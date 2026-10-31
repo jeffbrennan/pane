@@ -47,6 +47,7 @@ var shortcutSections = []struct {
 		{"h / l", "Fold file / reveal nearby context"},
 		{"e", "Expand / collapse deleted file"},
 		{"w", "Toggle line wrapping"},
+		{"B", "Toggle short file paths"},
 		{"T", "Toggle light / dark colors"},
 	}},
 	{"History", []shortcut{

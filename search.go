@@ -27,6 +27,10 @@ func searchMatches(text, query string) bool {
 	return query != "" && strings.Contains(searchFold(text, query), searchFold(query, query))
 }
 
+func rowMatches(r row, query string) bool {
+	return searchMatches(r.text, query) || (r.kind == 'f' && (searchMatches(r.path, query) || searchMatches(r.oldPath, query)))
+}
+
 func (m model) activeSearch() string {
 	if m.modal == "search" {
 		return m.search.draft
@@ -59,7 +63,7 @@ func (m model) findMatch(query string, from, direction int) (int, bool) {
 		i := from + direction*step
 		wrapped := i < 0 || i >= len(m.rows)
 		i = ((i % len(m.rows)) + len(m.rows)) % len(m.rows)
-		if searchMatches(m.rows[i].text, query) {
+		if rowMatches(m.rows[i], query) {
 			return i, wrapped
 		}
 	}
@@ -110,7 +114,7 @@ func (m *model) searchJump(direction int) {
 	m.recordJump(before)
 	current, total := 0, 0
 	for i, r := range m.rows {
-		if searchMatches(r.text, query) {
+		if rowMatches(r, query) {
 			total++
 			if i <= index {
 				current = total

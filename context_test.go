@@ -237,7 +237,7 @@ func TestContextUsesCorrectGitVersion(t *testing.T) {
 		key  contextKey
 		want string
 	}{{contextKey{path: "file"}, "+working"}, {contextKey{path: "file", staged: true}, "+index"}, {contextKey{path: "file", commit: hash}, "+staged"}} {
-		diff, err := r.fullContext(tt.key, "")
+		diff, err := r.fullContext(tt.key, "", "")
 		if err != nil || !strings.Contains(diff, tt.want) || !strings.Contains(diff, " before\n") {
 			t.Fatalf("context for %#v: %v %q", tt.key, err, diff)
 		}

@@ -16,6 +16,11 @@ type syntaxSpan struct {
 	color      string
 }
 
+const (
+	renameHeaderDark  = "\x1b[1;37;48;5;236m"
+	renameHeaderLight = "\x1b[1;38;2;45;45;45;48;2;222;222;222m"
+)
+
 type syntaxLine struct {
 	text  string
 	spans []syntaxSpan
@@ -94,7 +99,7 @@ func (r repository) loadSyntaxDiffs(changes []change, key contextKey) {
 			defer func() { <-limit; wg.Done() }()
 			fileKey := key
 			fileKey.path = changes[i].path
-			diff, err := r.fullContext(fileKey, changes[i].diff)
+			diff, err := r.fullContext(fileKey, changes[i].diff, changes[i].oldPath)
 			if err == nil && len(diff) <= 2*1024*1024 {
 				changes[i].syntaxDiff = diff
 			}
@@ -256,6 +261,10 @@ func sliceStart(text string, start, width int) int {
 }
 
 func renderSyntax(text string, spans, inline []syntaxSpan, start int, query, background string, light bool) string {
+	return renderSyntaxWithHighlight(text, spans, inline, start, query, background, light, "")
+}
+
+func renderSyntaxWithHighlight(text string, spans, inline []syntaxSpan, start int, query, background string, light bool, highlight string) string {
 	colors := make([]string, len(text))
 	for _, span := range spans {
 		for i := max(0, span.start-start); i < min(len(text), span.end-start); i++ {
@@ -294,7 +303,9 @@ func renderSyntax(text string, spans, inline []syntaxSpan, start int, query, bac
 		if changed[i] != change {
 			change = changed[i]
 			if change {
-				if background == "\x1b[48;2;221;242;224m" {
+				if highlight != "" {
+					b.WriteString(highlight)
+				} else if background == "\x1b[48;2;221;242;224m" {
 					b.WriteString("\x1b[48;2;175;220;181m")
 				} else if background == "\x1b[48;2;250;225;225m" {
 					b.WriteString("\x1b[48;2;239;182;182m")

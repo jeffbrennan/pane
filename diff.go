@@ -29,6 +29,21 @@ func buildRowsExpanded(changes []change, width int, wrap bool, expanded map[stri
 // buildRowsNumbered builds rows whose line numbers are at least gutterWidth
 // wide, so rows rebuilt for one file line up with the rest of the diff.
 func buildRowsNumbered(changes []change, width int, wrap bool, expanded map[string]bool, gutterWidth int) []row {
+	return buildRowsDisplay(changes, width, wrap, expanded, gutterWidth, false)
+}
+
+func displayPath(path string, shortened bool) string {
+	if !shortened {
+		return clean(path)
+	}
+	parts := strings.Split(path, "/")
+	if len(parts) <= 2 {
+		return clean(path)
+	}
+	return "…/" + clean(strings.Join(parts[len(parts)-2:], "/"))
+}
+
+func buildRowsDisplay(changes []change, width int, wrap bool, expanded map[string]bool, gutterWidth int, shortPaths bool) []row {
 	var rows []row
 	// Share one line number width across files so the number column stays
 	// put when moving between them.
@@ -53,11 +68,47 @@ func buildRowsNumbered(changes []change, width int, wrap bool, expanded map[stri
 			}
 		}
 		lines := strings.Split(strings.TrimSuffix(c.diff, "\n"), "\n")
-		header := row{path: c.path, line: -1, text: " " + clean(c.path), kind: 'f', numberWidth: gutterWidth}
+		name := displayPath(c.path, shortPaths)
+		if c.oldPath != "" {
+			name = displayPath(c.oldPath, shortPaths)
+		}
+		header := row{path: c.path, oldPath: c.oldPath, line: -1, text: " " + name, kind: 'f', numberWidth: gutterWidth}
 		if deletedFile && !expanded[c.path] {
 			header.deletedLines = deletedLines
 		}
-		rows = append(rows, header)
+		if c.oldPath == "" {
+			rows = append(rows, header)
+		} else {
+			removed, added := renamePathSpans(c.oldPath, c.path, shortPaths)
+			parts := []struct {
+				prefix, path string
+				spans        []syntaxSpan
+			}{{"  ", displayPath(c.oldPath, shortPaths), removed}, {"→ ", displayPath(c.path, shortPaths), added}}
+			offset := 0
+			for side, item := range parts {
+				text := item.prefix + item.path
+				header.renameAdded = side == 1
+				var spans []syntaxSpan
+				for _, span := range item.spans {
+					spans = append(spans, syntaxSpan{start: span.start + len(item.prefix), end: span.end + len(item.prefix)})
+				}
+				byteOffset := 0
+				for _, part := range wrapLine(text, max(1, width-5)) {
+					header.text, header.offset = " "+part, offset
+					header.inline = clipSyntax(spans, byteOffset, byteOffset+len(part))
+					for i := range header.inline {
+						header.inline[i].start++
+						header.inline[i].end++
+					}
+					if offset > 0 {
+						header.kind = 'F'
+					}
+					rows = append(rows, header)
+					byteOffset += len(part)
+					offset += max(1, runewidth.StringWidth(part))
+				}
+			}
+		}
 		if deletedFile {
 			label := "  Deleted file"
 			if deletedLines > 0 {
@@ -156,6 +207,9 @@ func buildRowsNumbered(changes []change, width int, wrap bool, expanded map[stri
 			hasContent = true
 		}
 		if !hasContent {
+			if c.oldPath != "" && strings.Contains(c.diff, "\nsimilarity index 100%\n") {
+				metadata = append(metadata, "Renamed, no content changes")
+			}
 			for _, text := range metadata {
 				if deletedFile && text == "Deleted empty file" {
 					continue

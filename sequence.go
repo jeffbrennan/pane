@@ -10,16 +10,17 @@ import (
 )
 
 type sequenceState struct {
-	commits    []commitInfo
-	changes    [][]change
-	states     []sequenceLoadState
-	errors     []string
-	rowCache   [][]row
-	cacheWidth int
-	cacheWrap  bool
-	loading    bool
-	request    int
-	endPending bool
+	commits         []commitInfo
+	changes         [][]change
+	states          []sequenceLoadState
+	errors          []string
+	rowCache        [][]row
+	cacheWidth      int
+	cacheWrap       bool
+	cacheShortPaths bool
+	loading         bool
+	request         int
+	endPending      bool
 }
 
 type sequenceLoadState uint8
@@ -114,9 +115,10 @@ func (m *model) rebuildSequence() {
 	}
 	oldPos, oldTop := m.pos, m.viewTop
 	width := m.diffContentWidth()
-	if len(m.sequence.rowCache) != len(m.sequence.commits) || m.sequence.cacheWidth != width || m.sequence.cacheWrap != m.wrap {
+	if len(m.sequence.rowCache) != len(m.sequence.commits) || m.sequence.cacheWidth != width || m.sequence.cacheWrap != m.wrap || m.sequence.cacheShortPaths != m.shortPaths {
 		m.sequence.rowCache = make([][]row, len(m.sequence.commits))
 		m.sequence.cacheWidth, m.sequence.cacheWrap = width, m.wrap
+		m.sequence.cacheShortPaths = m.shortPaths
 	}
 	var rows []row
 	for i := range m.sequence.commits {
@@ -134,7 +136,7 @@ func (m *model) rebuildSequence() {
 			for _, c := range m.sequence.changes[i] {
 				expanded[c.path] = true
 			}
-			files = buildRowsExpanded(m.sequence.changes[i], width, m.wrap, expanded)
+			files = buildRowsDisplay(m.sequence.changes[i], width, m.wrap, expanded, 0, m.shortPaths)
 			if len(files) == 0 {
 				files = append(files, row{kind: '@', text: "  No file changes"})
 			}

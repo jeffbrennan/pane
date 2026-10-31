@@ -62,7 +62,7 @@ func (r repository) historyWithDate(skip, limit int, dateFormat string) ([]commi
 }
 
 func (r repository) historyStats(hashes []string) ([]commitInfo, error) {
-	args := []string{"log", "--no-walk=unsorted", "-z", "--numstat", "--no-renames", "--no-ext-diff", "--no-textconv", "--diff-merges=first-parent", "--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00"}
+	args := []string{"log", "--no-walk=unsorted", "-z", "--numstat", "-M", "--no-ext-diff", "--no-textconv", "--diff-merges=first-parent", "--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00"}
 	args = append(args, hashes...)
 	args = append(args, "--")
 	out, err := r.command(args...)
@@ -106,6 +106,12 @@ func parseHistory(out []byte, statsLoaded bool) ([]commitInfo, error) {
 				c.deleted += deleted
 			}
 			i++
+			if len(parts[2]) == 0 {
+				if i+1 >= len(fields) || len(fields[i]) == 0 || len(fields[i+1]) == 0 {
+					return nil, fmt.Errorf("unexpected Git rename statistics")
+				}
+				i += 2
+			}
 		}
 		commits = append(commits, c)
 	}
@@ -121,25 +127,44 @@ func (r repository) commitChanges(hash string) ([]change, error) {
 }
 
 func (r repository) commitChangesWithoutSyntax(hash string) ([]change, error) {
-	out, err := r.command("show", "--first-parent", "--format=", "--name-only", "--no-renames", "-z", hash, "--")
+	out, err := r.command("show", "--first-parent", "--format=", "--name-status", "-M", "-z", hash, "--")
 	if err != nil {
 		return nil, gitError(out, err)
 	}
-	patch, err := r.command("show", "--first-parent", "--format=", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", "--src-prefix=a/", "--dst-prefix=b/", hash, "--")
+	patch, err := r.command("show", "--first-parent", "--format=", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--src-prefix=a/", "--dst-prefix=b/", hash, "--")
 	if err != nil {
 		return nil, gitError(patch, err)
 	}
 	patches := splitPatch(string(patch))
 	var paths []string
-	for _, pathBytes := range bytes.Split(out, []byte{0}) {
-		if len(pathBytes) > 0 {
-			paths = append(paths, string(pathBytes))
+	oldPaths := make(map[string]string)
+	fields := bytes.Split(out, []byte{0})
+	for i := 0; i < len(fields) && len(fields[i]) > 0; {
+		status := string(fields[i])
+		i++
+		if i >= len(fields) || len(fields[i]) == 0 {
+			return nil, fmt.Errorf("unexpected Git change format")
 		}
+		path := string(fields[i])
+		i++
+		if strings.HasPrefix(status, "R") {
+			if i >= len(fields) || len(fields[i]) == 0 {
+				return nil, fmt.Errorf("unexpected Git rename format")
+			}
+			oldPaths[string(fields[i])] = path
+			path = string(fields[i])
+			i++
+		}
+		paths = append(paths, path)
 	}
 	changes, err := parallelDiffs(paths, func(path string) (string, error) {
 		diff, ok := patches[path]
 		if !ok {
-			out, err := r.command("show", "--first-parent", "--format=", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", hash, "--", path)
+			args := []string{"show", "--first-parent", "--format=", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--src-prefix=a/", "--dst-prefix=b/", hash, "--", path}
+			if oldPaths[path] != "" {
+				args = append(args, oldPaths[path])
+			}
+			out, err := r.command(args...)
 			if err != nil {
 				return "", gitError(out, err)
 			}
@@ -150,5 +175,8 @@ func (r repository) commitChangesWithoutSyntax(hash string) ([]change, error) {
 		}
 		return diff, nil
 	})
+	for i := range changes {
+		changes[i].oldPath = oldPaths[changes[i].path]
+	}
 	return changes, err
 }

@@ -41,7 +41,7 @@ func (m model) foldContextFiles(rows []row) []row {
 		if r.kind == 'f' {
 			collapsed = m.collapsedFiles[contextKey{path: r.path, commit: m.contextCommit, staged: m.staged}]
 		}
-		if !collapsed || r.kind == 'f' || r.kind == 's' {
+		if !collapsed || r.kind == 'f' || r.kind == 'F' || r.kind == 's' {
 			folded = append(folded, r)
 		}
 	}
@@ -87,7 +87,7 @@ func (m model) localContextRows(rows []row, changes []change) []row {
 		if len(rows) > 0 {
 			numberWidth = rows[0].numberWidth
 		}
-		full := buildRowsNumbered([]change{c}, m.diffContentWidth(), m.wrap, m.expandedDeleted, numberWidth)
+		full := buildRowsDisplay([]change{c}, m.diffContentWidth(), m.wrap, m.expandedDeleted, numberWidth, m.shortPaths)
 		var gap *row
 		for _, r := range full {
 			show := r.kind != ' ' || visible[r.target]
@@ -128,24 +128,24 @@ func (m model) changeContext(key string) (tea.Model, tea.Cmd) {
 	path := view.rows[view.pos].path
 	fileKey := contextKey{path: path, commit: view.contextCommit, staged: view.staged}
 	selected := view.rows[view.pos]
-	if selected.kind == 'f' && key == "h" {
+	if (selected.kind == 'f' || selected.kind == 'F') && key == "h" {
 		delete(m.contextFiles, fileKey)
 		if m.collapsedFiles == nil {
 			m.collapsedFiles = make(map[contextKey]bool)
 		}
 		m.collapsedFiles[fileKey] = true
 		m = m.inDiff(func(view *model) {
-			if view.rows[view.pos].kind != 'f' {
+			if view.rows[view.pos].kind != 'f' && view.rows[view.pos].kind != 'F' {
 				view.pos = max(0, view.rows[view.pos].headerIndex-1)
 			}
 		})
 		return m.rebuildContext(), nil
 	}
-	if selected.kind == 'f' && m.collapsedFiles[fileKey] {
+	if (selected.kind == 'f' || selected.kind == 'F') && m.collapsedFiles[fileKey] {
 		delete(m.collapsedFiles, fileKey)
 		return m.rebuildContext(), nil
 	}
-	if selected.kind == 'f' {
+	if selected.kind == 'f' || selected.kind == 'F' {
 		return m, nil
 	}
 	if key == "h" {
@@ -218,24 +218,27 @@ func (m model) changeContext(key string) (tea.Model, tea.Cmd) {
 		m.flash = "Loading file context…"
 		repo := m.repo
 		return m, func() tea.Msg {
-			diff, err := repo.fullContext(fileKey, c.diff)
+			diff, err := repo.fullContext(fileKey, c.diff, c.oldPath)
 			return contextLoaded{key: fileKey, base: c.diff, diff: diff, request: request, err: err}
 		}
 	}
 	return m, nil
 }
 
-func (r repository) fullContext(key contextKey, base string) (string, error) {
+func (r repository) fullContext(key contextKey, base, oldPath string) (string, error) {
 	if strings.Contains(base, "\nnew file mode ") {
 		return base, nil
 	}
-	args := []string{"diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", "--unified=1000000"}
+	args := []string{"diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--unified=1000000"}
 	if key.commit != "" {
-		args = []string{"show", "--first-parent", "--format=", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", "--unified=1000000", key.commit}
+		args = []string{"show", "--first-parent", "--format=", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--unified=1000000", key.commit}
 	} else if key.staged {
 		args = append(args, "--cached")
 	}
 	args = append(args, "--", key.path)
+	if oldPath != "" {
+		args = append(args, oldPath)
+	}
 	out, err := r.command(args...)
 	if err != nil {
 		return "", gitError(out, err)

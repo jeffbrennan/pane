@@ -33,6 +33,7 @@ func (m *model) restorePicker() {
 
 type fileEntry struct {
 	path           string
+	oldPath        string
 	row            int
 	added, deleted int
 }
@@ -45,7 +46,7 @@ func (m model) fileEntries() []fileEntry {
 		}
 		switch {
 		case r.kind == 'f':
-			entries = append(entries, fileEntry{path: r.path, row: i, deleted: r.deletedLines})
+			entries = append(entries, fileEntry{path: r.path, oldPath: r.oldPath, row: i, deleted: r.deletedLines})
 		case len(entries) == 0 || r.offset > 0:
 		case r.kind == '+':
 			entries[len(entries)-1].added++
@@ -76,6 +77,10 @@ func filterFiles(entries []fileEntry, query string) []fileEntry {
 			matches = append(matches, scored{e, 1000 + i})
 		} else if isSubsequence(full, query) {
 			matches = append(matches, scored{e, 2000 + len(full)})
+		} else if old := strings.ToLower(e.oldPath); old != "" && strings.Contains(old, query) {
+			matches = append(matches, scored{e, 1000 + strings.Index(old, query)})
+		} else if old != "" && isSubsequence(old, query) {
+			matches = append(matches, scored{e, 2000 + len(old)})
 		}
 	}
 	slices.SortStableFunc(matches, func(a, b scored) int { return a.score - b.score })

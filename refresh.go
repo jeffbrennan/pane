@@ -17,7 +17,7 @@ type fileFingerprint struct {
 }
 
 type statusEntry struct {
-	path, record                                     string
+	path, oldPath, record                            string
 	staged, unstaged, untracked, conflict, submodule bool
 	fingerprint                                      fileFingerprint
 }
@@ -40,13 +40,14 @@ type refreshCache struct {
 }
 
 func (r repository) status() (branchStatus, []statusEntry, error) {
-	out, err := r.command("status", "--porcelain=v2", "-z", "--branch", "--untracked-files=all", "--no-renames", "--ahead-behind")
+	out, err := r.command("status", "--porcelain=v2", "-z", "--branch", "--untracked-files=all", "--renames", "--ahead-behind")
 	if err != nil {
 		return branchStatus{}, nil, gitError(out, err)
 	}
 	var entries []statusEntry
-	for _, raw := range bytes.Split(out, []byte{0}) {
-		record := string(raw)
+	records := bytes.Split(out, []byte{0})
+	for i := 0; i < len(records); i++ {
+		record := string(records[i])
 		var entry statusEntry
 		switch {
 		case strings.HasPrefix(record, "1 "):
@@ -55,6 +56,13 @@ func (r repository) status() (branchStatus, []statusEntry, error) {
 				continue
 			}
 			entry = statusEntry{path: fields[8], record: record, staged: fields[1][0] != '.', unstaged: fields[1][1] != '.', submodule: fields[2] != "N..."}
+		case strings.HasPrefix(record, "2 "):
+			fields := strings.SplitN(record, " ", 10)
+			if len(fields) != 10 || len(fields[1]) != 2 || i+1 >= len(records) {
+				continue
+			}
+			i++
+			entry = statusEntry{path: fields[9], oldPath: string(records[i]), record: record, staged: fields[1][0] != '.', unstaged: fields[1][1] != '.', submodule: fields[2] != "N..."}
 		case strings.HasPrefix(record, "u "):
 			fields := strings.SplitN(record, " ", 11)
 			if len(fields) != 11 {
@@ -90,7 +98,8 @@ func (r repository) loadCached(previous *refreshCache) (*refreshCache, bool, err
 		previous = nil
 	}
 	next := &refreshCache{branch: branch, changes: make(map[changeKey]cachedChange), snapshot: snapshot{branch: branch}}
-	var staged, unstaged, untracked []string
+	var staged []change
+	var unstaged, untracked []string
 	for _, entry := range entries {
 		for _, isStaged := range []bool{false, true} {
 			if (isStaged && !entry.staged) || (!isStaged && !entry.unstaged) {
@@ -108,7 +117,7 @@ func (r repository) loadCached(previous *refreshCache) (*refreshCache, bool, err
 			case entry.conflict:
 				next.changes[key] = cachedChange{entry: entry, loadedAt: started, change: change{path: entry.path, diff: "Merge conflict: resolve outside pane.", conflict: true}}
 			case isStaged:
-				staged = append(staged, entry.path)
+				staged = append(staged, change{path: entry.path, oldPath: entry.oldPath})
 			case entry.untracked:
 				untracked = append(untracked, entry.path)
 			default:
@@ -117,14 +126,14 @@ func (r repository) loadCached(previous *refreshCache) (*refreshCache, bool, err
 		}
 	}
 	for _, group := range []struct {
-		paths             []string
+		paths             []change
 		staged, untracked bool
-	}{{staged, true, false}, {unstaged, false, false}, {untracked, false, true}} {
+	}{{staged, true, false}, {changesForPaths(unstaged), false, false}, {changesForPaths(untracked), false, true}} {
 		var changes []change
 		if group.untracked {
-			changes, err = parallelDiffs(group.paths, r.untrackedDiff)
+			changes, err = parallelDiffs(untracked, r.untrackedDiff)
 		} else {
-			changes, err = r.diffs(group.paths, group.staged)
+			changes, err = r.diffsForChanges(group.paths, group.staged)
 		}
 		if err != nil {
 			return nil, false, err

@@ -37,8 +37,8 @@ func (m model) startDiscard() (tea.Model, tea.Cmd) {
 			m.flash = "Cannot verify untracked file; discard it outside pane"
 			return m, nil
 		}
-		request := discardRequest{change: c, whole: selected.kind == 'f' || c.untracked}
-		if selected.kind != 'f' {
+		request := discardRequest{change: c, whole: selected.kind == 'f' || selected.kind == 'F' || c.untracked}
+		if selected.kind != 'f' && selected.kind != 'F' {
 			if selected.kind != '+' && selected.kind != '-' && selected.kind != 'd' && selected.kind != ' ' {
 				m.flash = "Select a diff line or file header"
 				return m, nil

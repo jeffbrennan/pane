@@ -14,6 +14,8 @@ import (
 
 type row struct {
 	path         string
+	oldPath      string
+	renameAdded  bool
 	line         int
 	offset       int
 	target       int
@@ -67,6 +69,7 @@ type model struct {
 	jumps                 []jumpLocation
 	jumpIndex             int
 	staged, wrap          bool
+	shortPaths            bool
 	relativeLines         bool
 	lightTheme            bool
 	themeAuto             bool
@@ -476,6 +479,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.modal != "" {
 			return m.handleModal(msg)
 		}
+		if msg.String() == "B" && m.pending == "" && (m.screen == "" || m.screen == "commit" || m.screen == "sequence") {
+			m.shortPaths = !m.shortPaths
+			m.flash = "Full paths"
+			if m.shortPaths {
+				m.flash = "Short paths"
+			}
+			if m.screen == "commit" {
+				m.rebuildCommit()
+			} else {
+				m.rebuild()
+			}
+			return m, nil
+		}
 		if msg.String() == "T" && m.pending == "" && !(m.screen == "history" && m.history.searching) {
 			m.lightTheme = !m.lightTheme
 			m.themeAuto = false
@@ -735,7 +751,7 @@ func (m *model) rebuild() {
 	if m.staged {
 		changes = m.snapshot.staged
 	}
-	m.rows = buildRowsExpanded(changes, m.diffContentWidth(), m.wrap, m.expandedDeleted)
+	m.rows = buildRowsDisplay(changes, m.diffContentWidth(), m.wrap, m.expandedDeleted, 0, m.shortPaths)
 	m.rows = m.localContextRows(m.rows, changes)
 	m.rows = m.foldContextFiles(m.rows)
 	m.pos = 0
@@ -1150,7 +1166,7 @@ func (m model) renderDiffRow(r row, active bool) string {
 	margin := diffMargin(m.width)
 	text := r.text
 	contentWidth := max(0, m.width-margin)
-	if r.kind == 'f' {
+	if r.kind == 'f' || r.kind == 'F' {
 		text = fit(text, contentWidth)
 	} else if !m.wrap {
 		text = sliceWidth(text, m.horizontal, max(0, contentWidth-runewidth.StringWidth(r.gutter)))
@@ -1167,14 +1183,27 @@ func (m model) renderDiffRow(r row, active bool) string {
 		color = "\x1b[31m"
 	case '@':
 		color = "\x1b[36m"
-	case 'f':
+	case 'f', 'F':
 		text += strings.Repeat(" ", max(0, contentWidth-runewidth.StringWidth(text)))
-		color = "\x1b[1;37;48;5;236m"
+		color = renameHeaderDark
 		if m.lightTheme {
-			color = "\x1b[1;38;2;45;45;45;48;2;222;222;222m"
+			color = renameHeaderLight
 		}
 	}
-	if (r.syntax != nil || r.kind == '+' || r.kind == '-' || r.kind == 'd') && strings.HasPrefix(text, r.gutter) {
+	if (r.kind == 'f' || r.kind == 'F') && len(r.inline) > 0 && strings.HasPrefix(text, r.gutter) {
+		highlight := "\x1b[48;2;100;38;43m"
+		if r.renameAdded {
+			highlight = "\x1b[48;2;42;83;52m"
+		}
+		if m.lightTheme {
+			highlight = "\x1b[48;2;239;182;182m"
+			if r.renameAdded {
+				highlight = "\x1b[48;2;175;220;181m"
+			}
+		}
+		text = color + r.gutter + renderSyntaxWithHighlight(text[len(r.gutter):], nil, r.inline, 0, query, color, m.lightTheme, highlight) + "\x1b[0m"
+		color = ""
+	} else if (r.syntax != nil || r.kind == '+' || r.kind == '-' || r.kind == 'd') && strings.HasPrefix(text, r.gutter) {
 		visible := text[len(r.gutter):]
 		start := 0
 		if !m.wrap {

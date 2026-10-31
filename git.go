@@ -1,20 +1,20 @@
 package main
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 )
 
 type change struct {
 	path               string
+	oldPath            string
 	diff               string
 	syntaxDiff         string
 	conflict           bool
@@ -76,67 +76,11 @@ func (r repository) applyPatch(patch string, args ...string) error {
 }
 
 func (r repository) load() (snapshot, error) {
-	out, err := r.command("status", "--porcelain=v2", "-z", "--branch", "--untracked-files=all", "--no-renames", "--ahead-behind")
-	if err != nil {
-		return snapshot{}, gitError(out, err)
-	}
-	result := snapshot{branch: parseBranchStatus(out)}
-	var stagedPaths, unstagedPaths, untrackedPaths []string
-	var unstagedIndexes, untrackedIndexes []int
-	records := bytes.Split(out, []byte{0})
-	for i := 0; i < len(records); i++ {
-		record := string(records[i])
-		switch {
-		case strings.HasPrefix(record, "1 "):
-			fields := strings.SplitN(record, " ", 9)
-			if len(fields) < 9 {
-				continue
-			}
-			status, path := fields[1], fields[8]
-			if status[0] != '.' {
-				stagedPaths = append(stagedPaths, path)
-			}
-			if status[1] != '.' {
-				unstagedPaths = append(unstagedPaths, path)
-				unstagedIndexes = append(unstagedIndexes, len(result.unstaged))
-				result.unstaged = append(result.unstaged, change{path: path})
-			}
-		case strings.HasPrefix(record, "2 "):
-			i++
-		case strings.HasPrefix(record, "u "):
-			if fields := strings.SplitN(record, " ", 11); len(fields) == 11 {
-				result.unstaged = append(result.unstaged, change{path: fields[10], diff: "Merge conflict: resolve outside pane.", conflict: true})
-			}
-		case strings.HasPrefix(record, "? "):
-			untrackedPaths = append(untrackedPaths, record[2:])
-			untrackedIndexes = append(untrackedIndexes, len(result.unstaged))
-			result.unstaged = append(result.unstaged, change{path: record[2:]})
-		}
-	}
-	if result.staged, err = r.diffs(stagedPaths, true); err != nil {
-		return snapshot{}, err
-	}
-	unstaged, err := r.diffs(unstagedPaths, false)
+	cache, _, err := r.loadCached(nil)
 	if err != nil {
 		return snapshot{}, err
 	}
-	untracked, err := parallelDiffs(untrackedPaths, r.untrackedDiff)
-	if err != nil {
-		return snapshot{}, err
-	}
-	for i, c := range unstaged {
-		result.unstaged[unstagedIndexes[i]] = c
-	}
-	for i, c := range untracked {
-		c.untracked = true
-		if strings.Contains(c.diff, "Binary files ") {
-			c.untrackedHash, c.untrackedHashValid = untrackedDigest(filepath.Join(r.root, c.path))
-		}
-		result.unstaged[untrackedIndexes[i]] = c
-	}
-	r.loadSyntaxDiffs(result.unstaged, contextKey{})
-	r.loadSyntaxDiffs(result.staged, contextKey{staged: true})
-	return result, nil
+	return cache.snapshot, nil
 }
 
 func untrackedDigest(path string) ([32]byte, bool) {
@@ -168,26 +112,52 @@ func untrackedDigest(path string) ([32]byte, bool) {
 // diffs loads every path's diff with a single git process, falling back to
 // per-file commands for paths whose patch header Git had to quote.
 func (r repository) diffs(paths []string, staged bool) ([]change, error) {
-	if len(paths) == 0 {
+	return r.diffsForChanges(changesForPaths(paths), staged)
+}
+
+func changesForPaths(paths []string) []change {
+	changes := make([]change, len(paths))
+	for i, path := range paths {
+		changes[i].path = path
+	}
+	return changes
+}
+
+func (r repository) diffsForChanges(input []change, staged bool) ([]change, error) {
+	if len(input) == 0 {
 		return nil, nil
 	}
-	args := []string{"diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", "--src-prefix=a/", "--dst-prefix=b/"}
+	args := []string{"diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--src-prefix=a/", "--dst-prefix=b/"}
 	if staged {
 		args = append(args, "--cached")
 	}
 	args = append(args, "--")
-	args = append(args, paths...)
+	var paths []string
+	byPath := make(map[string]change, len(input))
+	for _, c := range input {
+		paths = append(paths, c.path)
+		byPath[c.path] = c
+		args = append(args, c.path)
+		if c.oldPath != "" {
+			args = append(args, c.oldPath)
+		}
+	}
 	out, err := r.command(args...)
 	if err != nil {
 		return nil, gitError(out, err)
 	}
 	patches := splitPatch(string(out))
-	return parallelDiffs(paths, func(path string) (string, error) {
+	changes, err := parallelDiffs(paths, func(path string) (string, error) {
 		if diff, ok := patches[path]; ok {
 			return diff, nil
 		}
-		return r.diff(path, staged)
+		c := byPath[path]
+		return r.diffPaths(c.path, c.oldPath, staged)
 	})
+	for i := range changes {
+		changes[i].oldPath = input[i].oldPath
+	}
+	return changes, err
 }
 
 // splitPatch divides a multi-file patch at its "diff" headers. Paths that Git
@@ -197,6 +167,20 @@ func splitPatch(patch string) map[string]string {
 	var path string
 	var section strings.Builder
 	flush := func() {
+		for _, line := range strings.Split(section.String(), "\n") {
+			if value, ok := strings.CutPrefix(line, "rename to "); ok {
+				if strings.HasPrefix(value, `"`) {
+					decoded, err := strconv.Unquote(value)
+					if err != nil {
+						path = ""
+						break
+					}
+					value = decoded
+				}
+				path = value
+				break
+			}
+		}
 		if path != "" {
 			patches[path] += section.String()
 		}
@@ -257,11 +241,18 @@ func parallelDiffs(paths []string, load func(string) (string, error)) ([]change,
 }
 
 func (r repository) diff(path string, staged bool) (string, error) {
-	args := []string{"diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames"}
+	return r.diffPaths(path, "", staged)
+}
+
+func (r repository) diffPaths(path, oldPath string, staged bool) (string, error) {
+	args := []string{"diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--src-prefix=a/", "--dst-prefix=b/"}
 	if staged {
 		args = append(args, "--cached")
 	}
 	args = append(args, "--", path)
+	if oldPath != "" {
+		args = append(args, oldPath)
+	}
 	out, err := r.command(args...)
 	if err != nil {
 		return "", gitError(out, err)
@@ -283,14 +274,31 @@ func (r repository) untrackedDiff(path string) (string, error) {
 }
 
 func (r repository) stage(path string, staged bool) error {
+	return r.stageChange(change{path: path}, staged)
+}
+
+func (r repository) stageChange(c change, staged bool) error {
+	paths := []string{c.path}
+	if c.oldPath != "" {
+		if staged {
+			out, err := r.command("ls-files", "-z", "--", c.oldPath)
+			if err != nil {
+				return gitError(out, err)
+			}
+			if len(out) > 0 {
+				return fmt.Errorf("rename source has separate staged changes; unstage it outside pane")
+			}
+		}
+		paths = append(paths, c.oldPath)
+	}
 	var out []byte
 	var err error
 	if !staged {
-		out, err = r.command("add", "-A", "--", path)
+		out, err = r.command(append([]string{"add", "-A", "--"}, paths...)...)
 	} else if _, headErr := r.command("rev-parse", "--verify", "HEAD"); headErr != nil {
-		out, err = r.command("rm", "--cached", "-r", "--ignore-unmatch", "--", path)
+		out, err = r.command(append([]string{"rm", "--cached", "-r", "--ignore-unmatch", "--"}, paths...)...)
 	} else {
-		out, err = r.command("restore", "--staged", "--", path)
+		out, err = r.command(append([]string{"restore", "--staged", "--"}, paths...)...)
 	}
 	if err != nil {
 		return gitError(out, err)

@@ -32,7 +32,7 @@ func (m model) stageSelection(hunk bool) (tea.Model, tea.Cmd) {
 		if c.path != selected.path {
 			continue
 		}
-		whole := !hunk || selected.kind == 'f' || c.untracked || strings.Contains(c.diff, "\ndeleted file mode ")
+		whole := !hunk || selected.kind == 'f' || selected.kind == 'F' || c.untracked || strings.Contains(c.diff, "\ndeleted file mode ")
 		patch := ""
 		if !whole {
 			if selected.kind != '+' && selected.kind != '-' && selected.kind != ' ' {
@@ -50,7 +50,7 @@ func (m model) stageSelection(hunk bool) (tea.Model, tea.Cmd) {
 		repo, staged := m.repo, m.staged
 		return m, func() tea.Msg {
 			if whole {
-				return completed{message: "Updated staging", err: repo.stage(c.path, staged)}
+				return completed{message: "Updated staging", err: repo.stageChange(c, staged)}
 			}
 			err := repo.stageHunk(c, patch, staged)
 			message := "Staged hunk"
@@ -64,12 +64,18 @@ func (m model) stageSelection(hunk bool) (tea.Model, tea.Cmd) {
 }
 
 func (r repository) stageHunk(c change, patch string, staged bool) error {
-	current, err := r.diffs([]string{c.path}, staged)
+	current, err := r.diffsForChanges([]change{c}, staged)
 	if err != nil {
 		return err
 	}
 	if len(current) != 1 || current[0].diff != c.diff {
 		return fmt.Errorf("file changed; refresh and try again")
+	}
+	if c.oldPath != "" {
+		patch, err = renameContentPatch(patch)
+		if err != nil {
+			return err
+		}
 	}
 	args := []string{"--cached"}
 	if staged {
@@ -79,6 +85,28 @@ func (r repository) stageHunk(c change, patch string, staged bool) error {
 		return fmt.Errorf("could not apply hunk; refresh and try again: %w", err)
 	}
 	return nil
+}
+
+func renameContentPatch(patch string) (string, error) {
+	var destination string
+	lines := strings.SplitAfter(patch, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(line, "+++ ") {
+			destination = strings.TrimSuffix(strings.TrimPrefix(line, "+++ "), "\n")
+		}
+		if matchHunkHeader(line) != nil && destination != "" {
+			old := destination
+			if strings.HasPrefix(old, `"b/`) {
+				old = `"a/` + old[3:]
+			} else if strings.HasPrefix(old, "b/") {
+				old = "a/" + old[2:]
+			} else {
+				break
+			}
+			return "--- " + old + "\n+++ " + destination + "\n" + strings.Join(lines[i:], ""), nil
+		}
+	}
+	return "", fmt.Errorf("could not prepare renamed hunk; refresh and try again")
 }
 
 func (m *model) restoreStagingCursor() {
