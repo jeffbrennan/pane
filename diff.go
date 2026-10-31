@@ -137,7 +137,7 @@ func buildRowsExpanded(changes []change, width int, wrap bool, expanded map[stri
 				if syntaxOK && lineSyntax.text == text {
 					spans = clipSyntax(lineSyntax.spans, byteOffset, byteOffset+len(part))
 				}
-				rows = append(rows, row{path: c.path, line: i, offset: offset, target: target, gutter: prefix, text: part, kind: kind, syntax: spans, inline: clipSyntax(inline[i], byteOffset, byteOffset+len(part))})
+				rows = append(rows, row{path: c.path, line: i, offset: offset, target: target, sourceLine: number, gutter: prefix, text: part, kind: kind, syntax: spans, inline: clipSyntax(inline[i], byteOffset, byteOffset+len(part))})
 				byteOffset += len(part)
 				for _, r := range part {
 					offset += runewidth.RuneWidth(r)

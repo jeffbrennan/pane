@@ -105,7 +105,7 @@ func (r repository) commitChanges(hash string) ([]change, error) {
 			paths = append(paths, string(pathBytes))
 		}
 	}
-	return parallelDiffs(paths, func(path string) (string, error) {
+	changes, err := parallelDiffs(paths, func(path string) (string, error) {
 		diff, ok := patches[path]
 		if !ok {
 			out, err := r.command("show", "--first-parent", "--format=", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", hash, "--", path)
@@ -119,4 +119,8 @@ func (r repository) commitChanges(hash string) ([]change, error) {
 		}
 		return diff, nil
 	})
+	if err == nil {
+		r.loadSyntaxDiffs(changes, contextKey{commit: hash})
+	}
+	return changes, err
 }

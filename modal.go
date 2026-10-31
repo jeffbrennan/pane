@@ -20,6 +20,7 @@ var shortcuts = []string{
 	"h / l       Collapse / expand file or nearby context",
 	"tab         Switch staged / unstaged",
 	"space       Stage / unstage file",
+	"d           Discard unstaged hunk / file",
 	"count + motion  Repeat a motion",
 	"count + gg/G  Jump to source line",
 	"gH / gM / gL  Top / middle / bottom of screen",

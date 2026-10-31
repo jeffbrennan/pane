@@ -16,11 +16,14 @@ type row struct {
 	line         int
 	offset       int
 	target       int
+	sourceLine   int
 	gutter       string
 	text         string
 	kind         byte
 	deletedLines int
 	headerIndex  int
+	syntax       []syntaxSpan
+	inline       []syntaxSpan
 }
 
 type loaded struct {
@@ -76,6 +79,7 @@ type model struct {
 	recentCommitRequest   int
 	recentCommitLoading   bool
 	recentCommitError     bool
+	discard               discardRequest
 }
 
 func main() {
@@ -345,6 +349,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.rebuild()
 		case "r":
 			return m.refresh()
+		case "d":
+			return m.startDiscard()
 		case "?":
 			m.modal = "help"
 			m.helpPos = 0
@@ -416,6 +422,21 @@ func (m *model) handleDiffTool(key string) bool {
 }
 
 func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.modal == "discard" {
+		switch key.String() {
+		case "y":
+			request, repo := m.discard, m.repo
+			m.modal = ""
+			m.busy = true
+			m.generation++
+			return m, func() tea.Msg {
+				return completed{message: "Discarded changes", err: repo.discard(request)}
+			}
+		case "n", "esc", "q", "ctrl+c":
+			m.modal = ""
+		}
+		return m, nil
+	}
 	if m.modal == "files" || m.modal == "search" {
 		runes := key.Runes
 		if key.Type == tea.KeySpace {
@@ -673,6 +694,9 @@ func (m model) View() string {
 		lines = append(lines, fit("j/k scroll  enter/esc dismiss", m.width))
 		return strings.Join(lines, "\n")
 	}
+	if m.modal == "discard" {
+		return m.discardView()
+	}
 	if m.screen == "history" {
 		return m.historyView()
 	}
@@ -786,7 +810,26 @@ func (m model) renderDiffRow(r row, active bool) string {
 		text += strings.Repeat(" ", max(0, contentWidth-runewidth.StringWidth(text)))
 		color = "\x1b[1;37;48;5;236m"
 	}
-	if query != "" && strings.HasPrefix(text, r.gutter) {
+	if (r.syntax != nil || r.kind == '+' || r.kind == '-' || r.kind == 'd') && strings.HasPrefix(text, r.gutter) {
+		visible := text[len(r.gutter):]
+		start := 0
+		if !m.wrap {
+			start = sliceStart(r.text, m.horizontal, max(0, contentWidth-runewidth.StringWidth(r.gutter)))
+		}
+		background := ""
+		switch r.kind {
+		case '+':
+			background = "\x1b[48;2;34;40;35m"
+		case '-', 'd':
+			background = "\x1b[48;2;43;34;36m"
+		}
+		padding := ""
+		if background != "" {
+			padding = strings.Repeat(" ", max(0, contentWidth-runewidth.StringWidth(r.gutter+visible)))
+		}
+		text = background + r.gutter + renderSyntax(visible, r.syntax, r.inline, start, query, background) + padding + "\x1b[0m"
+		color = ""
+	} else if query != "" && strings.HasPrefix(text, r.gutter) {
 		text = r.gutter + highlightMatches(text[len(r.gutter):], query)
 	}
 	if color != "" {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -220,7 +221,8 @@ func TestDiffSearch(t *testing.T) {
 	if m.modal != "search" || !strings.Contains(m.rows[m.pos].text, "Value") || !strings.Contains(m.View(), "/val_") {
 		t.Fatalf("incremental search: %#v", m.rows[m.pos])
 	}
-	if !strings.Contains(m.View(), "\x1b[7mVal\x1b[27m") {
+	view := regexp.MustCompile("\\x1b\\[(39|48;2;[0-9;]+)m").ReplaceAllString(m.View(), "")
+	if !strings.Contains(view, "\x1b[7mVal\x1b[27m") {
 		t.Fatalf("missing highlight: %q", m.View())
 	}
 	m = keys(t, m, "enter")

@@ -2,18 +2,25 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 )
 
 type change struct {
-	path     string
-	diff     string
-	conflict bool
+	path               string
+	diff               string
+	syntaxDiff         string
+	conflict           bool
+	untracked          bool
+	untrackedHash      [32]byte
+	untrackedHashValid bool
 }
 
 type snapshot struct {
@@ -100,9 +107,41 @@ func (r repository) load() (snapshot, error) {
 		result.unstaged[unstagedIndexes[i]] = c
 	}
 	for i, c := range untracked {
+		c.untracked = true
+		if strings.Contains(c.diff, "Binary files ") {
+			c.untrackedHash, c.untrackedHashValid = untrackedDigest(filepath.Join(r.root, c.path))
+		}
 		result.unstaged[untrackedIndexes[i]] = c
 	}
+	r.loadSyntaxDiffs(result.unstaged, contextKey{})
+	r.loadSyntaxDiffs(result.staged, contextKey{staged: true})
 	return result, nil
+}
+
+func untrackedDigest(path string) ([32]byte, bool) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return [32]byte{}, false
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(path)
+		return sha256.Sum256([]byte(target)), err == nil
+	}
+	if !info.Mode().IsRegular() {
+		return [32]byte{}, false
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return [32]byte{}, false
+	}
+	defer file.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return [32]byte{}, false
+	}
+	var result [32]byte
+	copy(result[:], hash.Sum(nil))
+	return result, true
 }
 
 // diffs loads every path's diff with a single git process, falling back to
