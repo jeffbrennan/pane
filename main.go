@@ -85,6 +85,7 @@ type model struct {
 	inputNormal           bool
 	inputPending          string
 	amendHash             string
+	commitEditorPath      string
 	errorText             string
 	errorPos              int
 	helpPos               int
@@ -309,6 +310,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case completed:
 		m.busy = false
 		m.activeAction = ""
+		if m.commitEditorPath != "" && msg.commitMessage != "" {
+			if msg.err != nil {
+				msg.err = fmt.Errorf("%w\nMessage retained at %s", msg.err, m.commitEditorPath)
+			} else {
+				os.Remove(m.commitEditorPath)
+			}
+			m.commitEditorPath = ""
+		}
 		if msg.err != nil {
 			m.errorText = msg.err.Error()
 			m.errorPos = 0
@@ -477,6 +486,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.flash = "Editor: " + msg.err.Error()
 		}
 		return m.refresh()
+	case commitEditorClosed:
+		return m.finishCommitEditor(msg)
 	case contextLoaded:
 		return m.applyContext(msg), nil
 	case tea.KeyMsg:
@@ -711,6 +722,9 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.modal == "commit" {
+		if key.String() == "ctrl+g" {
+			return m.openCommitEditor()
+		}
 		if m.inputNormal && key.String() != "enter" {
 			m.handleCommitNormal(key)
 			return m, nil
@@ -721,23 +735,7 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.message = "Commit message cannot be empty"
 				return m, nil
 			}
-			message := m.input + m.inputBody
-			amendHash := m.amendHash
-			m.modal = ""
-			m.busy = true
-			if amendHash != "" {
-				m.activeAction = "amend"
-			}
-			m.generation++
-			repo := m.repo
-			return m, func() tea.Msg {
-				if amendHash != "" {
-					output, err := repo.amendMessage(amendHash, message)
-					return completed{message: output, commitMessage: message, err: err}
-				}
-				output, err := repo.commit(message)
-				return completed{message: output, commitMessage: message, err: err}
-			}
+			return m.submitCommit(m.input + m.inputBody)
 		default:
 			var inserted []rune
 			if key.Type == tea.KeyRunes {

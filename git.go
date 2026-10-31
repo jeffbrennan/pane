@@ -334,7 +334,11 @@ func (r repository) commit(message string) (string, error) {
 			return "", gitError(out, err)
 		}
 	}
-	return r.action("commit", "-m", message)
+	out, err = r.commandInput(strings.NewReader(message), "commit", "--file=-")
+	if err != nil {
+		return "", gitError(out, err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func gitError(out []byte, err error) error {
