@@ -351,3 +351,12 @@ func TestWindowedSyntaxMatchesWholeFile(t *testing.T) {
 		t.Errorf("windowed tokenized %d lines, whole file %d", len(windowNew), len(fullNew))
 	}
 }
+
+func TestSyntaxDiffsStopAtBudget(t *testing.T) {
+	huge := "@@ -0,0 +1 @@\n" + strings.Repeat("+x\n", syntaxBudgetLines)
+	// The first file is over the budget, so neither file asks Git for context.
+	diffs := repository{}.syntaxDiffs([]change{{path: "a.go", diff: huge}, {path: "b.go", diff: "@@ -0,0 +1 @@\n+x\n"}}, contextKey{})
+	if diffs[0] != "" || diffs[1] != "" {
+		t.Fatalf("highlighted past the budget: %q", diffs)
+	}
+}

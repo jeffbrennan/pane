@@ -235,9 +235,17 @@ func (r repository) diffsForChanges(input []change, staged bool) ([]change, erro
 func splitPatch(patch string) map[string]string {
 	patches := map[string]string{}
 	var path string
-	var section strings.Builder
-	flush := func() {
-		for _, line := range strings.Split(section.String(), "\n") {
+	start := 0
+	// Sections are slices of patch, and only their headers are scanned, so
+	// splitting a large patch copies nothing.
+	flush := func(end int) {
+		section := patch[start:end]
+		for rest := section; rest != ""; {
+			line, next, _ := strings.Cut(rest, "\n")
+			rest = next
+			if strings.HasPrefix(line, "@@ ") {
+				break
+			}
 			if value, ok := strings.CutPrefix(line, "rename to "); ok {
 				if strings.HasPrefix(value, `"`) {
 					decoded, err := strconv.Unquote(value)
@@ -252,29 +260,28 @@ func splitPatch(patch string) map[string]string {
 			}
 		}
 		if path != "" {
-			patches[path] += section.String()
+			patches[path] += section
 		}
-		section.Reset()
+		start = end
 	}
-	for len(patch) > 0 {
-		end := strings.IndexByte(patch, '\n') + 1
+	for offset := 0; offset < len(patch); {
+		end := strings.IndexByte(patch[offset:], '\n') + 1
 		if end == 0 {
-			end = len(patch)
+			end = len(patch) - offset
 		}
-		line := patch[:end]
-		patch = patch[end:]
+		line := strings.TrimSuffix(patch[offset:offset+end], "\n")
 		if strings.HasPrefix(line, "diff ") {
-			flush()
-			path = patchPath(strings.TrimSuffix(line, "\n"))
-		} else if submodulePath, _, ok := submoduleLine(strings.TrimSuffix(line, "\n")); ok {
+			flush(offset)
+			path = patchPath(line)
+		} else if submodulePath, _, ok := submoduleLine(line); ok {
 			if path != submodulePath {
-				flush()
+				flush(offset)
 				path = submodulePath
 			}
 		}
-		section.WriteString(line)
+		offset += end
 	}
-	flush()
+	flush(len(patch))
 	return patches
 }
 

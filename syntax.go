@@ -94,15 +94,32 @@ func (r repository) loadSyntaxDiffs(changes []change, key contextKey) {
 	}
 }
 
+// Highlighting stops after this many files or diff lines in one call, so a
+// huge change set does not spawn Git once per file and tokenize for minutes.
+// The file limit keeps the highlighted files, about two cache entries each,
+// within syntaxCacheSize; past it, rebuilds would tokenize on the UI
+// goroutine again.
+const (
+	syntaxBudgetFiles = 200
+	syntaxBudgetLines = 50000
+)
+
 // syntaxDiffs loads the full-context diffs that highlighting tokenizes. It
-// only needs paths, so callers can run it alongside the display diffs.
+// only needs paths, so callers can run it alongside the display diffs. Files
+// past the syntax budget are left plain.
 func (r repository) syntaxDiffs(changes []change, key contextKey) []string {
 	diffs := make([]string, len(changes))
 	var wg sync.WaitGroup
 	limit := make(chan struct{}, 8)
+	files, lines := 0, 0
 	for i := range changes {
 		if syntaxLexer(changes[i].path) == nil || changes[i].conflict {
 			continue
+		}
+		files++
+		lines += strings.Count(changes[i].diff, "\n")
+		if files > syntaxBudgetFiles || lines > syntaxBudgetLines {
+			break
 		}
 		wg.Add(1)
 		limit <- struct{}{}

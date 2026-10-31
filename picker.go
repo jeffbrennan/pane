@@ -20,6 +20,22 @@ type pickerState struct {
 	collapsed    map[string]bool
 	commitScoped bool
 	commitIndex  int
+	cache        *pickerCache
+}
+
+// pickerCache keeps the file list between keystrokes and renders, since
+// collecting it walks every diff row. Model copies share it, and it is
+// collected again when the rows are rebuilt.
+type pickerCache struct {
+	rows    []row
+	entries []fileEntry
+	// total counts the items of the unfiltered, unfolded tree.
+	total int
+}
+
+// cached returns the cache if it was filled from rows.
+func (c *pickerCache) cached(rows []row) bool {
+	return c != nil && c.entries != nil && len(c.rows) == len(rows) && len(rows) > 0 && &c.rows[0] == &rows[0]
 }
 
 func (m *model) restorePicker() {
@@ -29,6 +45,7 @@ func (m *model) restorePicker() {
 	m.picker.pending = ""
 	m.picker.count = 0
 	m.modal = "files"
+	m.picker.cache = &pickerCache{}
 }
 
 type fileEntry struct {
@@ -40,7 +57,10 @@ type fileEntry struct {
 }
 
 func (m model) fileEntries() []fileEntry {
-	var entries []fileEntry
+	if m.picker.cache.cached(m.rows) {
+		return m.picker.cache.entries
+	}
+	entries := []fileEntry{}
 	for i, r := range m.rows {
 		if m.modal == "files" && m.picker.commitScoped && r.commitIndex != m.picker.commitIndex {
 			continue
@@ -54,6 +74,9 @@ func (m model) fileEntries() []fileEntry {
 		case r.kind == '-' || r.kind == 'd':
 			entries[len(entries)-1].deleted++
 		}
+	}
+	if m.picker.cache != nil {
+		*m.picker.cache = pickerCache{rows: m.rows, entries: entries, total: len(pickerTree(entries, nil))}
 	}
 	return entries
 }
@@ -109,7 +132,7 @@ func (m *model) openPicker() {
 		return
 	}
 	m.modal = "files"
-	m.picker = pickerState{}
+	m.picker = pickerState{cache: &pickerCache{}}
 	if m.screen == "sequence" {
 		m.picker.commitScoped = true
 		m.picker.commitIndex = m.rows[m.pos].commitIndex
@@ -285,14 +308,25 @@ func (m *model) handlePickerKey(key string, runes []rune) bool {
 			}
 		}
 	}
-	m.revealPickerSelection()
+	if m.modal != "files" {
+		// Let go of the rows; restorePicker starts a new cache.
+		m.picker.cache = nil
+	} else {
+		m.revealPickerSelection()
+	}
 	return opened
 }
 
 func (m model) pickerViewport(count int) (int, int) {
 	// Size the list by every file rather than the filtered or folded items so
 	// the dialog keeps its shape while searching and folding.
-	visible := max(1, min(m.height-8, len(pickerTree(m.fileEntries(), nil))))
+	total := 0
+	if entries := m.fileEntries(); m.picker.cache.cached(m.rows) {
+		total = m.picker.cache.total
+	} else {
+		total = len(pickerTree(entries, nil))
+	}
+	visible := max(1, min(m.height-8, total))
 	selected := min(m.picker.selected, max(0, count-1))
 	offset := min(m.picker.offset, max(0, count-1))
 	if selected < offset {

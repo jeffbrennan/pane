@@ -67,6 +67,22 @@ func TestFilePickerFiltersAndJumps(t *testing.T) {
 	}
 }
 
+func TestFilePickerRefreshesAfterRebuild(t *testing.T) {
+	m := keys(t, toolModel(), "f")
+	if len(m.fileEntries()) != 3 {
+		t.Fatalf("entries: %#v", m.fileEntries())
+	}
+	m.snapshot.unstaged = m.snapshot.unstaged[:1]
+	m.rebuild()
+	if entries := m.fileEntries(); len(entries) != 1 || !strings.Contains(plain(m.View()), "1/1 │") {
+		t.Fatalf("stale picker after rebuild: %#v", entries)
+	}
+	m = keys(t, m, "esc")
+	if m.picker.cache != nil {
+		t.Fatal("closed picker kept its rows")
+	}
+}
+
 func TestWorkingDiffPickerBackNavigation(t *testing.T) {
 	for _, staged := range []bool{false, true} {
 		for _, back := range []string{"esc", "q"} {
