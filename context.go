@@ -113,6 +113,7 @@ func (m model) localContextRows(rows []row, changes []change) []row {
 }
 
 func (m model) changeContext(key string) (tea.Model, tea.Cmd) {
+	m.count = 0
 	view := m
 	if m.screen == "commit" {
 		view = m.commitModel()

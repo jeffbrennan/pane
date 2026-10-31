@@ -50,6 +50,9 @@ type model struct {
 	pos, horizontal       int
 	viewTop               int
 	pending               string
+	count                 int
+	jumps                 []jumpLocation
+	jumpIndex             int
 	staged, wrap          bool
 	loading, busy         bool
 	activeAction          string
@@ -330,6 +333,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "tab":
 			m.staged = !m.staged
+			m.jumps = nil
+			m.jumpIndex = 0
 			m.pos = 0
 			m.viewTop = 0
 			m.rows = nil
@@ -397,9 +402,9 @@ func (m *model) handleDiffTool(key string) bool {
 	case "/":
 		m.startSearch()
 	case "n":
-		m.searchJump(1)
+		m.searchJump(m.searchDirection())
 	case "N":
-		m.searchJump(-1)
+		m.searchJump(-m.searchDirection())
 	case "f":
 		m.openPicker()
 	case "e":
@@ -722,7 +727,11 @@ func (m model) View() string {
 		status = m.flash
 	}
 	if m.modal == "search" {
-		status = "/" + m.search.draft + "_"
+		prefix := "/"
+		if m.search.draftDirection < 0 {
+			prefix = "?"
+		}
+		status = prefix + m.search.draft + "_"
 	}
 	if m.modal == "commit" {
 		if m.width < 24 || m.height < 9 {

@@ -7,8 +7,9 @@ import (
 )
 
 type searchState struct {
-	query, draft      string
-	origin, originTop int
+	query, draft              string
+	origin, originTop         int
+	direction, draftDirection int
 }
 
 // searchFold lowercases s unless the query contains an uppercase letter
@@ -34,9 +35,21 @@ func (m model) activeSearch() string {
 }
 
 func (m *model) startSearch() {
+	m.startSearchDirection(1)
+}
+
+func (m *model) startSearchDirection(direction int) {
 	m.modal = "search"
 	m.search.draft = ""
+	m.search.draftDirection = direction
 	m.search.origin, m.search.originTop = m.pos, m.viewTop
+}
+
+func (m model) searchDirection() int {
+	if m.search.direction < 0 {
+		return -1
+	}
+	return 1
 }
 
 // findMatch returns the next row matching query after from in direction,
@@ -68,12 +81,17 @@ func (m *model) updateSearchDraft() {
 	if m.search.draft == "" || len(m.rows) == 0 {
 		return
 	}
-	if index, _ := m.findMatch(m.search.draft, m.pos-1, 1); index >= 0 {
+	direction := m.search.draftDirection
+	if direction == 0 {
+		direction = 1
+	}
+	if index, _ := m.findMatch(m.search.draft, m.pos-direction, direction); index >= 0 {
 		m.showMatch(index)
 	}
 }
 
 func (m *model) searchJump(direction int) {
+	before := m.location()
 	query := m.search.query
 	if query == "" {
 		m.flash = "No previous search"
@@ -88,6 +106,7 @@ func (m *model) searchJump(direction int) {
 		return
 	}
 	m.showMatch(index)
+	m.recordJump(before)
 	current, total := 0, 0
 	for i, r := range m.rows {
 		if searchMatches(r.text, query) {
@@ -97,7 +116,11 @@ func (m *model) searchJump(direction int) {
 			}
 		}
 	}
-	m.flash = fmt.Sprintf("/%s  [%d/%d]", query, current, total)
+	prefix := "/"
+	if m.searchDirection() < 0 {
+		prefix = "?"
+	}
+	m.flash = fmt.Sprintf("%s%s  [%d/%d]", prefix, query, current, total)
 	if wrapped {
 		m.flash += "  wrapped"
 	}
@@ -112,9 +135,10 @@ func (m *model) handleSearchKey(key string, runes []rune) {
 		m.modal = ""
 		if m.search.draft != "" {
 			m.search.query = m.search.draft
+			m.search.direction = m.search.draftDirection
 		}
 		m.pos, m.viewTop = min(m.search.origin, max(0, len(m.rows)-1)), m.search.originTop
-		m.searchJump(1)
+		m.searchJump(m.searchDirection())
 	case "backspace", "ctrl+h":
 		draft := []rune(m.search.draft)
 		if len(draft) == 0 {

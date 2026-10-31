@@ -141,8 +141,10 @@ func (m *model) handlePickerKey(key string, runes []rune) {
 			m.setPickerDirectory(items[selected], !items[selected].collapsed)
 		} else {
 			m.modal = ""
+			before := m.location()
 			m.pos = items[selected].file.row
 			m.positionViewport("t")
+			m.recordJump(before)
 		}
 	case "up", "ctrl+p", "ctrl+k", "shift+tab":
 		m.picker.selected = max(0, m.picker.selected-1)

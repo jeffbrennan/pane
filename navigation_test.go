@@ -131,3 +131,117 @@ func TestHistoryNavigationAndSearchInput(t *testing.T) {
 		t.Fatal("navigation intercepted search text")
 	}
 }
+
+func TestCountedMotionsAndSourceLines(t *testing.T) {
+	m := model{width: 40, height: 10, wrap: true, snapshot: snapshot{unstaged: []change{
+		{path: "first", diff: "@@ -10,3 +10,3 @@\n ten\n-old\n+new\n twelve\n"},
+		{path: "second", diff: "@@ -30 +30 @@\n-other\n+next\n"},
+	}}}
+	m.rebuild()
+	m = keys(t, m, "3", "j")
+	if m.pos != 3 {
+		t.Fatalf("3j: %d", m.pos)
+	}
+	m = keys(t, m, "2", "k")
+	if m.pos != 1 {
+		t.Fatalf("2k: %d", m.pos)
+	}
+	m = keys(t, m, "1", "2", "G")
+	if m.rows[m.pos].path != "first" || m.rows[m.pos].target != 12 {
+		t.Fatalf("12G: %#v", m.rows[m.pos])
+	}
+	m = keys(t, m, "1", "0", "g", "g")
+	if m.rows[m.pos].target != 10 {
+		t.Fatalf("10gg: %#v", m.rows[m.pos])
+	}
+	m = keys(t, m, "1", "J")
+	if m.rows[m.pos].path != "second" {
+		t.Fatal("counted file jump failed")
+	}
+	m = keys(t, m, "1", "G")
+	if m.rows[m.pos].path != "second" || m.rows[m.pos].target != 30 {
+		t.Fatalf("1G should select nearest current-file line: %#v", m.rows[m.pos])
+	}
+}
+
+func TestChangeBlockMotionsAndJumpList(t *testing.T) {
+	m := model{width: 50, height: 12, wrap: true, snapshot: snapshot{unstaged: []change{
+		{path: "first", diff: "@@ -1,5 +1,5 @@\n keep\n-old\n+new\n middle\n-before\n+after\n"},
+		{path: "second", diff: "@@ -1 +1 @@\n-old\n+new\n"},
+	}}}
+	m.rebuild()
+	m = keys(t, m, "2", "]", "c")
+	if m.rows[m.pos].text != "before" {
+		t.Fatalf("2]c: %#v", m.rows[m.pos])
+	}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	m = updated.(model)
+	if m.pos != 0 {
+		t.Fatalf("ctrl-o: %d", m.pos)
+	}
+	m = keys(t, m, "g", "i")
+	if m.rows[m.pos].text != "before" {
+		t.Fatalf("gi: %#v", m.rows[m.pos])
+	}
+	m = keys(t, m, "[", "c")
+	if m.rows[m.pos].text != "old" {
+		t.Fatalf("[c: %#v", m.rows[m.pos])
+	}
+	m = keys(t, m, "]", "c", "]", "c")
+	if m.rows[m.pos].path != "second" {
+		t.Fatalf("cross-file ]c: %#v", m.rows[m.pos])
+	}
+}
+
+func TestScreenRelativeMotions(t *testing.T) {
+	m := model{width: 40, height: 12, rows: make([]row, 50), pos: 20, viewTop: 15}
+	m = keys(t, m, "g", "H")
+	if m.pos != 15 || m.viewTop != 15 {
+		t.Fatalf("gH: %d %d", m.pos, m.viewTop)
+	}
+	m = keys(t, m, "g", "M")
+	if m.pos != 19 || m.viewTop != 15 {
+		t.Fatalf("gM: %d %d", m.pos, m.viewTop)
+	}
+	m = keys(t, m, "g", "L")
+	if m.pos != 24 || m.viewTop != 15 {
+		t.Fatalf("gL: %d %d", m.pos, m.viewTop)
+	}
+}
+
+func TestReverseSearchAndJumpBack(t *testing.T) {
+	m := model{width: 40, height: 10, rows: []row{{text: "match"}, {text: "other"}, {text: "match"}, {text: "other"}, {text: "match"}}, pos: 3}
+	m = keys(t, m, "g", "?", "m", "a", "t", "c", "h", "enter")
+	if m.pos != 2 {
+		t.Fatalf("reverse search: %d", m.pos)
+	}
+	m = keys(t, m, "n")
+	if m.pos != 0 {
+		t.Fatalf("reverse n: %d", m.pos)
+	}
+	m = keys(t, m, "N")
+	if m.pos != 2 {
+		t.Fatalf("reverse N: %d", m.pos)
+	}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	m = updated.(model)
+	if m.pos != 0 {
+		t.Fatalf("search ctrl-o: %d", m.pos)
+	}
+	m = keys(t, m, "g", "i")
+	if m.pos != 2 {
+		t.Fatalf("search gi: %d", m.pos)
+	}
+}
+
+func TestHistoryCounts(t *testing.T) {
+	m := model{screen: "history", height: 15, history: historyState{commits: make([]commitInfo, 30)}}
+	m = keys(t, m, "1", "0", "j")
+	if m.history.selected != 10 {
+		t.Fatalf("10j: %d", m.history.selected)
+	}
+	m = keys(t, m, "5", "G")
+	if m.history.selected != 4 {
+		t.Fatalf("5G: %d", m.history.selected)
+	}
+}

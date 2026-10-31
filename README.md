@@ -12,6 +12,11 @@ For development, `just b` builds pane, installs it, and runs it in the current r
 | --- | --- |
 | `j` / `k` | Scroll one line |
 | `gg` / `G` | Jump to the first / last line or history entry |
+| `10j`, `3}`, etc. | Repeat a motion with a numeric count |
+| `42gg` / `42G` | Jump to the closest visible source line in the current file, or history entry 42 |
+| `gH` / `gM` / `gL` | Move to the top / middle / bottom of the viewport |
+| `[c` / `]c` | Jump to the previous / next change block in a diff |
+| `ctrl-o` / `gi` | Jump back / forward in the diff jump list |
 | `ctrl-d` / `ctrl-u` | Move down / up half a page |
 | `ctrl-f` / `ctrl-b` | Move down / up a page |
 | `ctrl-e` / `ctrl-y` | Scroll the diff viewport down / up one line |
@@ -20,6 +25,7 @@ For development, `just b` builds pane, installs it, and runs it in the current r
 | `J` / `K` | Jump to the next / previous file, placing it at the top |
 | `f` | Open file tree; `j` / `k` navigate, `h` / `l` fold directories, `/` searches |
 | `/`, `n` / `N` | Search the diff; jump to the next / previous match |
+| `g?` | Search the diff backward; `n` / `N` follow / reverse the search direction |
 | `o` | Open the current file at the active line in `$VISUAL` / `$EDITOR` |
 | `y` | Copy the current file path, or the commit hash in history |
 | `tab` | Switch unstaged / staged view |
@@ -39,7 +45,7 @@ The active line is marked with `▸`; staging applies to the file containing it.
 
 Commits include only staged changes if any are staged. Otherwise, pane stages all non-ignored changes, including untracked files, before committing. If the commit fails, the automatically staged changes remain staged. After a successful commit, pane opens history with the new commit selected.
 
-In diffs, paragraph boundaries are blank lines, file headers, and hunk separators. On a file header, `h` collapses the file and `l` reopens its standard diff. On a diff line or `···`, `l` reveals nearby unchanged lines in chunks; repeat to see more, or use `h` to undo a nearby expansion. This also works for staged changes and historical commits. Diff search is incremental and case-insensitive unless the query contains an uppercase letter; matches are highlighted and `n` / `N` wrap around. `o` opens the working-tree file, so in a historical commit the line may have moved since. Copying uses `pbcopy`, `wl-copy`, `xclip`, or `xsel`. In history, `j` / `k` select commits, `}` / `{` jump five commits, and `/` searches author name or email, message, and hash. Enter or Space opens the selected commit's read-only diff. While typing a search, use the arrow keys to select a result and Enter to open it. Press `Esc` or `q` to go back. Addition and deletion counts omit binary files, which are counted separately. Merge commit counts and diffs are relative to their first parent.
+In diffs, paragraph boundaries are blank lines, file headers, and hunk separators. On a file header, `h` collapses the file and `l` reopens its standard diff. On a diff line or `···`, `l` reveals nearby unchanged lines in chunks; repeat to see more, or use `h` to undo a nearby expansion. This also works for staged changes and historical commits. Diff search is incremental and case-insensitive unless the query contains an uppercase letter; matches are highlighted and `n` / `N` wrap around. The diff jump list tracks searches and larger jumps within the current view. `gi` is used for jump-forward because terminals commonly send `ctrl-i` as Tab, which switches staged views. `o` opens the working-tree file, so in a historical commit the line may have moved since. Copying uses `pbcopy`, `wl-copy`, `xclip`, or `xsel`. In history, `j` / `k` select commits, `}` / `{` jump five commits, and `/` searches author name or email, message, and hash. Enter or Space opens the selected commit's read-only diff. While typing a search, use the arrow keys to select a result and Enter to open it. Press `Esc` or `q` to go back. Addition and deletion counts omit binary files, which are counted separately. Merge commit counts and diffs are relative to their first parent.
 
 The history landing page shows the branch, local changes, and commits ahead of or behind its configured upstream. Ahead/behind counts use locally stored remote-tracking refs and may be stale; pane does not fetch automatically. History reloads when the checked-out commit changes. Push and pull are available from history as well as the diff view. After a successful push, pane returns to history and refreshes its status.
 

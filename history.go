@@ -20,6 +20,8 @@ type historyState struct {
 	statsFetching                                       bool
 	current                                             commitInfo
 	expandedDeleted                                     map[string]bool
+	jumps                                               []jumpLocation
+	jumpIndex                                           int
 }
 
 type historyLoaded struct {
@@ -197,16 +199,42 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	matches := m.filteredHistory()
+	keyString := key.String()
+	if len(keyString) == 1 && keyString[0] >= '0' && keyString[0] <= '9' && m.pending == "" {
+		m.count = min(1000000, m.count*10+int(keyString[0]-'0'))
+		return m, nil
+	}
+	hadCount := m.count > 0
+	count := max(1, m.count)
 	if m.pending != "" {
 		pending := m.pending
 		m.pending = ""
+		m.count = 0
 		if pending == "g" && key.String() == "g" {
 			m.history.selected = 0
+			if hadCount {
+				m.history.selected = min(count-1, max(0, len(matches)-1))
+			}
+			return m, nil
+		}
+		if pending == "g" && (keyString == "H" || keyString == "M" || keyString == "L") {
+			start, visible := m.historyViewport(len(matches))
+			end := min(max(0, len(matches)-1), start+visible-1)
+			m.history.selected = start
+			if keyString == "M" {
+				m.history.selected = (start + end) / 2
+			}
+			if keyString == "L" {
+				m.history.selected = end
+			}
 			return m, nil
 		}
 		if key.String() == "esc" {
 			return m, nil
 		}
+	}
+	if keyString != "g" {
+		m.count = 0
 	}
 	page := max(1, (m.historyAvailable()-1)/3)
 	switch key.String() {
@@ -243,24 +271,27 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pending = "g"
 	case "G", "end":
 		m.history.selected = max(0, len(matches)-1)
+		if hadCount && keyString == "G" {
+			m.history.selected = min(count-1, max(0, len(matches)-1))
+		}
 	case "home":
 		m.history.selected = 0
 	case "ctrl+d":
-		m.history.selected = min(m.history.selected+max(1, page/2), max(0, len(matches)-1))
+		m.history.selected = min(m.history.selected+max(1, page/2)*count, max(0, len(matches)-1))
 	case "ctrl+u":
-		m.history.selected = max(0, m.history.selected-max(1, page/2))
+		m.history.selected = max(0, m.history.selected-max(1, page/2)*count)
 	case "ctrl+f", "pgdown":
-		m.history.selected = min(m.history.selected+page, max(0, len(matches)-1))
+		m.history.selected = min(m.history.selected+page*count, max(0, len(matches)-1))
 	case "ctrl+b", "pgup":
-		m.history.selected = max(0, m.history.selected-page)
+		m.history.selected = max(0, m.history.selected-page*count)
 	case "j", "down":
-		m.history.selected = min(m.history.selected+1, max(0, len(matches)-1))
+		m.history.selected = min(m.history.selected+count, max(0, len(matches)-1))
 	case "k", "up":
-		m.history.selected = max(0, m.history.selected-1)
+		m.history.selected = max(0, m.history.selected-count)
 	case "}":
-		m.history.selected = min(m.history.selected+5, max(0, len(matches)-1))
+		m.history.selected = min(m.history.selected+5*count, max(0, len(matches)-1))
 	case "{":
-		m.history.selected = max(0, m.history.selected-5)
+		m.history.selected = max(0, m.history.selected-5*count)
 	case "enter", " ":
 		if len(matches) == 0 || m.history.loading {
 			break
@@ -272,6 +303,8 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.history.statsFetching = false
 		m.history.changes, m.history.rows = nil, nil
 		m.history.expandedDeleted = nil
+		m.history.jumps = nil
+		m.history.jumpIndex = 0
 		m.history.pos, m.history.horizontal, m.history.viewTop = 0, 0, 0
 		m.screen = "commit"
 		repo, hash, request := m.repo, m.history.current.hash, m.history.request
@@ -291,7 +324,8 @@ func (m model) inDiff(f func(*model)) model {
 	f(&view)
 	m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop = view.rows, view.pos, view.horizontal, view.viewTop
 	m.history.expandedDeleted = view.expandedDeleted
-	m.pending, m.modal, m.picker, m.search, m.flash = view.pending, view.modal, view.picker, view.search, view.flash
+	m.pending, m.count, m.modal, m.picker, m.search, m.flash = view.pending, view.count, view.modal, view.picker, view.search, view.flash
+	m.history.jumps, m.history.jumpIndex = view.jumps, view.jumpIndex
 	return m
 }
 
@@ -351,6 +385,7 @@ func (m model) commitModel() model {
 	view := m
 	view.screen = ""
 	view.contextCommit = m.history.current.hash
+	view.jumps, view.jumpIndex = m.history.jumps, m.history.jumpIndex
 	view.snapshot = snapshot{unstaged: m.history.changes}
 	view.expandedDeleted = m.history.expandedDeleted
 	view.staged = false
