@@ -29,6 +29,9 @@ func TestPerf(t *testing.T) {
 	if os.Getenv("PANE_PERF_REPO") != "" {
 		scenario = "commit"
 	}
+	if name := os.Getenv("PANE_PERF_SCENARIO"); name != "" {
+		scenario = name
+	}
 	if dir := os.Getenv("PANE_PERF_PROFILES"); dir != "" {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			t.Fatal(err)

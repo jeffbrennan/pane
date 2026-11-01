@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/x/term"
@@ -15,8 +16,11 @@ type themeInput struct {
 	*os.File
 	handler       func(bool)
 	notifyHandler func()
-	notified      bool
+	notified      atomic.Bool
+	lastLight     atomic.Bool
+	seenLight     atomic.Bool
 	pending       []byte
+	query         func()
 }
 
 func startThemeTracking() themeTracking {
@@ -25,16 +29,42 @@ func startThemeTracking() themeTracking {
 		return themeTracking{}
 	}
 	input := &themeInput{File: tty}
+	input.query = func() { _, _ = tty.WriteString("\x1b]11;?\x1b\\") }
 	return themeTracking{
 		input: input,
 		query: func() {
-			_, _ = tty.WriteString("\x1b]11;?\x1b\\")
+			input.query()
 			// DECRQM: if mode 2031 is supported, enabling it replaces polling.
 			_, _ = tty.WriteString("\x1b[?2031$p")
 		},
+		poll:             func() func() { return input.startPoll(5 * time.Second) },
 		setHandler:       func(handler func(bool)) { input.handler = handler },
 		setNotifyHandler: func(handler func()) { input.notifyHandler = handler },
 		close:            func() { _ = tty.Close() },
+	}
+}
+
+func (input *themeInput) startPoll(interval time.Duration) func() {
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if !input.notified.Load() {
+					input.query()
+				}
+			case <-stop:
+				return
+			}
+		}
+	}()
+	return func() {
+		close(stop)
+		<-done
 	}
 }
 
@@ -74,9 +104,7 @@ func (input *themeInput) Read(p []byte) (int, error) {
 		}
 		if end >= 0 {
 			if light, ok := lightBackgroundResponse(string(data[start:end])); ok {
-				if input.handler != nil {
-					input.handler(light)
-				}
+				input.deliver(light)
 				data = append(data[:start], data[end:]...)
 				continue
 			}
@@ -106,6 +134,16 @@ func (input *themeInput) Read(p []byte) (int, error) {
 	return copy(p, data), nil
 }
 
+func (input *themeInput) deliver(light bool) {
+	previous := input.lastLight.Swap(light)
+	if input.seenLight.Swap(true) && previous == light {
+		return
+	}
+	if input.handler != nil {
+		input.handler(light)
+	}
+}
+
 func (input *themeInput) stripNotifications(data []byte) []byte {
 	sequences := [][]byte{[]byte("\x1b[?997;"), []byte("\x1b[?2031;")}
 	for {
@@ -123,15 +161,12 @@ func (input *themeInput) stripNotifications(data []byte) []byte {
 			if index := bytes.IndexByte(data[start+len(prefix):], 'n'); index >= 0 {
 				end = start + len(prefix) + index + 1
 				light := data[start+len(prefix)] == '2'
-				if input.handler != nil {
-					input.handler(light)
-				}
+				input.deliver(light)
 			}
 		} else {
 			if index := bytes.Index(data[start+len(prefix):], []byte("$y")); index >= 0 {
 				end = start + len(prefix) + index + 2
-				if data[start+len(prefix)] != '0' && !input.notified {
-					input.notified = true
+				if data[start+len(prefix)] != '0' && input.notified.CompareAndSwap(false, true) {
 					_, _ = input.WriteString("\x1b[?2031h")
 					if input.notifyHandler != nil {
 						input.notifyHandler()

@@ -4,6 +4,7 @@ package main
 
 import (
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -25,6 +26,48 @@ func TestThemeInputPreservesKeys(t *testing.T) {
 	n, err := input.Read(buf)
 	if err != nil || string(buf[:n]) != "jk" || len(detected) != 1 || !detected[0] {
 		t.Fatalf("input=%q themes=%v error=%v", buf[:n], detected, err)
+	}
+}
+
+func TestThemePollStopsWhenNotificationsArrive(t *testing.T) {
+	var queries atomic.Int64
+	input := themeInput{query: func() { queries.Add(1) }}
+	stop := input.startPoll(2 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
+	if queries.Load() == 0 {
+		t.Fatal("theme poll did not query")
+	}
+	input.notified.Store(true)
+	time.Sleep(5 * time.Millisecond)
+	stopped := queries.Load()
+	time.Sleep(10 * time.Millisecond)
+	if queries.Load() != stopped {
+		t.Fatal("theme poll queried after notifications were enabled")
+	}
+	stop()
+}
+
+func TestThemeInputDeduplicatesUnchangedBackground(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	defer writer.Close()
+	calls := 0
+	input := themeInput{File: reader, handler: func(bool) { calls++ }}
+	if _, err := writer.WriteString("\x1b]11;rgb:0000/0000/0000\x1b\\\x1b]11;rgb:0000/0000/0000\x1b\\"); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 256)
+	if _, err := input.Read(buf); err != nil || calls != 1 {
+		t.Fatalf("calls=%d error=%v", calls, err)
+	}
+	if _, err := writer.WriteString("\x1b]11;rgb:ffff/ffff/ffff\x1b\\"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := input.Read(buf); err != nil || calls != 2 {
+		t.Fatalf("calls=%d error=%v", calls, err)
 	}
 }
 

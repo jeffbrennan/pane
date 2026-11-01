@@ -44,5 +44,25 @@ perf:
     go build -o .scratch/perf-pane .
     go run ./perf/firstpaint -repo "${PANE_PERF_REPO:-.}" -revision "${PANE_PERF_COMMIT:-HEAD}" -idle "${PANE_PERF_IDLE:-60s}" -log .scratch/perf-log.tsv
 
+perf-external:
+    #!/usr/bin/env bash
+    set -eu
+    mkdir -p .scratch .scratch/profiles
+    export PANE_PERF_RUN="$(date -u +%Y%m%dT%H%M%S)-$$"
+    go build -o .scratch/perf-pane .
+    while IFS=$'\t' read -r name repo revision extra; do
+        case "$name" in ''|'#'*) continue ;; esac
+        if [ ! -d "$repo" ]; then
+            echo "skip $name: $repo is not available"
+            continue
+        fi
+        PANE_PERF=1 PANE_PERF_SCENARIO="$name" PANE_PERF_REPO="$repo" PANE_PERF_COMMIT="$revision" PANE_PERF_LOG=.scratch/perf-log.tsv PANE_PERF_PROFILES=.scratch/profiles go test -run '^TestPerf$' -count=1 -v .
+        if [ -n "${extra:-}" ]; then
+            go run ./perf/firstpaint -scenario "$name" -repo "$repo" -args "$extra" -idle "${PANE_PERF_IDLE:-60s}" -log .scratch/perf-log.tsv
+        else
+            go run ./perf/firstpaint -scenario "$name" -repo "$repo" -revision "$revision" -idle "${PANE_PERF_IDLE:-60s}" -log .scratch/perf-log.tsv
+        fi
+    done < perf/scenarios.txt
+
 perf-diff:
     go run ./perf/diff .scratch/perf-log.tsv

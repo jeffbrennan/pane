@@ -22,6 +22,8 @@ func main() {
 	binary := flag.String("binary", ".scratch/perf-pane", "pane binary")
 	repo := flag.String("repo", ".", "repository to open")
 	revision := flag.String("revision", "HEAD", "commit to open")
+	scenario := flag.String("scenario", "commit", "scenario name for the results log")
+	args := flag.String("args", "", "alternate pane arguments, for example '-b main'")
 	idle := flag.Duration("idle", time.Minute, "time to observe after first paint")
 	settle := flag.Duration("settle", 2*time.Second, "wait for background loading before the idle window")
 	logPath := flag.String("log", "", "append metrics to this TSV file")
@@ -29,7 +31,7 @@ func main() {
 	key := flag.String("key", "", "key to send after the title appears")
 	after := flag.String("after", "", "wait for this text before sending the key")
 	flag.Parse()
-	if err := run(*binary, *repo, *revision, *idle, *settle, *logPath, *content, *key, *after); err != nil {
+	if err := run(*binary, *repo, *revision, *scenario, *args, *idle, *settle, *logPath, *content, *key, *after); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -71,7 +73,7 @@ func (output *terminalOutput) feed(data []byte, terminal io.Writer) (bool, bool,
 	return painted, found, ready
 }
 
-func run(binary, repo, revision string, idle, settle time.Duration, logPath, content, key, after string) error {
+func run(binary, repo, revision, scenario, paneArgs string, idle, settle time.Duration, logPath, content, key, after string) error {
 	if idle < 0 || settle < 0 {
 		return fmt.Errorf("idle and settle durations cannot be negative")
 	}
@@ -79,7 +81,11 @@ func run(binary, repo, revision string, idle, settle time.Duration, logPath, con
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(binary, revision)
+	arguments := []string{revision}
+	if paneArgs != "" {
+		arguments = strings.Fields(paneArgs)
+	}
+	cmd := exec.Command(binary, arguments...)
 	cmd.Dir = repo
 	start := time.Now()
 	terminal, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: 160, Rows: 50})
@@ -188,9 +194,9 @@ func run(binary, repo, revision string, idle, settle time.Duration, logPath, con
 		metrics["peak_rss_bytes"] = rss
 	}
 	for name, value := range metrics {
-		fmt.Printf("commit %s %d\n", name, value)
+		fmt.Printf("%s %s %d\n", scenario, name, value)
 		if logPath != "" {
-			if err := appendMetric(logPath, name, value); err != nil {
+			if err := appendMetric(logPath, scenario, name, value); err != nil {
 				return err
 			}
 		}
@@ -216,7 +222,7 @@ func processCPU(pid int) int64 {
 	return int64(seconds * float64(time.Second))
 }
 
-func appendMetric(path, metric string, value int64) error {
+func appendMetric(path, scenario, metric string, value int64) error {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
@@ -226,6 +232,6 @@ func appendMetric(path, metric string, value int64) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(file, "%s\t%s\tcommit\t%s\t%d\t%s\n", time.Now().Format(time.RFC3339), strings.TrimSpace(string(revision)), metric, value, os.Getenv("PANE_PERF_RUN"))
+	_, err = fmt.Fprintf(file, "%s\t%s\t%s\t%s\t%d\t%s\n", time.Now().Format(time.RFC3339), strings.TrimSpace(string(revision)), scenario, metric, value, os.Getenv("PANE_PERF_RUN"))
 	return err
 }

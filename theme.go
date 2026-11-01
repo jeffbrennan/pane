@@ -10,6 +10,7 @@ import (
 type themeTracking struct {
 	input            io.Reader
 	query            func()
+	poll             func() func()
 	setHandler       func(func(bool))
 	setNotifyHandler func(func())
 	close            func()

@@ -169,6 +169,9 @@ func main() {
 	if tracking.setNotifyHandler != nil {
 		tracking.setNotifyHandler(func() { go program.Send(terminalThemeNotifications(true)) })
 	}
+	if tracking.poll != nil {
+		defer tracking.poll()()
+	}
 	stopProfile := startCPUProfile(os.Getenv("PANE_CPUPROFILE"))
 	stopTrace := startTrace(os.Getenv("PANE_TRACE"))
 	final, err := program.Run()
