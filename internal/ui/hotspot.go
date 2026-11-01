@@ -1324,9 +1324,20 @@ func (m model) hotFileItems() []hotItem {
 	return items
 }
 
+// knownBots covers bot accounts whose names don't end in "bot".
+var knownBots = []string{"robobun", "renovate", "dependabot", "github-actions", "github actions"}
+
 func isBotAuthor(name string) bool {
 	lower := strings.ToLower(name)
-	return strings.HasSuffix(lower, "[bot]") || strings.HasSuffix(lower, "bot") || strings.Contains(lower, "github-actions")
+	if strings.HasSuffix(lower, "[bot]") || strings.HasSuffix(lower, "bot") {
+		return true
+	}
+	for _, bot := range knownBots {
+		if strings.Contains(lower, bot) {
+			return true
+		}
+	}
+	return false
 }
 
 func (m model) hotFilteredItems() []hotItem {
@@ -1441,7 +1452,7 @@ func (m model) hotView() string {
 	if detail == "" {
 		detail = " "
 	}
-	lines = append(lines, styleDim+fit(detail, m.width)+styleReset)
+	lines = append(lines, styleDim+truncateCell(detail, m.width)+styleReset)
 	status := ""
 	if filter := m.hotspots.list.listStatus(m.width); filter != "" {
 		status = filter
@@ -1450,7 +1461,7 @@ func (m model) hotView() string {
 	if m.flash != "" {
 		status = syntax.Clean(m.flash)
 	}
-	lines = append(lines, m.statusBar(status, hints))
+	lines = append(lines, m.statusBar(status, truncateCell(hints, max(1, m.width-ansi.StringWidth(status)-2))))
 	if m.modal == "help" {
 		clearBody(lines)
 		m.showHelpDialog(lines)
@@ -1506,6 +1517,15 @@ func (m model) hotFooter() string {
 	return footer(true, actions...)
 }
 
+// dirLabel shows the repository root as a name instead of the "." key the
+// per-directory counts use.
+func dirLabel(dir string) string {
+	if dir == "." {
+		return "(root)"
+	}
+	return dir
+}
+
 func topAuthorDirs(author *hotAuthor, limit int) string {
 	type share struct {
 		dir   string
@@ -1525,7 +1545,7 @@ func topAuthorDirs(author *hotAuthor, limit int) string {
 	})
 	var parts []string
 	for _, s := range shares[:min(limit, len(shares))] {
-		parts = append(parts, fmt.Sprintf("%s %d%%", s.dir, s.count*100/max(1, total)))
+		parts = append(parts, fmt.Sprintf("%s %d%%", dirLabel(s.dir), s.count*100/max(1, total)))
 	}
 	return strings.Join(parts, " · ")
 }
@@ -1540,7 +1560,7 @@ func topAuthorDir(author *hotAuthor) string {
 	if top == "" {
 		return ""
 	}
-	return top
+	return dirLabel(top)
 }
 
 func (m model) hotAuthorList() []*hotAuthor {

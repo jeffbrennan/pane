@@ -696,3 +696,51 @@ func TestHotspotSummaryKeepsAuthorSpanAndCount(t *testing.T) {
 		t.Fatalf("cached summary title lost its commit count: %q", ansi.Strip(m.hotView()))
 	}
 }
+
+func TestHotspotAuthorAreasNameTheRoot(t *testing.T) {
+	author := &hotAuthor{name: "Root", dirs: map[string]int{".": 3, "src": 1}}
+	if got := topAuthorDirs(author, 3); !strings.Contains(got, "(root) 75%") || strings.Contains(got, "· . ") {
+		t.Fatalf("root area: %q", got)
+	}
+	if got := topAuthorDir(author); got != "(root)" {
+		t.Fatalf("top dir: %q", got)
+	}
+}
+
+func TestHotspotBotsWithoutBotSuffix(t *testing.T) {
+	for _, name := range []string{"robobun", "renovate", "dependabot", "GitHub Actions"} {
+		if !isBotAuthor(name) {
+			t.Fatalf("%q should count as a bot", name)
+		}
+	}
+	if isBotAuthor("Robot Human") {
+		t.Fatal("a human name should not count as a bot")
+	}
+}
+
+func TestHotspotNarrowFooterAndDetailUseEllipsis(t *testing.T) {
+	m := model{width: 40, height: 16, hotspots: hotspotState{mode: "tree", files: []hotFile{
+		{path: "a/very-long-directory-name/file-with-a-long-name.go", added: 3, deleted: 2, commits: 4, score: 9, last: time.Now(), authors: map[string]int{"Alexandria Montgomery": 4}},
+		{path: "b/short.go", added: 1, commits: 1, score: 1, last: time.Now(), authors: map[string]int{"Bo": 1}},
+	}}}
+	if m.hotspots.items == nil {
+		m.hotspots.items = &hotItemsCache{}
+	}
+	lines := strings.Split(ansi.Strip(m.hotView()), "\n")
+	footer := ""
+	for _, line := range lines {
+		if strings.Contains(line, "tab ") && strings.Contains(line, "window") {
+			footer = line
+		}
+		if ansi.StringWidth(line) > m.width {
+			t.Fatalf("line exceeds width %d: %q", m.width, line)
+		}
+	}
+	if footer == "" || !strings.HasSuffix(strings.TrimRight(footer, " "), "…") {
+		t.Fatalf("footer was not cut with an ellipsis: %q", footer)
+	}
+	long := strings.Repeat("word ", 20)
+	if got := truncateCell(long, 12); ansi.StringWidth(got) != 12 || !strings.HasSuffix(got, "…") {
+		t.Fatalf("truncateCell: %q", got)
+	}
+}

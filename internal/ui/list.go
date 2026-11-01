@@ -210,6 +210,17 @@ func (m model) listNameWidth(count int, names []string, fixed int) int {
 	return max(1, min(longest, max(12, room)))
 }
 
+// truncateCell cuts s to width cells, marking the cut with an ellipsis.
+func truncateCell(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if ansi.StringWidth(s) <= width {
+		return s
+	}
+	return ansi.Truncate(s, width-1, "") + "…"
+}
+
 // padCell truncates or pads s to exactly width cells.
 func padCell(s string, width int) string {
 	if ansi.StringWidth(s) > width {
