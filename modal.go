@@ -33,6 +33,7 @@ var shortcutSections = []struct {
 		{"ctrl-e / ctrl-y", "Scroll viewport down / up"},
 		{"} / {", "Next / previous paragraph"},
 		{"J / K", "Next / previous file"},
+		{") / (", "Next / previous commit in the list"},
 		{"]c / [c", "Next / previous change"},
 		{"gH / gM / gL", "Top / middle / bottom of screen"},
 		{"zt / zz / zb", "Align active line"},

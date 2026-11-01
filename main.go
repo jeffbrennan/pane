@@ -659,7 +659,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.recentCommits = []commitInfo{}
 		}
 	case historyLoaded:
-		if m.screen != "history" || msg.request != m.history.request || (msg.skip > 0 && (!m.history.fetching || msg.skip != len(m.history.commits))) {
+		if (m.screen != "history" && m.screen != "commit") || msg.request != m.history.request || (msg.skip > 0 && (!m.history.fetching || msg.skip != len(m.history.commits))) {
 			break
 		}
 		if msg.skip > 0 {
@@ -691,6 +691,13 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.history.more = len(msg.commits) == msg.limit
 		m.history.selected = min(m.history.selected, max(0, len(m.filteredHistory())-1))
+		if m.screen == "commit" {
+			if direction := m.history.pendingStep; direction != 0 {
+				m.history.pendingStep = 0
+				return m.stepCommit(direction)
+			}
+			return m, nil
+		}
 		m.revealHistorySelection()
 		if m.history.stale {
 			return m.reloadHistory()
@@ -783,6 +790,9 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
+		}
+		if m.history.pendingPosition != nil {
+			m.restoreCommitPosition(chunk.done)
 		}
 		if m.history.streamEndPending && len(m.history.rows) > 0 {
 			m.history.pos = len(m.history.rows) - 1

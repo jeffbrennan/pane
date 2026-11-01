@@ -8,7 +8,7 @@ If the working tree and index are clean at startup, pane opens commit history. O
 
 Run `pane <commit>` to open a commit's read-only diff directly. A full or abbreviated hash, branch, tag, or other Git commit revision is accepted. Large commits open as soon as the first files load; the rest loads in the background. Until loading finishes, search covers loaded files and picker jumps to unloaded files wait for them. Press `Esc` or `q` to return to history.
 
-A commit and each commit in a multi-commit review start with a details block: author and date, the committer when different, parents (marked `merge` when there are several), refs pointing at the commit, and the full message body with trailers dimmed. Search covers it, `J` moves from it to the first file, and `h` / `l` collapse or expand it for the session.
+A commit and each commit in a multi-commit review start with a details block: author and date, the committer when different, parents (marked `merge` when there are several), refs pointing at the commit, and the full message body with trailers dimmed. Search covers it, `J` moves from it to the first file, and `h` / `l` collapse or expand it for the session. In a commit opened from history or file history, `)` and `(` open the next and previous commit without leaving the view; the title shows the position, and returning to a commit restores the file and line you were reading.
 
 Run `pane <start>..<end>` for a continuous review of a Git commit range, for example `pane HEAD~3..HEAD`. Git's usual range semantics apply: the start is excluded and the end is included. Symmetric ranges such as `main...feature` are also supported.
 
@@ -37,6 +37,7 @@ For development, `just b` builds pane, installs it, and runs it in the current r
 | `zt` / `zz` / `zb` | Place the active diff line at the top / middle / bottom |
 | `}` / `{` | Jump to the next / previous paragraph boundary, or five commits in history |
 | `J` / `K` | Jump to the next / previous file, placing it at the top |
+| `)` / `(` | Open the next / previous commit in the history or file history the current commit came from |
 | `f` | Open file tree; `j` / `k` navigate, `gg` / `G` jump to first / last, `{` / `}` jump between directories, `ctrl-d` / `ctrl-u` and `ctrl-f` / `ctrl-b` move by half / full pages, `h` / `l` fold directories, `/` searches. Relative row numbers help with navigation counts. |
 | `L` | Open history for the file under the cursor, following renames |
 | `/`, `n` / `N` | Search the diff; jump to the next / previous match |

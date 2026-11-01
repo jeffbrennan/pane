@@ -36,6 +36,9 @@ type historyState struct {
 	current                                             commitInfo
 	meta                                                commitInfo
 	headerCollapsed                                     bool
+	positions                                           map[string]commitPosition
+	pendingPosition                                     *commitPosition
+	pendingStep                                         int
 	expandedDeleted                                     map[string]bool
 	jumps                                               []jumpLocation
 	jumpIndex                                           int
@@ -595,34 +598,45 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(matches) == 0 || m.history.loading {
 			break
 		}
-		m.history.current = matches[min(m.history.selected, len(matches)-1)]
-		if m.history.fetching {
-			m.history.stream.close()
-			m.history.stale = true
-		}
-		m.history.request++
-		repo := m.startCommitLoad()
-		m.history.loading = true
-		m.history.commitLoadingVisible = false
-		m.history.fetching = false
-		m.history.statsFetching = false
-		m.history.changes, m.history.rows = nil, nil
-		m.history.streamActive = true
-		m.history.streamPaths, m.history.streamLoaded, m.history.streamGutter = nil, 0, 0
-		m.history.streamError = ""
-		m.history.streamEndPending = false
-		m.history.meta = commitInfo{}
-		m.picker.pendingPath = m.history.current.filePath
-		m.history.expandedDeleted = nil
-		m.history.jumps = nil
-		m.history.jumpIndex = 0
-		m.pickerReturn, m.pickerBackToHistory = false, false
-		m.history.pos, m.history.horizontal, m.history.viewTop = 0, 0, 0
-		m.screen = "commit"
-		hash, request := m.history.current.hash, m.history.request
-		return m, tea.Batch(startCommitStream(repo, hash, request, m.height), commitLoadingTimer(request))
+		return m.openCommit(matches[min(m.history.selected, len(matches)-1)])
 	}
 	return m, nil
+}
+
+// openCommit replaces the current view with a commit's read-only diff.
+func (m model) openCommit(commit commitInfo) (tea.Model, tea.Cmd) {
+	m.saveCommitPosition()
+	m.history.current = commit
+	if m.history.fetching {
+		m.history.stream.close()
+		m.history.stale = true
+	}
+	m.history.request++
+	repo := m.startCommitLoad()
+	m.history.loading = true
+	m.history.commitLoadingVisible = false
+	m.history.fetching = false
+	m.history.statsFetching = false
+	m.history.changes, m.history.rows = nil, nil
+	m.history.streamActive = true
+	m.history.streamPaths, m.history.streamLoaded, m.history.streamGutter = nil, 0, 0
+	m.history.streamError = ""
+	m.history.streamEndPending = false
+	m.history.meta = commitInfo{}
+	if position, ok := m.history.positions[commit.hash]; ok && commit.filePath == "" {
+		m.history.pendingPosition = &position
+	} else {
+		m.history.pendingPosition = nil
+	}
+	m.picker.pendingPath = commit.filePath
+	m.history.expandedDeleted = nil
+	m.history.jumps = nil
+	m.history.jumpIndex = 0
+	m.pickerReturn, m.pickerBackToHistory = false, false
+	m.history.pos, m.history.horizontal, m.history.viewTop = 0, 0, 0
+	m.screen = "commit"
+	hash, request := commit.hash, m.history.request
+	return m, tea.Batch(startCommitStream(repo, hash, request, m.height), commitLoadingTimer(request))
 }
 
 // inDiff applies f to the diff currently on screen: the working tree, or the
@@ -676,6 +690,12 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	view := m.commitModel()
 	switch key.String() {
+	case ")", "(":
+		direction := 1
+		if key.String() == "(" {
+			direction = -1
+		}
+		return m.stepCommit(direction)
 	case "o":
 		opened, cmd := view.openEditor()
 		m.flash = opened.flash
@@ -804,6 +824,9 @@ func (m model) commitModel() model {
 	view.staged = false
 	view.rows, view.pos, view.horizontal, view.viewTop = m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop
 	view.viewTitle = m.accent() + shortHash(m.history.current.hash) + styleReset + "  " + clean(m.history.current.subject)
+	if index, total := m.commitListPosition(); index > 0 && total > 1 {
+		view.viewTitle += styleDim + fmt.Sprintf("  %d/%d", index, total) + styleReset
+	}
 	view.viewBadge = styleDim + "read-only" + styleReset
 	if m.screen == "commit" && m.history.streamActive && len(m.history.streamPaths) > 0 {
 		view.viewBadge = styleDim + fmt.Sprintf("read-only · loading %d/%d files", m.history.streamLoaded, len(m.history.streamPaths)) + styleReset
