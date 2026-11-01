@@ -2,8 +2,10 @@ package git
 
 import (
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // Context identifies the view a diff load belongs to.
@@ -23,15 +25,23 @@ const (
 // parallelEach runs f for every index with bounded concurrency, preserving
 // input order in the results the caller writes.
 func parallelEach(n int, f func(int)) {
-	limit := make(chan struct{}, 8)
-	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		limit <- struct{}{}
-		go func(i int) {
-			defer func() { <-limit; wg.Done() }()
+	workers := min(n, runtime.GOMAXPROCS(0))
+	if workers <= 1 {
+		for i := range n {
 			f(i)
-		}(i)
+		}
+		return
+	}
+	var next atomic.Int64
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := int(next.Add(1) - 1); i < n; i = int(next.Add(1) - 1) {
+				f(i)
+			}
+		}()
 	}
 	wg.Wait()
 }
