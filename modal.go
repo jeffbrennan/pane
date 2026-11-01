@@ -45,6 +45,7 @@ var shortcutSections = []struct {
 	{"View", []shortcut{
 		{"f", "File tree (j/k, h/l fold, / filter)"},
 		{"L", "Open history for the current file"},
+		{"v", "Mark file viewed / unviewed"},
 		{"/ / g?", "Search forward / backward"},
 		{"n / N", "Next / previous match"},
 		{"h / l", "Fold file or commit details / reveal nearby context"},

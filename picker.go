@@ -18,6 +18,7 @@ type pickerState struct {
 	pending      string
 	pendingPath  string
 	searching    bool
+	hideViewed   bool
 	collapsed    map[string]bool
 	commitScoped bool
 	commitIndex  int
@@ -28,10 +29,11 @@ type pickerState struct {
 // collecting it walks every diff row. Model copies share it, and it is
 // collected again when the rows are rebuilt.
 type pickerCache struct {
-	rows      []row
-	entries   []fileEntry
-	items     []pickerItem
-	itemQuery string
+	rows       []row
+	entries    []fileEntry
+	items      []pickerItem
+	itemQuery  string
+	hideViewed bool
 	// total counts the items of the unfiltered, unfolded tree.
 	total int
 }
@@ -55,6 +57,7 @@ type fileEntry struct {
 	path           string
 	oldPath        string
 	submodule      bool
+	viewed         bool
 	row            int
 	added, deleted int
 }
@@ -70,7 +73,7 @@ func (m model) fileEntries() []fileEntry {
 		}
 		switch {
 		case r.kind == 'f':
-			entries = append(entries, fileEntry{path: r.path, oldPath: r.oldPath, row: i, deleted: r.deletedLines, submodule: r.submodule})
+			entries = append(entries, fileEntry{path: r.path, oldPath: r.oldPath, row: i, deleted: r.deletedLines, submodule: r.submodule, viewed: r.viewed})
 		case len(entries) == 0 || r.offset > 0:
 		case r.kind == '+':
 			entries[len(entries)-1].added++
@@ -166,13 +169,22 @@ func (m *model) openPicker() {
 
 func (m model) pickerItems() []pickerItem {
 	entries := m.fileEntries()
+	if m.picker.hideViewed {
+		visible := make([]fileEntry, 0, len(entries))
+		for _, entry := range entries {
+			if !entry.viewed {
+				visible = append(visible, entry)
+			}
+		}
+		entries = visible
+	}
 	cache := m.picker.cache
-	if cache != nil && cache.items != nil && cache.itemQuery == m.picker.query {
+	if cache != nil && cache.items != nil && cache.itemQuery == m.picker.query && cache.hideViewed == m.picker.hideViewed {
 		return cache.items
 	}
 	items := pickerTree(filterFiles(entries, m.picker.query), m.picker.collapsed)
 	if cache != nil {
-		cache.items, cache.itemQuery = items, m.picker.query
+		cache.items, cache.itemQuery, cache.hideViewed = items, m.picker.query, m.picker.hideViewed
 	}
 	return items
 }
@@ -244,6 +256,16 @@ func (m *model) handlePickerKey(key string, runes []rune) bool {
 	_, visible := m.pickerViewport(len(items))
 	opened := false
 	switch key {
+	case "v":
+		if !m.picker.searching {
+			m.picker.hideViewed = !m.picker.hideViewed
+			if m.picker.cache != nil {
+				m.picker.cache.items = nil
+			}
+			m.picker.selected = 0
+			m.picker.offset = 0
+			m.revealPickerSelection()
+		}
 	case "ctrl+c":
 		m.modal = ""
 	case "esc":
@@ -424,6 +446,18 @@ func (m model) showFilesDialog(lines []string) {
 		hint = keyHints("/", "filter", "↵", "open", "esc", "close")
 	}
 	info := fmt.Sprintf("%d/%d", len(matches), len(entries))
+	viewed := 0
+	for _, entry := range entries {
+		if entry.viewed {
+			viewed++
+		}
+	}
+	if viewed > 0 || m.picker.hideViewed {
+		info += fmt.Sprintf(" · %d/%d viewed", viewed, len(entries))
+	}
+	if m.picker.hideViewed {
+		info += " · hiding viewed"
+	}
 	if m.contextCommit != "" && m.history.streamActive && len(m.history.streamPaths) > 0 {
 		info = fmt.Sprintf("%d/%d loaded", m.history.streamLoaded, len(m.history.streamPaths))
 	}
@@ -454,7 +488,11 @@ func (m model) showFilesDialog(lines []string) {
 			} else {
 				counts = changeCounts(addedWidth, e.file.added, deletedWidth, e.file.deleted, i == selected)
 			}
-			name += "  " + clean(e.name)
+			mark := ""
+			if e.file.viewed {
+				mark = "✓ "
+			}
+			name += "  " + mark + clean(e.name)
 			if e.file.submodule {
 				name += " (submodule)"
 			}

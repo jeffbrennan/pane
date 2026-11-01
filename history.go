@@ -74,11 +74,14 @@ func (m *model) appendCommitChanges(changes []change, done bool) {
 	seeded := *m
 	if m.screen == "base" {
 		seeded.contextCommit, seeded.contextBase = m.base.hash, true
+		seeded.viewIdentity = "base:" + m.base.hash + ":" + m.base.revision
 	} else {
 		seeded.contextCommit, seeded.contextBase = m.history.current.hash, false
+		seeded.viewIdentity = "commit:" + m.history.current.hash
 	}
 	seeded.staged = false
 	seeded.collapseGenerated(changes)
+	seeded.seedViewedCollapse(changes)
 	m.collapsedFiles, m.generatedHandled = seeded.collapsedFiles, seeded.generatedHandled
 	width := m.history.streamGutter
 	if width == 0 && !done {
@@ -143,6 +146,7 @@ func (m *model) appendCommitChanges(changes []change, done bool) {
 		return
 	}
 	part, _ := buildRowsDisplay(changes, view.diffContentWidth(), view.wrap, view.expandedDeleted, width, view.shortPaths)
+	view.applyViewed(part, changes)
 	part = view.localContextRows(part, changes)
 	part = view.foldContextFiles(part)
 	if len(part) == 0 {
@@ -706,6 +710,8 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			direction = -1
 		}
 		return m.stepCommit(direction)
+	case "v":
+		return m.toggleViewedCommit()
 	case "o":
 		opened, cmd := view.openEditor()
 		m.flash = opened.flash
@@ -824,10 +830,12 @@ func (m model) commitModel() model {
 	view.screen = ""
 	view.relativeLines = true
 	view.contextCommit = m.history.current.hash
+	view.viewIdentity = "commit:" + m.history.current.hash
 	view.gutterFloor = m.history.streamGutter
 	view.gutterWidth = m.history.gutterWidth
 	if m.screen == "base" {
 		view.contextCommit, view.contextBase = m.base.hash, true
+		view.viewIdentity = "base:" + m.base.hash + ":" + m.base.revision
 	}
 	view.jumps, view.jumpIndex = m.history.jumps, m.history.jumpIndex
 	view.snapshot = snapshot{unstaged: m.history.changes}
@@ -852,6 +860,9 @@ func (m model) commitModel() model {
 		}
 	}
 	view.viewHints = keyHints("esc", "back", "?", "help")
+	if viewed, total := viewedCountRows(m.history.rows); viewed > 0 {
+		view.viewBadge += styleDim + fmt.Sprintf(" · %d/%d viewed", viewed, total) + styleReset
+	}
 	view.message = ""
 	if m.history.loading && m.history.commitLoadingVisible {
 		view.message = "Loading commit…"

@@ -114,6 +114,13 @@ func (m *model) nextSequenceLoad() tea.Cmd {
 	return nil
 }
 
+func (m model) sequenceIdentity() string {
+	if len(m.sequence.commits) == 0 {
+		return ""
+	}
+	return "range:" + m.sequence.commits[0].hash + ".." + m.sequence.commits[len(m.sequence.commits)-1].hash
+}
+
 func (m *model) rebuildSequence() {
 	var anchor row
 	var searchAnchor row
@@ -156,7 +163,9 @@ func (m *model) rebuildSequence() {
 			view := *m
 			view.contextCommit = m.sequence.commits[i].hash
 			view.contextBase, view.staged = false, false
+			view.viewIdentity = m.sequenceIdentity()
 			view.collapseGenerated(m.sequence.changes[i])
+			view.seedViewedCollapse(m.sequence.changes[i])
 			m.collapsedFiles, m.generatedHandled = view.collapsedFiles, view.generatedHandled
 			changes := m.applySyntaxDemand(contextKey{commit: m.sequence.commits[i].hash}, m.sequence.changes[i])
 			files, m.sequence.gutterWidths[i] = buildRowsDisplay(changes, width, m.wrap, expanded, 0, m.shortPaths)
@@ -168,6 +177,7 @@ func (m *model) rebuildSequence() {
 				files = append(block, files...)
 			}
 			view.contextCommit = m.sequence.commits[i].hash
+			view.applyViewed(files, changes)
 			files = view.foldContextFiles(files)
 			for j := range files {
 				files[j].commitIndex = uint16(i)
@@ -245,6 +255,9 @@ func (m model) sequenceView() string {
 			commit := m.sequence.commits[index]
 			view.viewTitle = m.accent() + shortHash(commit.hash) + styleReset + "  " + clean(commit.subject)
 			view.viewBadge = styleDim + fmt.Sprintf("%d/%d", index+1, len(m.sequence.commits)) + styleReset
+			if viewed, total := viewedCountRows(m.rows); viewed > 0 {
+				view.viewBadge += styleDim + fmt.Sprintf(" · %d/%d viewed", viewed, total) + styleReset
+			}
 		}
 	}
 	view.viewHints = keyHints("esc", "back", "?", "help")
@@ -302,6 +315,8 @@ func (m model) handleSequenceKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "/":
 		m.startSearch()
+	case "v":
+		return m.toggleViewedSequence()
 	case "o":
 		return m.openEditor()
 	case "y":

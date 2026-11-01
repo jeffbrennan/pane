@@ -101,6 +101,8 @@ type model struct {
 	contextFiles          map[contextKey]contextFile
 	collapsedFiles        map[contextKey]bool
 	generatedHandled      map[contextKey]bool
+	viewed                *viewedStore
+	viewIdentity          string
 	contextRequest        int
 	contextCommit         string
 	syntaxDemand          *syntaxDemand
@@ -263,7 +265,7 @@ func initialModel(repo repository, args []string) (model, error) {
 	if len(args) > 2 || (len(args) == 2 && args[0] != "--base" && args[0] != "-b") || (len(args) == 1 && (args[0] == "--base" || args[0] == "-b")) {
 		return model{}, fmt.Errorf("%s", fileHistoryUsage())
 	}
-	m := model{repo: repo, wrap: true, loading: true, startup: true}
+	m := model{repo: repo, wrap: true, loading: true, startup: true, viewed: newViewedStore(repo.root)}
 	if len(args) == 0 {
 		return m, nil
 	}
@@ -1253,6 +1255,7 @@ func (m *model) rebuildRows(previous func(path string) ([]row, bool)) {
 	}
 	changes = m.applySyntaxDemand(contextKey{commit: m.contextCommit, staged: m.staged, base: m.contextBase}, changes)
 	m.collapseGenerated(changes)
+	m.seedViewedCollapse(changes)
 	var rows []row
 	gutterWidth := m.gutterFloor
 	if previous != nil {
@@ -1265,6 +1268,7 @@ func (m *model) rebuildRows(previous func(path string) ([]row, bool)) {
 	}
 	m.gutterWidth = gutterWidth
 	m.previousChanges = nil
+	m.applyViewed(rows, changes)
 	rows = m.localContextRows(rows, changes)
 	rows = m.foldContextFiles(rows)
 	if m.contextCommit != "" && !m.contextBase {

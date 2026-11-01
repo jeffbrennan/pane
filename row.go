@@ -8,7 +8,7 @@ type row struct {
 	lineIndex, headerIndex     int32
 	commitIndex                uint16
 	renameAdded, submodule     bool
-	generated                  bool
+	generated, viewed          bool
 	// A highlighted line can have no spans but still use syntax-aware rendering.
 	syntaxPresent bool
 	kind          byte
