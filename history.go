@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
@@ -38,6 +39,7 @@ type historyState struct {
 	directCommit                                        bool
 	current                                             commitInfo
 	meta                                                commitInfo
+	moved                                               *movedIndex
 	headerCollapsed                                     bool
 	positions                                           map[string]commitPosition
 	pendingPosition                                     *commitPosition
@@ -88,6 +90,12 @@ func (m *model) appendCommitChanges(changes []change, done bool) {
 	seeded.collapseGenerated(changes)
 	seeded.seedViewedCollapse(changes)
 	m.collapsedFiles, m.generatedHandled = seeded.collapsedFiles, seeded.generatedHandled
+	if m.screen == "commit" {
+		if m.history.moved == nil {
+			m.history.moved = newMovedIndex()
+		}
+		m.history.moved.addChanges(changes)
+	}
 	width := m.history.streamGutter
 	if width == 0 && !done {
 		width = 4
@@ -718,6 +726,7 @@ func (m model) openCommit(commit commitInfo) (tea.Model, tea.Cmd) {
 	m.history.streamError = ""
 	m.history.streamEndPending = false
 	m.history.meta = commitInfo{}
+	m.history.moved = nil
 	if position, ok := m.history.positions[commit.hash]; ok && commit.filePath == "" {
 		m.history.pendingPosition = &position
 	} else {
@@ -894,11 +903,7 @@ func (m model) streamJumpBeyondEnd(files bool, count int) bool {
 
 func (m model) returnToHistory() (tea.Model, tea.Cmd) {
 	m.cancelCommitLoad()
-	if len(m.history.rows) > 500000 {
-		// A forgotten pane should not keep a huge commit's rows and patch.
-		m.history.rows, m.history.changes = nil, nil
-		debug.FreeOSMemory()
-	}
+	m.releaseLargeCommitRows()
 	if m.stash.viewing {
 		return m.openStashes()
 	}
@@ -920,6 +925,19 @@ func (m model) returnToHistory() (tea.Model, tea.Cmd) {
 	}
 	next, historyCmd := m.loadHistoryBackground()
 	return next, tea.Batch(historyCmd, refreshCmd)
+}
+
+// releaseLargeCommitRows returns a finished huge commit's rows and patch to the
+// OS so a forgotten pane does not hold them while showing history.
+func (m *model) releaseLargeCommitRows() {
+	// Diagnostic switch for the C4 measurement; not a user setting.
+	if os.Getenv("PANE_KEEP_COMMIT_ROWS") == "1" {
+		return
+	}
+	if len(m.history.rows) > 500000 {
+		m.history.rows, m.history.changes = nil, nil
+		debug.FreeOSMemory()
+	}
 }
 
 func (m model) commitModel() model {
@@ -976,6 +994,10 @@ func (m model) commitModel() model {
 func (m *model) rebuildCommit() {
 	if m.screen != "commit" && m.screen != "base" {
 		return
+	}
+	if m.screen == "commit" && m.history.moved == nil && len(m.history.changes) > 0 {
+		m.history.moved = newMovedIndex()
+		m.history.moved.addChanges(m.history.changes)
 	}
 	view := m.commitModel()
 	view.rebuild()

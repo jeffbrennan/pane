@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"runtime/pprof"
 	"sort"
 	"strings"
@@ -116,6 +117,12 @@ func TestPerf(t *testing.T) {
 		}
 	}
 	m = model{width: 160, height: 50, wrap: true, screen: "commit", history: historyState{changes: changes}}
+	if len(changes) > 0 {
+		measurePerf(t, scenario, "moved_index_ns", func() {
+			index := newMovedIndex()
+			index.addChanges(changes)
+		})
+	}
 	measurePerf(t, scenario, "build_ns", func() { m.rebuildCommit() })
 	runtime.GC()
 	var memory runtime.MemStats
@@ -195,6 +202,9 @@ func TestPerf(t *testing.T) {
 		}
 	}
 	recordPerf(t, scenario, "idle_refreshes_per_minute", refreshes)
+	if len(changes) > 2000 {
+		measureCommitRelease(t, scenario, changes)
+	}
 	measureSyntaxPerf(t)
 	measureRefreshPerf(t)
 	measureSyntheticScenarios(t)
@@ -257,6 +267,11 @@ func measureSyntheticScenarios(t *testing.T) {
 		}(),
 	}
 	for name, changes := range scenarios {
+		movedIndex := newMovedIndex()
+		measurePerf(t, "synthetic-"+name, "moved_index_ns", func() {
+			movedIndex = newMovedIndex()
+			movedIndex.addChanges(changes)
+		})
 		m := model{width: 160, height: 50, wrap: true, snapshot: snapshot{unstaged: changes}}
 		m.rebuild()
 		measurePerf(t, "synthetic-"+name, "build_ns", func() { m.rebuild() })
@@ -422,4 +437,30 @@ func recordPerf(t *testing.T, scenario, metric string, value int64) {
 	if _, err := fmt.Fprintf(file, "%s\t%s\t%s\t%s\t%d\t%s\n", time.Now().Format(time.RFC3339), strings.TrimSpace(string(revision)), scenario, metric, value, os.Getenv("PANE_PERF_RUN")); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// measureCommitRelease shows what a finished huge commit keeps alive and what
+// dropping its rows and patch returns to the OS.
+func measureCommitRelease(t *testing.T, scenario string, changes []change) {
+	t.Helper()
+	m := model{width: 160, height: 50, wrap: true, screen: "commit", history: historyState{changes: changes}}
+	m.rebuildCommit()
+	rows := len(m.history.rows)
+	if rows <= 500000 {
+		return
+	}
+	var memory runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&memory)
+	recordPerf(t, scenario, "sys_with_rows_bytes", int64(memory.Sys))
+	recordPerf(t, scenario, "heap_with_rows_bytes", int64(memory.HeapAlloc))
+	recordPerf(t, scenario, "rows_before_release", int64(rows))
+	debug.FreeOSMemory()
+	runtime.ReadMemStats(&memory)
+	recordPerf(t, scenario, "sys_retained_bytes", int64(memory.Sys))
+	m.releaseLargeCommitRows()
+	runtime.ReadMemStats(&memory)
+	recordPerf(t, scenario, "sys_after_release_bytes", int64(memory.Sys))
+	recordPerf(t, scenario, "heap_after_release_bytes", int64(memory.HeapAlloc))
+	recordPerf(t, scenario, "rows_after_release", int64(len(m.history.rows)))
 }

@@ -1530,9 +1530,6 @@ func (m *model) rebuildRows(previous func(path string) ([]row, bool)) {
 	}
 	m.gutterWidth = gutterWidth
 	m.previousChanges = nil
-	if m.contextCommit != "" && !m.contextBase {
-		rows = markMovedBlocks(rows)
-	}
 	m.applyViewed(rows, changes)
 	rows = m.insertNoteRows(rows)
 	rows = m.localContextRows(rows, changes)
@@ -2020,19 +2017,41 @@ func (m model) View() string {
 	if pinned != nil {
 		lines = append(lines, m.renderNumberedDiffRow(*pinned, -1))
 	}
-	for i := 0; i < visible; i++ {
-		index := start + i
-		if index >= len(m.rows) {
-			if index == 0 {
-				lines = append(lines, fit(m.emptyText(), m.width))
-			} else if index == len(m.rows) && m.contextCommit != "" && m.history.streamActive {
-				lines = append(lines, styleDim+"  Loading…"+styleReset)
-			} else {
-				lines = append(lines, "")
-			}
+	extra := m.movedHintCount(start, start+visible)
+	rowLimit := max(1, visible-extra)
+	if m.pos >= start && m.pos >= start+rowLimit && len(m.rows) > 0 {
+		// Keep the cursor on screen when moved hints consume viewport lines.
+		start = max(0, min(m.pos-rowLimit+1, start))
+		extra = m.movedHintCount(start, start+visible)
+		rowLimit = max(1, visible-extra)
+	}
+	rendered, renderedRows := 0, 0
+	for index := start; index < len(m.rows) && rendered < visible && renderedRows < rowLimit; index++ {
+		r := m.rows[index]
+		moved, hint, show := m.movedFor(r)
+		if moved {
+			r.setMoved()
+		}
+		renderedRows++
+		if moved && show && rendered+1 < visible && !m.nextRowContinues(index) {
+			lines = append(lines, m.renderNumberedDiffRow(r, index), m.movedHintRow(hint))
+			rendered += 2
 			continue
 		}
-		lines = append(lines, m.renderNumberedDiffRow(m.rows[index], index))
+		lines = append(lines, m.renderNumberedDiffRow(r, index))
+		rendered++
+	}
+	for rendered < visible {
+		index := start + renderedRows
+		switch {
+		case index == 0 && len(m.rows) == 0:
+			lines = append(lines, fit(m.emptyText(), m.width))
+		case index >= len(m.rows) && len(m.rows) > 0 && m.contextCommit != "" && m.history.streamActive:
+			lines = append(lines, styleDim+"  Loading…"+styleReset)
+		default:
+			lines = append(lines, "")
+		}
+		rendered++
 	}
 	status := clean(strings.ReplaceAll(m.message, "\n", " | "))
 	if m.flash != "" {

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -324,6 +325,17 @@ func TestWorktreeStatusCountsDirtyFiles(t *testing.T) {
 	if activity.IsZero() {
 		t.Fatal("no activity time")
 	}
+	future := time.Now().Add(2 * time.Hour).Truncate(time.Second)
+	if err := os.Chtimes(filepath.Join(r.root, "new.txt"), future, future); err != nil {
+		t.Fatal(err)
+	}
+	_, activity, err = r.statusCount(r.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if activity.Before(future) {
+		t.Fatalf("activity %v did not use the newest changed path %v", activity, future)
+	}
 }
 
 func TestHistoryDecoratesOtherWorktreeHeads(t *testing.T) {
@@ -374,5 +386,23 @@ func TestBranchAndWorktreeScreensRender(t *testing.T) {
 	view = m.View()
 	if m.screen != "worktrees" || !strings.Contains(view, "worktrees") || !strings.Contains(view, "side") {
 		t.Fatalf("worktree view: %q", view)
+	}
+}
+
+func TestStatusCountTreatsRenamesAsOneChange(t *testing.T) {
+	r := testRepo(t)
+	writeFile(t, r, "old.txt", "one\n")
+	if _, err := r.commit("initial"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.command("mv", "old.txt", "new.txt"); err != nil {
+		t.Fatal(err)
+	}
+	dirty, activity, err := r.statusCount(r.root)
+	if err != nil || dirty != 1 {
+		t.Fatalf("rename: %d %v", dirty, err)
+	}
+	if activity.IsZero() {
+		t.Fatal("no activity for rename")
 	}
 }

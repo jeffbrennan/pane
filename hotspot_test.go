@@ -275,3 +275,29 @@ func TestHotspotCacheFallsBackWhenHistoryIsRewritten(t *testing.T) {
 		}
 	}
 }
+
+func TestSinceCutoff(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	for _, test := range []struct {
+		since string
+		want  time.Duration
+		ok    bool
+	}{
+		{"1.year", 365 * 24 * time.Hour, true},
+		{"2.year", 2 * 365 * 24 * time.Hour, true},
+		{"6mo", 6 * 30 * 24 * time.Hour, true},
+		{"90 days", 90 * 24 * time.Hour, true},
+		{"2 weeks ago", 14 * 24 * time.Hour, true},
+		{"", 0, true},
+		{"2025-01-01", 0, false},
+	} {
+		got, ok := sinceCutoff(test.since, now)
+		want := int64(0)
+		if test.want != 0 {
+			want = now.Add(-test.want).Unix()
+		}
+		if ok != test.ok || (ok && got != want) {
+			t.Errorf("sinceCutoff(%q) = %d, %v; want %d, %v", test.since, got, ok, want, test.ok)
+		}
+	}
+}

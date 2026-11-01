@@ -82,5 +82,7 @@ screenful instead of after the whole diff. Its 359 ms is dominated by the
 `--name-status` pass over 36,008 paths (~180 ms) before the first chunk can be
 matched to paths; the patch bytes are ready much earlier.
 
+`just perf-c4` opens a huge commit, presses `q` after `-key-delay`, and records `rss_after_idle_bytes`; set `PANE_KEEP_COMMIT_ROWS=1` on a second run to compare against retaining the rows. `-key-delay` delays a sent key so a run can wait for a huge commit to finish loading before pressing `q`. `rss_after_idle_bytes` samples the process's current RSS after the idle window, and `PANE_KEEP_COMMIT_ROWS=1` keeps a finished commit's rows so C4's release can be measured against it.
+
 `resize_width_apply_ns` measures the debounced rebuild that follows
 `tea.WindowSizeMsg`, so it reflects the work a user waits for after resizing.

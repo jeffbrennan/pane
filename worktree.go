@@ -97,23 +97,36 @@ func worktreeGitDir(path string) string {
 }
 
 // statusCount reads another worktree's dirty-file count and last activity
-// without changing this pane's repository.
+// without changing this pane's repository. Activity is the later of the index
+// and the newest changed path.
 func (r repository) statusCount(path string) (int, time.Time, error) {
-	cmd := exec.Command("git", "-C", path, "status", "--porcelain=v2", "-z", "--untracked-files=normal")
+	cmd := exec.Command("git", "-C", path, "status", "--porcelain", "-z", "--untracked-files=normal")
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_LITERAL_PATHSPECS=1", "GIT_PAGER=cat")
 	out, err := cmd.Output()
 	if err != nil {
 		return 0, time.Time{}, err
 	}
-	count := 0
-	for _, record := range bytes.Split(out, []byte{0}) {
-		if len(record) > 0 {
-			count++
-		}
-	}
 	var activity time.Time
 	if gitDir := worktreeGitDir(path); gitDir != "" {
 		if info, err := os.Stat(filepath.Join(gitDir, "index")); err == nil {
+			activity = info.ModTime()
+		}
+	}
+	count := 0
+	fields := bytes.Split(out, []byte{0})
+	for i := 0; i < len(fields); i++ {
+		record := fields[i]
+		if len(record) < 4 {
+			continue
+		}
+		status := record[:2]
+		changed := record[3:]
+		count++
+		if status[0] == 'R' || status[0] == 'C' {
+			// A rename/copy is followed by the original path in its own field.
+			i++
+		}
+		if info, err := os.Stat(filepath.Join(path, filepath.FromSlash(string(changed)))); err == nil && info.ModTime().After(activity) {
 			activity = info.ModTime()
 		}
 	}

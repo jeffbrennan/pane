@@ -181,6 +181,7 @@ func (m model) handleStashKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.screen = "commit"
 		m.history.current = commitInfo{hash: entry.hash, subject: entry.ref + " · " + entry.message}
 		m.history.meta = commitInfo{}
+		m.history.moved = nil
 		m.history.request++
 		repo := m.startCommitLoad()
 		m.history.streamActive = false

@@ -42,6 +42,7 @@ func (m model) toggleWhitespace() (tea.Model, tea.Cmd) {
 			break
 		}
 		m.history.rows, m.history.changes = nil, nil
+		m.history.moved = nil
 		commands = append(commands, startCommitStream(repo, hash, request, m.height), commitLoadingTimer(request))
 	case "sequence":
 		m.resetSequenceStream()

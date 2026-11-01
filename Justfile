@@ -74,6 +74,14 @@ perf-multi:
     go build -o .scratch/perf-pane .
     go run ./perf/firstpaint -binary .scratch/perf-pane -instances "${PANE_PERF_INSTANCES:-3}" -worktrees "${PANE_PERF_WORKTREES:?set PANE_PERF_WORKTREES}" -idle "${PANE_PERF_IDLE:-60s}" -log .scratch/perf-log.tsv
 
+# Measure RSS after opening a huge commit and returning to history. Run once
+# with PANE_KEEP_COMMIT_ROWS=1 to compare against retaining the rows.
+perf-c4:
+    #!/usr/bin/env bash
+    set -eu
+    go build -o .scratch/perf-pane .
+    go run ./perf/firstpaint -binary .scratch/perf-pane -scenario c4-release -repo "${PANE_PERF_REPO:-.}" -revision "${PANE_PERF_COMMIT:-HEAD}" -key q -key-delay "${PANE_PERF_KEY_DELAY:-6s}" -settle 2s -idle "${PANE_PERF_IDLE:-6s}" -log .scratch/perf-log.tsv
+
 # A dirty-tree scenario in a throwaway worktree, so the repo is not modified.
 perf-dirty:
     #!/usr/bin/env bash

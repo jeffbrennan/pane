@@ -5,11 +5,13 @@ synthetic-history	commits	500
 synthetic-history	filtered_view_ns	74083
 synthetic-history	view_ns	23292
 synthetic-huge-file	build_ns	10482042
+synthetic-huge-file	moved_index_ns	6660291
 synthetic-huge-file	rows	100001
 synthetic-huge-file	search_miss_ns	408750
 synthetic-huge-file	view_ns	153791
 synthetic-huge-file	wrap_toggle_ns	10176708
 synthetic-long-lines	build_ns	927292
+synthetic-long-lines	moved_index_ns	73541
 synthetic-long-lines	rows	13399
 synthetic-long-lines	search_miss_ns	1646250
 synthetic-long-lines	view_ns	925750
@@ -20,6 +22,7 @@ synthetic-many	heap_after_first_screen_bytes	7821816
 synthetic-many	idle_refreshes_per_minute	0
 synthetic-many	jump_end_ns	450333
 synthetic-many	jump_file_ns	447250
+synthetic-many	moved_index_ns	3451750
 synthetic-many	picker_entries_ns	131417
 synthetic-many	picker_filter_ns	42
 synthetic-many	picker_key_ns	583
@@ -42,6 +45,7 @@ synthetic-many	view_ns	152584
 synthetic-many	whitespace_toggle_ns	456042
 synthetic-many	wrap_toggle_ns	1608625
 synthetic-many-small	build_ns	59833
+synthetic-many-small	moved_index_ns	37750
 synthetic-many-small	rows	299
 synthetic-many-small	search_miss_ns	6334
 synthetic-many-small	view_ns	70500

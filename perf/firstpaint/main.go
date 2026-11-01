@@ -31,6 +31,7 @@ func main() {
 	logPath := flag.String("log", "", "append metrics to this TSV file")
 	content := flag.String("content", os.Getenv("PANE_PERF_CONTENT"), "first diff text to wait for")
 	wait := flag.String("wait", "read-only", "text (or |-separated alternatives) that marks the first painted frame")
+	keyDelay := flag.Duration("key-delay", 0, "wait this long before sending -key")
 	key := flag.String("key", "", "key to send after the title appears")
 	after := flag.String("after", "", "wait for this text before sending the key")
 	flag.Parse()
@@ -41,7 +42,7 @@ func main() {
 		}
 		return
 	}
-	if err := run(*binary, *repo, *revision, *scenario, *args, *idle, *settle, *logPath, *content, *key, *after, *wait); err != nil {
+	if err := run(*binary, *repo, *revision, *scenario, *args, *idle, *settle, *logPath, *content, *key, *after, *wait, *keyDelay); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -96,7 +97,7 @@ func matchesAnySuffix(data []byte, suffixes []string) bool {
 	return false
 }
 
-func run(binary, repo, revision, scenario, paneArgs string, idle, settle time.Duration, logPath, content, key, after, waitText string) error {
+func run(binary, repo, revision, scenario, paneArgs string, idle, settle time.Duration, logPath, content, key, after, waitText string, keyDelay time.Duration) error {
 	if idle < 0 || settle < 0 {
 		return fmt.Errorf("idle and settle durations cannot be negative")
 	}
@@ -174,6 +175,9 @@ func run(binary, repo, revision, scenario, paneArgs string, idle, settle time.Du
 			return fmt.Errorf("timed out waiting for content %q", content)
 		}
 	}
+	if keyDelay > 0 {
+		time.Sleep(keyDelay)
+	}
 	if key != "" {
 		if _, err := io.WriteString(terminal, key); err != nil {
 			return err
@@ -194,6 +198,7 @@ func run(binary, repo, revision, scenario, paneArgs string, idle, settle time.Du
 	time.Sleep(idle)
 	idleBytes := outputBytes.Load() - bytesAtPaint
 	idleCPU := processCPU(cmd.Process.Pid) - cpuAtPaint
+	rssAfterIdle := processRSS(cmd.Process.Pid)
 	if _, err := io.WriteString(terminal, "\x03"); err != nil {
 		return err
 	}
@@ -209,7 +214,7 @@ func run(binary, repo, revision, scenario, paneArgs string, idle, settle time.Du
 		<-wait
 		return fmt.Errorf("pane did not exit")
 	}
-	metrics := map[string]int64{"first_paint_ns": first.Sub(start).Nanoseconds(), "idle_terminal_bytes": idleBytes, "idle_duration_ns": idle.Nanoseconds(), "idle_cpu_ns": idleCPU}
+	metrics := map[string]int64{"first_paint_ns": first.Sub(start).Nanoseconds(), "idle_terminal_bytes": idleBytes, "idle_duration_ns": idle.Nanoseconds(), "idle_cpu_ns": idleCPU, "rss_after_idle_bytes": rssAfterIdle}
 	if !firstContent.IsZero() {
 		metrics["first_content_ns"] = firstContent.Sub(start).Nanoseconds()
 	}
@@ -230,6 +235,18 @@ func run(binary, repo, revision, scenario, paneArgs string, idle, settle time.Du
 		}
 	}
 	return nil
+}
+
+func processRSS(pid int) int64 {
+	out, err := exec.Command("ps", "-o", "rss=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return 0
+	}
+	value, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return value * 1024
 }
 
 func processCPU(pid int) int64 {

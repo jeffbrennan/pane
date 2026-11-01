@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -80,11 +81,11 @@ func (r repository) hotspots(since, author string) ([]hotFile, map[string]*hotAu
 	cutoff := int64(0)
 	loaded := false
 	if cached && head != "" && cache.Head == head {
-		cutoff = advanceHotCutoff(cache, since, now)
+		cutoff = advanceHotCutoff(since, now)
 		commits = pruneHotCommits(cache.Commits, cutoff)
 		loaded = true
 	} else if cached && cache.Head != "" && head != "" && r.isAncestor(cache.Head, head) {
-		cutoff = advanceHotCutoff(cache, since, now)
+		cutoff = advanceHotCutoff(since, now)
 		fresh, err := r.hotCommits(since, author, cache.Head+".."+head)
 		if err == nil {
 			commits = pruneHotCommits(cache.Commits, cutoff)
@@ -98,7 +99,11 @@ func (r repository) hotspots(since, author string) ([]hotFile, map[string]*hotAu
 			return nil, nil, err
 		}
 		commits = fresh
-		cutoff = oldestHotCommit(commits)
+		if parsed, ok := sinceCutoff(since, now); ok {
+			cutoff = parsed
+		} else {
+			cutoff = oldestHotCommit(commits)
+		}
 	}
 	commits = pruneHotCommits(commits, cutoff)
 	paths := make([]string, 0, len(commits))
@@ -256,12 +261,14 @@ func pruneHotCommits(commits []hotCacheCommit, cutoff int64) []hotCacheCommit {
 	return pruned
 }
 
-func advanceHotCutoff(cache hotCache, since string, now time.Time) int64 {
-	cutoff := cache.Cutoff
-	if relativeSince(since) && cache.CachedAt > 0 {
-		cutoff += now.Unix() - cache.CachedAt
+// advanceHotCutoff recomputes the window boundary from the same relative
+// expression Git applies. Unknown expressions keep every cached commit rather
+// than risk dropping one that is still inside the window.
+func advanceHotCutoff(since string, now time.Time) int64 {
+	if cutoff, ok := sinceCutoff(since, now); ok {
+		return cutoff
 	}
-	return max(0, cutoff)
+	return 0
 }
 
 func oldestHotCommit(commits []hotCacheCommit) int64 {
@@ -274,18 +281,44 @@ func oldestHotCommit(commits []hotCacheCommit) int64 {
 	return oldest
 }
 
-// relativeSince reports whether Git's window is relative to now, so the cached
-// cutoff should advance by the time that passed.
-func relativeSince(since string) bool {
-	if since == "" || strings.ContainsAny(since, "-/:") {
-		return false
+var sincePattern = regexp.MustCompile(`^\s*(\d+(?:\.\d+)?)\s*\.?\s*([a-zA-Z]+)`)
+
+var sinceUnits = map[string]time.Duration{
+	"y": time.Hour * 24 * 365, "yr": time.Hour * 24 * 365, "yrs": time.Hour * 24 * 365,
+	"year": time.Hour * 24 * 365, "years": time.Hour * 24 * 365,
+	"mo": time.Hour * 24 * 30, "mon": time.Hour * 24 * 30, "month": time.Hour * 24 * 30, "months": time.Hour * 24 * 30,
+	"w": time.Hour * 24 * 7, "wk": time.Hour * 24 * 7, "week": time.Hour * 24 * 7, "weeks": time.Hour * 24 * 7,
+	"d": time.Hour * 24, "day": time.Hour * 24, "days": time.Hour * 24,
+	"h": time.Hour, "hr": time.Hour, "hour": time.Hour, "hours": time.Hour,
+	"min": time.Minute, "mins": time.Minute, "minute": time.Minute, "minutes": time.Minute,
+	"s": time.Second, "sec": time.Second, "secs": time.Second, "second": time.Second, "seconds": time.Second,
+}
+
+// sinceCutoff converts a relative Git window such as "1.year" or "6mo" into
+// the timestamp Git filters against. Absolute dates are left to Git and report
+// false, so callers do not prune cached commits.
+func sinceCutoff(since string, now time.Time) (int64, bool) {
+	since = strings.TrimSpace(strings.ToLower(since))
+	if since == "" {
+		return 0, true
 	}
-	for _, r := range since {
-		if r >= '0' && r <= '9' {
-			return true
-		}
+	if strings.ContainsAny(since, "-/:") {
+		return 0, false
 	}
-	return false
+	match := sincePattern.FindStringSubmatch(since)
+	if match == nil {
+		return 0, false
+	}
+	unit, ok := sinceUnits[match[2]]
+	if !ok {
+		return 0, false
+	}
+	amount, err := strconv.ParseFloat(match[1], 64)
+	if err != nil {
+		return 0, false
+	}
+	seconds := int64(amount * unit.Seconds())
+	return max(0, now.Unix()-seconds), true
 }
 
 func topDir(path string) string {
