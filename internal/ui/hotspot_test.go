@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/jeffbrennan/pane/internal/git"
 )
 
@@ -609,5 +610,89 @@ func TestHotspotsDropDeletedPaths(t *testing.T) {
 		if file.path == "gone.go" {
 			t.Fatalf("deleted path kept: %#v", files)
 		}
+	}
+}
+
+func hotAuthorFixture() map[string]*hotAuthor {
+	now := time.Now()
+	return map[string]*hotAuthor{
+		"Alexandria Montgomery": {name: "Alexandria Montgomery", commits: 1234, first: now.Add(-500 * time.Hour), last: now.Add(-2 * time.Hour), dirs: map[string]int{"src": 900, "docs": 334}},
+		"Bo":                    {name: "Bo", commits: 12, first: now.Add(-400 * time.Hour), last: now.Add(-3 * time.Hour), dirs: map[string]int{"src": 12}},
+		"Chen":                  {name: "Chen", commits: 3, first: now.Add(-90 * time.Hour), last: now.Add(-1 * time.Hour), dirs: map[string]int{"test": 3}},
+	}
+}
+
+func hotAuthorRows(view string) map[string]string {
+	rows := make(map[string]string)
+	for _, line := range strings.Split(ansi.Strip(view), "\n") {
+		for _, name := range []string{"Alexandria Montgomery", "Bo", "Chen"} {
+			if strings.Contains(line, name) {
+				rows[name] = line
+			}
+		}
+	}
+	return rows
+}
+
+func TestHotspotAuthorsKeepCommitCountsWhenNarrow(t *testing.T) {
+	authors := hotAuthorFixture()
+	m := model{width: 60, height: 20, hotspots: hotspotState{mode: "authors", authors: authors}}
+	rows := hotAuthorRows(m.hotView())
+	for _, author := range authors {
+		line, ok := rows[author.name]
+		if !ok {
+			t.Fatalf("%s is missing from the narrow authors view", author.name)
+		}
+		if !strings.Contains(line, formatCount(author.commits)) {
+			t.Fatalf("%s row lost its commit count at width 60: %q", author.name, line)
+		}
+	}
+}
+
+func TestHotspotAuthorHeaderLinesUpWithValues(t *testing.T) {
+	authors := hotAuthorFixture()
+	m := model{width: 100, height: 20, hotspots: hotspotState{mode: "authors", authors: authors}}
+	lines := strings.Split(ansi.Strip(m.hotView()), "\n")
+	header, row := "", ""
+	for _, line := range lines {
+		switch {
+		case strings.HasPrefix(strings.TrimSpace(line), "author") && strings.Contains(line, "commits"):
+			header = line
+		case strings.Contains(line, "Alexandria Montgomery"):
+			row = line
+		}
+	}
+	if header == "" || row == "" {
+		t.Fatalf("header %q or row %q missing", header, row)
+	}
+	cell := func(line, text string) int {
+		return ansi.StringWidth(line[:strings.Index(line, text)])
+	}
+	count := formatCount(authors["Alexandria Montgomery"].commits)
+	if a, b := cell(header, "commits")+len("commits"), cell(row, count)+len(count); a != b {
+		t.Fatalf("commits header ends at %d, value ends at %d\n%s\n%s", a, b, header, row)
+	}
+	if a, b := cell(header, "areas"), cell(row, "src"); a != b {
+		t.Fatalf("areas header starts at %d, value starts at %d\n%s\n%s", a, b, header, row)
+	}
+}
+
+func TestHotspotSummaryKeepsAuthorSpanAndCount(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "hot.summary")
+	authors := hotAuthorFixture()
+	writeHotSummary(path, "head", "1.year", "", 1, time.Now().Unix(), nil, authors, nil, nil, hotHidden{})
+	_, restored, _, _, _, _, ok := readHotSummary(path, "head", "1.year", "")
+	if !ok {
+		t.Fatal("summary did not round-trip")
+	}
+	for name, author := range authors {
+		got, ok := restored[name]
+		if !ok || got.first.Unix() != author.first.Unix() || got.last.Unix() != author.last.Unix() {
+			t.Fatalf("%s span: %#v (want %v to %v)", name, got, author.first, author.last)
+		}
+	}
+	m := model{width: 100, height: 20, hotspots: hotspotState{mode: "authors", authors: restored}}
+	if !strings.Contains(ansi.Strip(m.hotView()), formatCount(1234+12+3)+" commits") {
+		t.Fatalf("cached summary title lost its commit count: %q", ansi.Strip(m.hotView()))
 	}
 }
