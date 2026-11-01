@@ -69,9 +69,8 @@ which uses a 36,008-file, 271 MB working-tree diff:
 | Heap after build | ~249 MB | < 200 MB | not met; revised to 250 MB |
 | Idle CPU, 60 s commit view | ~0.41 s (0.68%) | < 0.30 s (0.5%) | not met; revised to 1% |
 | Idle terminal output | < 100 B/min | minimal | met |
-| Hotspot first rows, 1-year bun window | ~24 ms | < 200 ms | met |
-| Hotspot cache-hit load | ~36 ms | < 100 ms | met |
-| Hotspot first full tree frame (62k files) | ~112 ms | < 100 ms | first frame only; later frames < 1 ms |
+| Hotspot first rows, 1-year bun window | ~22 ms | < 200 ms | met |
+| Hotspot cache-hit launch | ~60 ms | < 100 ms | met (summary incl. prebuilt tree) |
 
 The remaining heap is predominantly row text and the loaded patch itself;
 further reductions require changing how diff text is retained. Width resize
@@ -85,7 +84,7 @@ screenful instead of after the whole diff. Its 359 ms is dominated by the
 `--name-status` pass over 36,008 paths (~180 ms) before the first chunk can be
 matched to paths; the patch bytes are ready much earlier.
 
-`just perf-c4` opens a huge commit, presses `q` after `-key-delay`, and records `rss_after_idle_bytes`; set `PANE_KEEP_COMMIT_ROWS=1` on a second run to compare against retaining the rows. `-key-delay` delays a sent key so a run can wait for a huge commit to finish loading before pressing `q`; `-dump <path>` writes the pane's terminal output for inspecting streamed screens. `rss_after_idle_bytes` samples the process's current RSS after the idle window, and `PANE_KEEP_COMMIT_ROWS=1` keeps a finished commit's rows so C4's release can be measured against it. `PANE_MOVED=0` disables lazy moved-block detection, and `moved_index_ns` records its index-building cost.
+`just perf-c4` opens a huge commit, presses `q` after `-key-delay`, and records `footprint_after_idle_bytes` and `rss_after_idle_bytes`; set `PANE_KEEP_COMMIT_ROWS=1` on a second run to compare against retaining the rows. `footprint_after_idle_bytes` uses macOS `vmmap`, which excludes Go pages marked reusable and tracks what Activity Monitor reports; raw `ps` RSS still counts those pages. `-key-delay` waits before sending a key, and `-dump <path>` writes the pane's terminal output for inspecting streamed screens. `PANE_MOVED=0` disables lazy moved-block detection, and `moved_index_ns` records its index-building cost.
 
 `resize_width_apply_ns` measures the debounced rebuild that follows
 `tea.WindowSizeMsg`, so it reflects the work a user waits for after resizing.

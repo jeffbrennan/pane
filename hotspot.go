@@ -75,6 +75,7 @@ type hotspotState struct {
 type hotspotsLoaded struct {
 	files   []hotFile
 	authors map[string]*hotAuthor
+	items   []hotItem
 	request int
 	err     error
 }
@@ -110,6 +111,7 @@ type hotspotPlan struct {
 	stream                         *hotSpotStream
 	files                          []hotFile
 	authors                        map[string]*hotAuthor
+	items                          []hotItem
 	cacheHit                       bool
 }
 
@@ -123,8 +125,8 @@ func (r repository) planHotspots(since, author string) (hotspotPlan, error) {
 	// Check the small summary first: a matching HEAD must not decode the
 	// per-commit cache.
 	if head != "" {
-		if files, authors, cachedAt, ok := readHotSummary(hotSummaryPath(r.root, since, author), head, since, author); ok && now.Unix()-cachedAt <= int64(hotSummaryTTL.Seconds()) {
-			plan.files, plan.authors = files, authors
+		if files, authors, items, cachedAt, ok := readHotSummary(hotSummaryPath(r.root, since, author), head, since, author); ok && len(items) > 0 && now.Unix()-cachedAt <= int64(hotSummaryTTL.Seconds()) {
+			plan.files, plan.authors, plan.items = files, authors, items
 			plan.cacheHit = true
 			return plan, nil
 		}
@@ -135,7 +137,8 @@ func (r repository) planHotspots(since, author string) (hotspotPlan, error) {
 		plan.commits = pruneHotCommits(cache.Commits, plan.cutoff)
 		generated := r.generatedPaths(hotspotPaths(plan.commits))
 		plan.files, plan.authors = aggregateHotspots(plan.commits, generated, plan.cutoff, now)
-		writeHotSummary(hotSummaryPath(r.root, since, author), head, since, author, plan.cutoff, now.Unix(), plan.files, plan.authors)
+		plan.items = buildHotItems(plan.files, false, nil, "")
+		writeHotSummary(hotSummaryPath(r.root, since, author), head, since, author, plan.cutoff, now.Unix(), plan.files, plan.authors, plan.items)
 		plan.cacheHit = true
 		return plan, nil
 	}
@@ -174,7 +177,8 @@ func (r repository) hotspots(since, author string) ([]hotFile, map[string]*hotAu
 			break
 		}
 	}
-	return r.finishHotspots(plan, commits)
+	files, authors, _, err := r.finishHotspots(plan, commits)
+	return files, authors, err
 }
 
 var hotspotPageSize = 100
@@ -187,7 +191,7 @@ var hotspotFirstPageSize = 1
 // rebuilt from the per-commit cache.
 var hotSummaryTTL = time.Hour
 
-func (r repository) finishHotspots(plan hotspotPlan, commits []hotCacheCommit) ([]hotFile, map[string]*hotAuthor, error) {
+func (r repository) finishHotspots(plan hotspotPlan, commits []hotCacheCommit) ([]hotFile, map[string]*hotAuthor, []hotItem, error) {
 	commits = pruneHotCommits(commits, plan.cutoff)
 	now := time.Now()
 	cutoff := plan.cutoff
@@ -198,9 +202,10 @@ func (r repository) finishHotspots(plan hotspotPlan, commits []hotCacheCommit) (
 	}
 	generated := r.generatedPaths(hotspotPaths(commits))
 	files, authors := aggregateHotspots(commits, generated, cutoff, now)
+	items := buildHotItems(files, false, nil, "")
 	writeHotCache(plan.cachePath, plan.head, plan.since, plan.author, cutoff, now.Unix(), commits)
-	writeHotSummary(hotSummaryPath(r.root, plan.since, plan.author), plan.head, plan.since, plan.author, cutoff, now.Unix(), files, authors)
-	return files, authors, nil
+	writeHotSummary(hotSummaryPath(r.root, plan.since, plan.author), plan.head, plan.since, plan.author, cutoff, now.Unix(), files, authors, items)
+	return files, authors, items, nil
 }
 
 func hotspotPaths(commits []hotCacheCommit) []string {
@@ -409,6 +414,20 @@ type hotSummary struct {
 	CachedAt int64            `json:"cached_at"`
 	Files    []hotCacheFile   `json:"files"`
 	Authors  []hotCacheAuthor `json:"authors"`
+	Items    []hotCacheItem   `json:"items"`
+}
+
+type hotCacheItem struct {
+	Path      string  `json:"path"`
+	Name      string  `json:"name"`
+	Branch    string  `json:"branch"`
+	Directory bool    `json:"directory"`
+	Collapsed bool    `json:"collapsed"`
+	Score     float64 `json:"score"`
+	Commits   int     `json:"commits"`
+	Churn     int     `json:"churn"`
+	Last      int64   `json:"last"`
+	Author    string  `json:"author"`
 }
 
 func hotSummaryPath(root, since, author string) string {
@@ -443,18 +462,18 @@ func readHotCache(path, since, author string) (hotCache, bool) {
 	return cache, true
 }
 
-func readHotSummary(path, head, since, author string) ([]hotFile, map[string]*hotAuthor, int64, bool) {
+func readHotSummary(path, head, since, author string) ([]hotFile, map[string]*hotAuthor, []hotItem, int64, bool) {
 	if path == "" || head == "" {
-		return nil, nil, 0, false
+		return nil, nil, nil, 0, false
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, nil, 0, false
+		return nil, nil, nil, 0, false
 	}
 	defer file.Close()
 	var summary hotSummary
 	if err := gob.NewDecoder(file).Decode(&summary); err != nil || summary.Version != hotCacheVersion || summary.Head != head || summary.Since != since || summary.Author != author {
-		return nil, nil, 0, false
+		return nil, nil, nil, 0, false
 	}
 	files := make([]hotFile, len(summary.Files))
 	for i, file := range summary.Files {
@@ -464,10 +483,18 @@ func readHotSummary(path, head, since, author string) ([]hotFile, map[string]*ho
 	for _, author := range summary.Authors {
 		authors[author.Name] = &hotAuthor{name: author.Name, commits: author.Commits, churn: author.Churn, dirs: author.Dirs}
 	}
-	return files, authors, summary.CachedAt, true
+	items := make([]hotItem, len(summary.Items))
+	for i, item := range summary.Items {
+		items[i] = hotItem{
+			path: item.Path, name: item.Name, branch: item.Branch, directory: item.Directory,
+			collapsed: item.Collapsed, score: item.Score, commits: item.Commits, churn: item.Churn,
+			last: time.Unix(item.Last, 0), author: item.Author,
+		}
+	}
+	return files, authors, items, summary.CachedAt, true
 }
 
-func writeHotSummary(path, head, since, author string, cutoff, cachedAt int64, files []hotFile, authors map[string]*hotAuthor) {
+func writeHotSummary(path, head, since, author string, cutoff, cachedAt int64, files []hotFile, authors map[string]*hotAuthor, items []hotItem) {
 	if path == "" {
 		return
 	}
@@ -477,6 +504,13 @@ func writeHotSummary(path, head, since, author string, cutoff, cachedAt int64, f
 	}
 	for _, item := range authors {
 		summary.Authors = append(summary.Authors, hotCacheAuthor{Name: item.name, Commits: item.commits, Churn: item.churn, Dirs: item.dirs})
+	}
+	for _, item := range items {
+		summary.Items = append(summary.Items, hotCacheItem{
+			Path: item.path, Name: item.name, Branch: item.branch, Directory: item.directory,
+			Collapsed: item.collapsed, Score: item.score, Commits: item.commits, Churn: item.churn,
+			Last: item.last.Unix(), Author: item.author,
+		})
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return
@@ -513,7 +547,7 @@ func (m model) loadHotspots() tea.Cmd {
 			return hotspotsLoaded{request: request, err: err}
 		}
 		if plan.cacheHit {
-			return hotspotsLoaded{files: plan.files, authors: plan.authors, request: request}
+			return hotspotsLoaded{files: plan.files, authors: plan.authors, items: plan.items, request: request}
 		}
 		return hotspotsStarted{plan: plan, request: request}
 	}
@@ -534,8 +568,8 @@ func (m model) finishHotspots(request int) tea.Cmd {
 	commits := append([]hotCacheCommit(nil), m.hotspots.commits...)
 	repo := m.repo
 	return func() tea.Msg {
-		files, authors, err := repo.finishHotspots(plan, commits)
-		return hotspotsLoaded{files: files, authors: authors, request: request, err: err}
+		files, authors, items, err := repo.finishHotspots(plan, commits)
+		return hotspotsLoaded{files: files, authors: authors, items: items, request: request, err: err}
 	}
 }
 
@@ -586,11 +620,24 @@ func (m model) hotItems() []hotItem {
 	if cache != nil && cache.filled && cache.dataVersion != m.hotspots.dataVersion && cache.collapsedVersion == m.hotspots.collapsedVersion && cache.sortPath == m.hotspots.sortPath && cache.authorFilter == m.hotspots.authorFilter && time.Since(cache.builtAt) < 250*time.Millisecond {
 		return cache.items
 	}
-	files := m.hotspots.files
-	if filter := m.hotspots.authorFilter; filter != "" {
+	items := buildHotItems(m.hotspots.files, m.hotspots.sortPath, m.hotspots.collapsed, m.hotspots.authorFilter)
+	if cache != nil {
+		cache.items = items
+		cache.filled = true
+		cache.builtAt = time.Now()
+		cache.dataVersion = m.hotspots.dataVersion
+		cache.collapsedVersion = m.hotspots.collapsedVersion
+		cache.sortPath = m.hotspots.sortPath
+		cache.authorFilter = m.hotspots.authorFilter
+	}
+	return items
+}
+
+func buildHotItems(files []hotFile, sortPath bool, collapsed map[string]bool, authorFilter string) []hotItem {
+	if authorFilter != "" {
 		var filtered []hotFile
 		for _, file := range files {
-			if file.authors[filter] > 0 {
+			if file.authors[authorFilter] > 0 {
 				filtered = append(filtered, file)
 			}
 		}
@@ -655,7 +702,7 @@ func (m model) hotItems() []hotItem {
 	var sortNodes func(*hotNode)
 	sortNodes = func(node *hotNode) {
 		sort.SliceStable(node.children, func(i, j int) bool {
-			if m.hotspots.sortPath {
+			if sortPath {
 				return node.children[i].name < node.children[j].name
 			}
 			if node.children[i].score != node.children[j].score {
@@ -679,7 +726,7 @@ func (m model) hotItems() []hotItem {
 			}
 			item := hotItem{
 				path: node.path, name: node.name, branch: prefix + branch, directory: node.file == nil,
-				collapsed: m.hotspots.collapsed[node.path], file: node.file,
+				collapsed: collapsed[node.path], file: node.file,
 				score: node.score, commits: node.commits, churn: node.churn, last: node.last, author: node.author,
 			}
 			items = append(items, item)
@@ -689,15 +736,6 @@ func (m model) hotItems() []hotItem {
 		}
 	}
 	appendChildren(root, "")
-	if cache != nil {
-		cache.items = items
-		cache.filled = true
-		cache.builtAt = time.Now()
-		cache.dataVersion = m.hotspots.dataVersion
-		cache.collapsedVersion = m.hotspots.collapsedVersion
-		cache.sortPath = m.hotspots.sortPath
-		cache.authorFilter = m.hotspots.authorFilter
-	}
 	return items
 }
 

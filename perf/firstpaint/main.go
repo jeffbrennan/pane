@@ -208,6 +208,7 @@ func run(binary, repo, revision, scenario, paneArgs string, idle, settle time.Du
 	idleBytes := outputBytes.Load() - bytesAtPaint
 	idleCPU := processCPU(cmd.Process.Pid) - cpuAtPaint
 	rssAfterIdle := processRSS(cmd.Process.Pid)
+	footprintAfterIdle := processFootprint(cmd.Process.Pid)
 	if _, err := io.WriteString(terminal, "\x03"); err != nil {
 		return err
 	}
@@ -224,6 +225,9 @@ func run(binary, repo, revision, scenario, paneArgs string, idle, settle time.Du
 		return fmt.Errorf("pane did not exit")
 	}
 	metrics := map[string]int64{"first_paint_ns": first.Sub(start).Nanoseconds(), "idle_terminal_bytes": idleBytes, "idle_duration_ns": idle.Nanoseconds(), "idle_cpu_ns": idleCPU, "rss_after_idle_bytes": rssAfterIdle}
+	if footprintAfterIdle > 0 {
+		metrics["footprint_after_idle_bytes"] = footprintAfterIdle
+	}
 	if !firstContent.IsZero() {
 		metrics["first_content_ns"] = firstContent.Sub(start).Nanoseconds()
 	}
@@ -256,6 +260,39 @@ func processRSS(pid int) int64 {
 		return 0
 	}
 	return value * 1024
+}
+
+// processFootprint reads macOS's physical footprint, which excludes pages the
+// runtime has marked reusable but that still count in ps RSS.
+func processFootprint(pid int) int64 {
+	out, err := exec.Command("vmmap", "-summary", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "Physical footprint:") {
+			continue
+		}
+		value := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "Physical footprint:"))
+		multiplier := int64(1)
+		switch value[len(value)-1] {
+		case 'K':
+			multiplier = 1024
+		case 'M':
+			multiplier = 1024 * 1024
+		case 'G':
+			multiplier = 1024 * 1024 * 1024
+		}
+		if multiplier != 1 {
+			value = value[:len(value)-1]
+		}
+		number, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		if err != nil {
+			return 0
+		}
+		return int64(number * float64(multiplier))
+	}
+	return 0
 }
 
 func processCPU(pid int) int64 {

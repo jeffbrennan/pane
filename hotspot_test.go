@@ -358,11 +358,32 @@ func TestHotspotSummaryCacheAvoidsCommitDecode(t *testing.T) {
 			logs.Add(1)
 		}
 	}
-	files, authors, err := r.hotspots("2.year", "")
-	if err != nil || len(files) != 2 || len(authors) == 0 {
-		t.Fatalf("summary cache: %d files %v", len(files), err)
+	plan, err := r.planHotspots("2.year", "")
+	if err != nil || !plan.cacheHit || len(plan.files) != 2 || len(plan.items) == 0 {
+		t.Fatalf("summary cache: %d files %d items %v", len(plan.files), len(plan.items), err)
 	}
 	if logs.Load() != 0 {
 		t.Fatalf("summary cache ran %d git log processes", logs.Load())
+	}
+}
+
+func TestHotspotCacheHitPrefillsTree(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	r := hotFixture(t)
+	if _, _, err := r.hotspots("2.year", ""); err != nil {
+		t.Fatal(err)
+	}
+	m := model{width: 120, height: 30, wrap: true, repo: r}
+	updated, cmd := m.openHotspots("2.year", "")
+	m = updated.(model)
+	m, cmd = applyBatch(t, m, cmd)
+	if cmd != nil {
+		t.Fatalf("cache hit started a stream")
+	}
+	if m.hotspots.loading || m.hotspots.items == nil || !m.hotspots.items.filled || len(m.hotspots.items.items) == 0 {
+		t.Fatalf("cache hit did not prefill the tree: %#v", m.hotspots.items)
+	}
+	if view := m.hotView(); !strings.Contains(view, "recent.txt") {
+		t.Fatalf("prefilled view: %q", view)
 	}
 }

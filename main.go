@@ -873,6 +873,9 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.hotspots.files, m.hotspots.authors = msg.files, msg.authors
 		m.hotspots.dataVersion++
+		if len(msg.items) > 0 {
+			m.hotspots.items = &hotItemsCache{items: msg.items, filled: true, dataVersion: m.hotspots.dataVersion, builtAt: time.Now()}
+		}
 		m.hotspots.selected, m.hotspots.offset = 0, 0
 	case blameLoaded:
 		return m.applyBlame(msg)

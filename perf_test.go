@@ -526,7 +526,10 @@ func measureHotspotPerf(t *testing.T) {
 		if err != nil || !plan.cacheHit {
 			t.Fatalf("hotspot cache view: %v hit=%v", err, plan.cacheHit)
 		}
-		model := model{width: 160, height: 50, repo: repo, hotspots: hotspotState{files: plan.files, authors: plan.authors}}
+		model := model{width: 160, height: 50, repo: repo, hotspots: hotspotState{
+			files: plan.files, authors: plan.authors,
+			items: &hotItemsCache{items: plan.items, filled: len(plan.items) > 0, builtAt: time.Now()},
+		}}
 		if view := model.hotView(); view == "" {
 			t.Fatal("hotspot cache view was empty")
 		}
