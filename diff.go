@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 )
 
-var hunkHeader = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`)
 var submoduleHeader = regexp.MustCompile(`^Submodule (.+) ([0-9a-f]+)\.\.\.?([0-9a-f]+)(?: \(([^)]*)\))?:?$`)
 
 func submoduleLine(line string) (string, string, bool) {
@@ -29,13 +28,6 @@ func submoduleLine(line string) (string, string, bool) {
 		}
 	}
 	return "", "", false
-}
-
-func matchHunkHeader(line string) []string {
-	if !strings.HasPrefix(line, "@@ ") {
-		return nil
-	}
-	return hunkHeader.FindStringSubmatch(line)
 }
 
 func buildRows(changes []change, width int, wrap bool) []row {
@@ -167,15 +159,15 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 			header.renameAdded = side == 1
 			var spans []syntaxSpan
 			for _, span := range item.spans {
-				spans = append(spans, syntaxSpan{start: span.start + len(item.prefix), end: span.end + len(item.prefix)})
+				spans = append(spans, syntaxSpan{Start: span.Start + len(item.prefix), End: span.End + len(item.prefix)})
 			}
 			byteOffset := 0
 			for _, part := range wrapLine(text, max(1, width-5)) {
 				header.text, header.offset = " "+part, offset
 				inline := clipSyntax(spans, byteOffset, byteOffset+len(part))
 				for i := range inline {
-					inline[i].start++
-					inline[i].end++
+					inline[i].Start++
+					inline[i].End++
 				}
 				header.setInlineSpans(inline)
 				if offset > 0 {
@@ -268,14 +260,14 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 		if kind == '-' || kind == 'd' {
 			lineSyntax, syntaxOK = oldSyntax[number]
 		}
-		syntaxMatches := syntaxOK && lineSyntax.text == text
+		syntaxMatches := syntaxOK && lineSyntax.Text == text
 		limit := max(1, width-gutterWidth-3)
 		// A line that already fits stays one row, which avoids allocating a
 		// parts slice for the common case.
 		if !wrap || (printableASCII(text) && len(text) <= limit) {
 			var spans []syntaxSpan
 			if syntaxMatches {
-				spans = clipSyntax(lineSyntax.spans, 0, len(text))
+				spans = clipSyntax(lineSyntax.Spans, 0, len(text))
 			}
 			rows = append(rows, (row{path: c.path, target: target, sourceLine: number, text: text, kind: kind, spans: newRowSpans(spans, nil, nil), syntaxPresent: spans != nil}).withLineNumber(i))
 		} else {
@@ -284,7 +276,7 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 			for _, part := range wrapLine(text, limit) {
 				var spans []syntaxSpan
 				if syntaxMatches {
-					spans = clipSyntax(lineSyntax.spans, byteOffset, byteOffset+len(part))
+					spans = clipSyntax(lineSyntax.Spans, byteOffset, byteOffset+len(part))
 				}
 				rows = append(rows, (row{path: c.path, offset: offset, target: target, sourceLine: number, text: part, kind: kind, spans: newRowSpans(spans, nil, nil), syntaxPresent: spans != nil}).withLineNumber(i))
 				byteOffset += len(part)

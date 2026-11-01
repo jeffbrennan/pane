@@ -18,17 +18,6 @@ type searchState struct {
 	missRows                  []row
 }
 
-// searchFold lowercases s unless the query contains an uppercase letter
-// (smartcase), so "foo" matches "Foo" but "Foo" does not match "foo".
-func searchFold(s, query string) string {
-	for _, r := range query {
-		if unicode.IsUpper(r) {
-			return s
-		}
-	}
-	return strings.ToLower(s)
-}
-
 func searchMatches(text, query string) bool {
 	return newSearchMatcher(query).matches(text)
 }

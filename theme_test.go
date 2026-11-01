@@ -57,7 +57,7 @@ func TestLightThemeDiffRendering(t *testing.T) {
 		{"\x1b[48;2;221;242;224m", "\x1b[48;2;175;220;181m"},
 		{"\x1b[48;2;250;225;225m", "\x1b[48;2;239;182;182m"},
 	} {
-		got := renderSyntax("abc", []syntaxSpan{{0, 3, "\x1b[35m"}}, []syntaxSpan{{0, 3, ""}}, 0, "", tc.background, true)
+		got := renderSyntax("abc", []syntaxSpan{{Start: 0, End: 3, Color: "\x1b[35m"}}, []syntaxSpan{{Start: 0, End: 3}}, 0, "", tc.background, true)
 		if !strings.Contains(got, tc.want) || !strings.Contains(got, "\x1b[38;2;128;35;108m") {
 			t.Errorf("missing light inline or syntax color: %q", got)
 		}

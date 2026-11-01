@@ -3,26 +3,15 @@ package main
 import (
 	"fmt"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/mattn/go-runewidth"
 )
 
-func clean(s string) string {
-	if printableASCII(s) {
-		return s
-	}
-	return strings.Map(func(r rune) rune {
-		if r == '\t' {
-			return ' '
-		}
-		if unicode.IsControl(r) {
-			return '�'
-		}
-		return r
-	}, s)
-}
+const (
+	renameHeaderDark  = "\x1b[1;37;48;5;236m"
+	renameHeaderLight = "\x1b[1;38;2;45;45;45;48;2;222;222;222m"
+)
 
 func wrapLine(s string, width int) []string {
 	if s == "" {

@@ -8,8 +8,8 @@ import (
 func highlightedText(text string, spans []syntaxSpan) string {
 	var result strings.Builder
 	for _, span := range spans {
-		if span.start >= 0 && span.end <= len(text) && span.start < span.end {
-			result.WriteString(text[span.start:span.end])
+		if span.Start >= 0 && span.End <= len(text) && span.Start < span.End {
+			result.WriteString(text[span.Start:span.End])
 		}
 	}
 	return result.String()

@@ -12,6 +12,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 type historyState struct {
@@ -252,7 +254,7 @@ func loadCommitSyntax(repo repository, hash string, request int, changes []chang
 	var indexes []int
 	var plain []change
 	for i, c := range changes {
-		if c.syntaxDiff == "" && !c.syntaxSkipped && syntaxLexer(c.path) != nil {
+		if c.syntaxDiff == "" && !c.syntaxSkipped && syntax.Lexable(c.path) {
 			indexes = append(indexes, i)
 			plain = append(plain, c)
 		}

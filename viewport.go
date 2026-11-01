@@ -12,8 +12,8 @@ func (m model) fileHeaderAt(index int) *row {
 			pinned.text = " → " + displayPath(pinned.path, m.shortPaths)
 			_, inline := renamePathSpans(pinned.oldPath, pinned.path, m.shortPaths)
 			for i := range inline {
-				inline[i].start += len(" → ")
-				inline[i].end += len(" → ")
+				inline[i].Start += len(" → ")
+				inline[i].End += len(" → ")
 			}
 			pinned.setInlineSpans(inline)
 			return &pinned

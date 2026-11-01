@@ -312,10 +312,10 @@ func highlightRows(rows []row, path string, commitIndex int, syntaxDiff, display
 		if r.kind == '-' || r.kind == 'd' {
 			lineSyntax, ok = oldSyntax[r.sourceLine]
 		}
-		if ok && lineSyntax.text == text.String() {
+		if ok && lineSyntax.Text == text.String() {
 			byteOffset := 0
 			for j := i; j < end; j++ {
-				rows[j].setSyntaxSpans(clipSyntax(lineSyntax.spans, byteOffset, byteOffset+len(rows[j].text)))
+				rows[j].setSyntaxSpans(clipSyntax(lineSyntax.Spans, byteOffset, byteOffset+len(rows[j].text)))
 				byteOffset += len(rows[j].text)
 			}
 		}

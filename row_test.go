@@ -12,14 +12,14 @@ func TestRowSpansAreSparseAndCopyOnWrite(t *testing.T) {
 	if original.spans != nil || original.syntaxSpans() == nil {
 		t.Fatal("empty syntax should preserve its presence without allocating span storage")
 	}
-	original.setInlineSpans([]syntaxSpan{{start: 1, end: 2}})
+	original.setInlineSpans([]syntaxSpan{{Start: 1, End: 2}})
 	copy := original
-	copy.setSyntaxSpans([]syntaxSpan{{start: 0, end: 1, color: "red"}})
+	copy.setSyntaxSpans([]syntaxSpan{{Start: 0, End: 1, Color: "red"}})
 	if len(original.syntaxSpans()) != 0 || len(copy.syntaxSpans()) != 1 || original.spans == copy.spans {
 		t.Fatal("updating copied row syntax changed the original")
 	}
-	copy.setInlineSpans([]syntaxSpan{{start: 3, end: 4}})
-	if original.inlineSpans()[0].start != 1 || copy.inlineSpans()[0].start != 3 {
+	copy.setInlineSpans([]syntaxSpan{{Start: 3, End: 4}})
+	if original.inlineSpans()[0].Start != 1 || copy.inlineSpans()[0].Start != 3 {
 		t.Fatal("updating copied inline spans changed the original")
 	}
 	copy.setSyntaxSpans(nil)
@@ -33,7 +33,7 @@ func TestHighlightRowsDoesNotModifyCopiedRows(t *testing.T) {
 	original := buildRows([]change{{path: "file.go", diff: diff}}, 80, false)
 	for i := range original {
 		if original[i].kind == '+' {
-			original[i].setInlineSpans([]syntaxSpan{{start: 4, end: 9}})
+			original[i].setInlineSpans([]syntaxSpan{{Start: 4, End: 9}})
 		}
 	}
 	copied := append([]row(nil), original...)
@@ -82,8 +82,8 @@ func TestWideRowIndexesSurviveSpanChangesAndCopies(t *testing.T) {
 	var original row
 	original.setLineNumber(math.MinInt32)
 	original.setHeaderRow(math.MinInt32)
-	original.setSyntaxSpans([]syntaxSpan{{start: 0, end: 1, color: "red"}})
-	original.setInlineSpans([]syntaxSpan{{start: 1, end: 2}})
+	original.setSyntaxSpans([]syntaxSpan{{Start: 0, End: 1, Color: "red"}})
+	original.setInlineSpans([]syntaxSpan{{Start: 1, End: 2}})
 	copy := original
 	copy.setLineNumber(math.MinInt32 + 1)
 	copy.setHeaderRow(math.MaxInt32)

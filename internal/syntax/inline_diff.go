@@ -1,4 +1,4 @@
-package main
+package syntax
 
 import (
 	"strings"
@@ -8,11 +8,11 @@ import (
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
-func inlineChanges(lines []string) map[int][]syntaxSpan {
-	result := make(map[int][]syntaxSpan)
+func InlineChanges(lines []string) map[int][]Span {
+	result := make(map[int][]Span)
 	inHunk := false
 	for i := 0; i < len(lines); {
-		if matchHunkHeader(lines[i]) != nil {
+		if MatchHunkHeader(lines[i]) != nil {
 			inHunk = true
 			i++
 			continue
@@ -34,16 +34,16 @@ func inlineChanges(lines []string) map[int][]syntaxSpan {
 			continue
 		}
 		for j := 0; j < count; j++ {
-			old := clean(strings.ReplaceAll(lines[oldStart+j][1:], "\t", "    "))
-			new := clean(strings.ReplaceAll(lines[newStart+j][1:], "\t", "    "))
-			removed, added := changedSpans(old, new)
+			old := Clean(strings.ReplaceAll(lines[oldStart+j][1:], "\t", "    "))
+			new := Clean(strings.ReplaceAll(lines[newStart+j][1:], "\t", "    "))
+			removed, added := ChangedSpans(old, new)
 			result[oldStart+j], result[newStart+j] = removed, added
 		}
 	}
 	return result
 }
 
-func changedSpans(old, new string) ([]syntaxSpan, []syntaxSpan) {
+func ChangedSpans(old, new string) ([]Span, []Span) {
 	if len(old)+len(new) > 4096 {
 		return nil, nil
 	}
@@ -60,7 +60,7 @@ func changedSpans(old, new string) ([]syntaxSpan, []syntaxSpan) {
 	if common == 0 || common*3 < max(utf8.RuneCountInString(old), utf8.RuneCountInString(new)) {
 		return nil, nil
 	}
-	var removed, added []syntaxSpan
+	var removed, added []Span
 	oldOffset, newOffset := 0, 0
 	for _, diff := range diffs {
 		size := len(diff.Text)
@@ -69,22 +69,22 @@ func changedSpans(old, new string) ([]syntaxSpan, []syntaxSpan) {
 			oldOffset += size
 			newOffset += size
 		case diffmatchpatch.DiffDelete:
-			removed = append(removed, syntaxSpan{start: oldOffset, end: oldOffset + size})
+			removed = append(removed, Span{Start: oldOffset, End: oldOffset + size})
 			oldOffset += size
 		case diffmatchpatch.DiffInsert:
-			added = append(added, syntaxSpan{start: newOffset, end: newOffset + size})
+			added = append(added, Span{Start: newOffset, End: newOffset + size})
 			newOffset += size
 		}
 	}
 	return removed, added
 }
 
-func renamePathSpans(old, new string, shortened bool) ([]syntaxSpan, []syntaxSpan) {
-	old, new = clean(old), clean(new)
+func RenamePathSpans(old, new string, shortened bool) ([]Span, []Span) {
+	old, new = Clean(old), Clean(new)
 	dmp := diffmatchpatch.New()
 	dmp.DiffTimeout = 5 * time.Millisecond
 	diffs := dmp.DiffMain(old, new, false)
-	var removed, added []syntaxSpan
+	var removed, added []Span
 	oldOffset, newOffset := 0, 0
 	for _, diff := range diffs {
 		size := len(diff.Text)
@@ -93,32 +93,32 @@ func renamePathSpans(old, new string, shortened bool) ([]syntaxSpan, []syntaxSpa
 			oldOffset += size
 			newOffset += size
 		case diffmatchpatch.DiffDelete:
-			removed = append(removed, syntaxSpan{start: oldOffset, end: oldOffset + size})
+			removed = append(removed, Span{Start: oldOffset, End: oldOffset + size})
 			oldOffset += size
 		case diffmatchpatch.DiffInsert:
-			added = append(added, syntaxSpan{start: newOffset, end: newOffset + size})
+			added = append(added, Span{Start: newOffset, End: newOffset + size})
 			newOffset += size
 		}
 	}
-	return visiblePathSpans(old, removed, shortened), visiblePathSpans(new, added, shortened)
+	return VisiblePathSpans(old, removed, shortened), VisiblePathSpans(new, added, shortened)
 }
 
-func visiblePathSpans(path string, spans []syntaxSpan, shortened bool) []syntaxSpan {
+func VisiblePathSpans(path string, spans []Span, shortened bool) []Span {
 	parts := strings.Split(path, "/")
 	if !shortened || len(parts) <= 2 {
 		return spans
 	}
 	suffix := strings.Join(parts[len(parts)-2:], "/")
 	start := len(path) - len(suffix)
-	var visible []syntaxSpan
+	var visible []Span
 	for _, span := range spans {
-		if span.start < start {
-			if len(visible) == 0 || visible[0].start != 0 {
-				visible = append(visible, syntaxSpan{start: 0, end: len("…")})
+		if span.Start < start {
+			if len(visible) == 0 || visible[0].Start != 0 {
+				visible = append(visible, Span{Start: 0, End: len("…")})
 			}
 		}
-		if span.end > start {
-			visible = append(visible, syntaxSpan{start: max(span.start, start) - start + len("…/"), end: span.end - start + len("…/")})
+		if span.End > start {
+			visible = append(visible, Span{Start: max(span.Start, start) - start + len("…/"), End: span.End - start + len("…/")})
 		}
 	}
 	return visible

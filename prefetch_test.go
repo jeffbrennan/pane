@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"github.com/alecthomas/chroma/v2"
+
 	"github.com/charmbracelet/x/ansi"
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 func commitFile(t *testing.T, r repository, path, content, message string) {
@@ -110,7 +112,7 @@ func TestDirtyStartupFirstScreenIsHighlighted(t *testing.T) {
 		t.Fatal("first load should include highlighting")
 	}
 	view := m.View()
-	if !strings.Contains(ansi.Strip(view), "func main") || !strings.Contains(view, tokenColor(chroma.KeywordDeclaration)+"func") {
+	if !strings.Contains(ansi.Strip(view), "func main") || !strings.Contains(view, syntax.TokenColor(chroma.KeywordDeclaration)+"func") {
 		t.Fatalf("first screen should be highlighted: %q", view)
 	}
 }

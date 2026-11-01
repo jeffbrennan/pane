@@ -16,7 +16,7 @@ func TestInlineChanges(t *testing.T) {
 	}{{1, "world", "\x1b[48;2;100;38;43m"}, {2, "there", "\x1b[48;2;42;83;52m"}} {
 		inline := m.inlineSpansForRow(tt.index)
 		row := rows[tt.index]
-		if len(inline) != 1 || row.text[inline[0].start:inline[0].end] != tt.word {
+		if len(inline) != 1 || row.text[inline[0].Start:inline[0].End] != tt.word {
 			t.Fatalf("incorrect inline ranges: %#v", row)
 		}
 		if rendered := m.renderNumberedDiffRow(row, tt.index); !strings.Contains(rendered, tt.color+tt.word) {

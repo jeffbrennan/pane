@@ -1,33 +1,43 @@
-package main
+package syntax
 
 import (
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/mattn/go-runewidth"
 )
 
-type syntaxSpan struct {
-	start, end int
-	color      string
-}
-
+// Added and removed line backgrounds for the dark theme.
 const (
-	renameHeaderDark  = "\x1b[1;37;48;5;236m"
-	renameHeaderLight = "\x1b[1;38;2;45;45;45;48;2;222;222;222m"
+	DarkAddedBackground   = "\x1b[48;2;30;55;40m"
+	DarkRemovedBackground = "\x1b[48;2;65;37;41m"
 )
 
-type syntaxLine struct {
-	text  string
-	spans []syntaxSpan
+// Span marks a byte range of a rendered string with a color escape.
+type Span struct {
+	Start, End int
+	Color      string
 }
 
-func syntaxLexer(path string) chroma.Lexer {
+// Line is one tokenized source line.
+type Line struct {
+	Text  string
+	Spans []Span
+}
+
+// Lexable reports whether path has a syntax lexer.
+func Lexable(path string) bool { return Lexer(path) != nil }
+
+// Lexer returns the lexer for path, or nil when the file type is unsupported.
+func Lexer(path string) chroma.Lexer {
 	name := strings.ToLower(filepath.Base(path))
 	if name == "dockerfile" || strings.HasPrefix(name, "dockerfile.") {
 		return lexers.Get("docker")
@@ -91,7 +101,7 @@ func syntaxLexer(path string) chroma.Lexer {
 // otherwise only the lines that display shows.
 type syntaxKey struct{ path, diff, display string }
 
-type syntaxResult struct{ old, new map[int]syntaxLine }
+type syntaxResult struct{ old, new map[int]Line }
 
 // syntaxCache keeps tokenized diffs between rebuilds; tokenizing dominates
 // the cost of switching views, toggling wrap and resizing. The results are
@@ -109,16 +119,16 @@ const syntaxCacheSize = 512
 // closes, since an unterminated one is not recognized.
 const syntaxWindowLead = 50
 
-// syntaxLines tokenizes the old and new sides of a full-context diff.
-func syntaxLines(path, diff string) (map[int]syntaxLine, map[int]syntaxLine) {
-	return syntaxLinesFor(path, diff, "")
+// Lines tokenizes the old and new sides of a full-context diff.
+func Lines(path, diff string) (map[int]Line, map[int]Line) {
+	return LinesFor(path, diff, "")
 }
 
-// syntaxLinesFor returns tokenized lines for the lines that display shows,
+// LinesFor returns tokenized lines for the lines that display shows,
 // using whole-file results once they exist. Tokenizing only displayed lines
 // costs a fraction of a whole file, so the first paint can be highlighted.
-func syntaxLinesFor(path, diff, display string) (map[int]syntaxLine, map[int]syntaxLine) {
-	if diff == "" || syntaxLexer(path) == nil {
+func LinesFor(path, diff, display string) (map[int]Line, map[int]Line) {
+	if diff == "" || Lexer(path) == nil {
 		return nil, nil
 	}
 	if display == diff {
@@ -150,7 +160,7 @@ func syntaxLinesFor(path, diff, display string) (map[int]syntaxLine, map[int]syn
 func displayedLines(display string) (oldLines, newLines []int) {
 	oldNumber, newNumber, inHunk := 0, 0, false
 	for _, line := range strings.Split(display, "\n") {
-		if match := matchHunkHeader(line); match != nil {
+		if match := MatchHunkHeader(line); match != nil {
 			oldNumber, _ = strconv.Atoi(match[1])
 			newNumber, _ = strconv.Atoi(match[3])
 			inHunk = true
@@ -177,8 +187,8 @@ func displayedLines(display string) (oldLines, newLines []int) {
 
 // tokenizeWindows tokenizes the runs of lines containing wanted, each with
 // syntaxWindowLead lines on either side, keyed like tokenizeLines.
-func tokenizeWindows(lexer chroma.Lexer, lines []string, wanted []int) map[int]syntaxLine {
-	result := make(map[int]syntaxLine, len(wanted))
+func tokenizeWindows(lexer chroma.Lexer, lines []string, wanted []int) map[int]Line {
+	result := make(map[int]Line, len(wanted))
 	slices.Sort(wanted)
 	for i := 0; i < len(wanted); {
 		first, last := wanted[i], wanted[i]
@@ -203,15 +213,15 @@ func tokenizeWindows(lexer chroma.Lexer, lines []string, wanted []int) map[int]s
 
 // tokenizeDiff tokenizes a full-context diff, every line when display is
 // empty and otherwise only the lines that display shows.
-func tokenizeDiff(path, diff, display string) (map[int]syntaxLine, map[int]syntaxLine) {
-	lexer := syntaxLexer(path)
+func tokenizeDiff(path, diff, display string) (map[int]Line, map[int]Line) {
+	lexer := Lexer(path)
 	if lexer == nil || diff == "" {
 		return nil, nil
 	}
 	var old, new []string
 	inHunk := false
 	for _, line := range strings.Split(strings.TrimSuffix(diff, "\n"), "\n") {
-		if match := matchHunkHeader(line); match != nil {
+		if match := MatchHunkHeader(line); match != nil {
 			oldStart, _ := strconv.Atoi(match[1])
 			newStart, _ := strconv.Atoi(match[3])
 			if oldStart > len(old)+1 || newStart > len(new)+1 {
@@ -223,7 +233,7 @@ func tokenizeDiff(path, diff, display string) (map[int]syntaxLine, map[int]synta
 		if !inHunk || len(line) == 0 {
 			continue
 		}
-		text := clean(strings.ReplaceAll(line[1:], "\t", "    "))
+		text := Clean(strings.ReplaceAll(line[1:], "\t", "    "))
 		switch line[0] {
 		case ' ':
 			old = append(old, text)
@@ -241,10 +251,10 @@ func tokenizeDiff(path, diff, display string) (map[int]syntaxLine, map[int]synta
 	return tokenizeWindows(lexer, old, oldLines), tokenizeWindows(lexer, new, newLines)
 }
 
-func tokenizeLines(lexer chroma.Lexer, lines []string) map[int]syntaxLine {
-	result := make(map[int]syntaxLine, len(lines))
+func tokenizeLines(lexer chroma.Lexer, lines []string) map[int]Line {
+	result := make(map[int]Line, len(lines))
 	for i, text := range lines {
-		result[i+1] = syntaxLine{text: text, spans: []syntaxSpan{}}
+		result[i+1] = Line{Text: text, Spans: []Span{}}
 	}
 	if len(lines) == 0 {
 		return result
@@ -255,7 +265,7 @@ func tokenizeLines(lexer chroma.Lexer, lines []string) map[int]syntaxLine {
 	}
 	line, offset := 1, 0
 	for token := iterator(); token != chroma.EOF; token = iterator() {
-		color := tokenColor(token.Type)
+		color := TokenColor(token.Type)
 		parts := strings.Split(token.Value, "\n")
 		for i, part := range parts {
 			if i > 0 {
@@ -264,7 +274,7 @@ func tokenizeLines(lexer chroma.Lexer, lines []string) map[int]syntaxLine {
 			}
 			if color != "" && len(part) > 0 && line <= len(lines) {
 				entry := result[line]
-				entry.spans = append(entry.spans, syntaxSpan{offset, offset + len(part), color})
+				entry.Spans = append(entry.Spans, Span{Start: offset, End: offset + len(part), Color: color})
 				result[line] = entry
 			}
 			offset += len(part)
@@ -273,7 +283,8 @@ func tokenizeLines(lexer chroma.Lexer, lines []string) map[int]syntaxLine {
 	return result
 }
 
-func tokenColor(t chroma.TokenType) string {
+// TokenColor maps a token type to its terminal color.
+func TokenColor(t chroma.TokenType) string {
 	switch {
 	case t.InCategory(chroma.Comment):
 		return "\x1b[90m"
@@ -292,17 +303,17 @@ func tokenColor(t chroma.TokenType) string {
 	}
 }
 
-func clipSyntax(spans []syntaxSpan, start, end int) []syntaxSpan {
-	result := []syntaxSpan{}
+func Clip(spans []Span, start, end int) []Span {
+	result := []Span{}
 	for _, span := range spans {
-		if span.end > start && span.start < end {
-			result = append(result, syntaxSpan{max(span.start, start) - start, min(span.end, end) - start, span.color})
+		if span.End > start && span.Start < end {
+			result = append(result, Span{max(span.Start, start) - start, min(span.End, end) - start, span.Color})
 		}
 	}
 	return result
 }
 
-func sliceStart(text string, start, width int) int {
+func SliceStart(text string, start, width int) int {
 	pos := 0
 	for i, r := range text {
 		w := runewidth.RuneWidth(r)
@@ -317,28 +328,28 @@ func sliceStart(text string, start, width int) int {
 	return len(text)
 }
 
-func renderSyntax(text string, spans, inline []syntaxSpan, start int, query, background string, light bool) string {
-	return renderSyntaxWithHighlight(text, spans, inline, start, query, background, light, "")
+func Render(text string, spans, inline []Span, start int, query, background string, light bool) string {
+	return RenderWithHighlight(text, spans, inline, start, query, background, light, "")
 }
 
-func renderSyntaxWithHighlight(text string, spans, inline []syntaxSpan, start int, query, background string, light bool, highlight string) string {
+func RenderWithHighlight(text string, spans, inline []Span, start int, query, background string, light bool, highlight string) string {
 	colors := make([]string, len(text))
 	for _, span := range spans {
-		for i := max(0, span.start-start); i < min(len(text), span.end-start); i++ {
-			colors[i] = span.color
+		for i := max(0, span.Start-start); i < min(len(text), span.End-start); i++ {
+			colors[i] = span.Color
 			if light {
-				colors[i] = lightSyntaxColor(span.color)
+				colors[i] = lightSyntaxColor(span.Color)
 			}
 		}
 	}
 	changed := make([]bool, len(text))
 	for _, span := range inline {
-		for i := max(0, span.start-start); i < min(len(text), span.end-start); i++ {
+		for i := max(0, span.Start-start); i < min(len(text), span.End-start); i++ {
 			changed[i] = true
 		}
 	}
 	matches := make([]bool, len(text))
-	folded, needle := searchFold(text, query), searchFold(query, query)
+	folded, needle := Fold(text, query), Fold(query, query)
 	if needle != "" && len(folded) == len(text) {
 		for offset := 0; offset < len(folded); {
 			i := strings.Index(folded[offset:], needle)
@@ -366,7 +377,7 @@ func renderSyntaxWithHighlight(text string, spans, inline []syntaxSpan, start in
 					b.WriteString("\x1b[48;2;175;220;181m")
 				} else if background == "\x1b[48;2;250;225;225m" {
 					b.WriteString("\x1b[48;2;239;182;182m")
-				} else if background == darkAddedBackground {
+				} else if background == DarkAddedBackground {
 					b.WriteString("\x1b[48;2;42;83;52m")
 				} else {
 					b.WriteString("\x1b[48;2;100;38;43m")
@@ -400,4 +411,111 @@ func renderSyntaxWithHighlight(text string, spans, inline []syntaxSpan, start in
 		b.WriteString(background)
 	}
 	return b.String()
+}
+
+// Clean replaces control characters that would corrupt terminal output.
+func Clean(s string) string {
+	if printableASCII(s) {
+		return s
+	}
+	return strings.Map(func(r rune) rune {
+		if r == '\t' {
+			return ' '
+		}
+		if unicode.IsControl(r) {
+			return '�'
+		}
+		return r
+	}, s)
+}
+
+func printableASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] > 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
+var hunkHeader = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`)
+
+// MatchHunkHeader parses a unified diff hunk header.
+func MatchHunkHeader(line string) []string {
+	if !strings.HasPrefix(line, "@@ ") {
+		return nil
+	}
+	return hunkHeader.FindStringSubmatch(line)
+}
+
+// Fold lowercases s unless the query contains an uppercase letter (smartcase),
+// so "foo" matches "Foo" but "Foo" does not match "foo".
+func Fold(s, query string) string {
+	for _, r := range query {
+		if unicode.IsUpper(r) {
+			return s
+		}
+	}
+	return strings.ToLower(s)
+}
+
+// ResetCache clears tokenized diffs; tests use it to observe caching.
+func ResetCache() {
+	syntaxCache.Lock()
+	syntaxCache.entries = make(map[syntaxKey]syntaxResult)
+	syntaxCache.Unlock()
+}
+
+// CacheSize reports how many tokenized diffs are cached.
+func CacheSize() int {
+	syntaxCache.Lock()
+	defer syntaxCache.Unlock()
+	return len(syntaxCache.entries)
+}
+
+// CachesWholeFile reports whether path and diff have a whole-file cache entry.
+func CachesWholeFile(path, diff string) bool {
+	syntaxCache.Lock()
+	defer syntaxCache.Unlock()
+	_, ok := syntaxCache.entries[syntaxKey{path, diff, ""}]
+	return ok
+}
+
+func lightSyntaxColor(color string) string {
+	switch color {
+	case "\x1b[90m":
+		return "\x1b[38;2;100;100;100m"
+	case "\x1b[35m":
+		return "\x1b[38;2;128;35;108m"
+	case "\x1b[32m":
+		return "\x1b[38;2;30;105;55m"
+	case "\x1b[36m":
+		return "\x1b[38;2;0;105;110m"
+	case "\x1b[34m":
+		return "\x1b[38;2;30;75;150m"
+	default:
+		return color
+	}
+}
+
+// File is one file's tokenizing work: the full-context diff and the display
+// diff that says which lines are on screen.
+type File struct {
+	Path, Diff, Display string
+}
+
+// Warm tokenizes the displayed lines of files ahead of time, off the UI
+// goroutine, one file per core.
+func Warm(files []File) {
+	var wg sync.WaitGroup
+	limit := make(chan struct{}, runtime.GOMAXPROCS(0))
+	for _, file := range files {
+		wg.Add(1)
+		limit <- struct{}{}
+		go func() {
+			defer func() { <-limit; wg.Done() }()
+			LinesFor(file.Path, file.Diff, file.Display)
+		}()
+	}
+	wg.Wait()
 }

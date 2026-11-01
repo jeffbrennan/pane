@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/mattn/go-runewidth"
+
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 func TestSyntaxUsesFullOldAndNewContext(t *testing.T) {
@@ -48,14 +50,10 @@ func TestSyntaxUsesFullOldAndNewContext(t *testing.T) {
 func TestWarmSyntaxDefersWholeFilesToCursor(t *testing.T) {
 	diff := "diff --git a/file.go b/file.go\n@@ -1 +1 @@\n-var old = 1\n+var new = 2\n"
 	c := change{path: "deferred-file.go", diff: "@@ -1 +1 @@\n-var old = 1\n+var new = 2\n", syntaxDiff: diff}
-	syntaxCache.Lock()
-	syntaxCache.entries = make(map[syntaxKey]syntaxResult)
-	syntaxCache.Unlock()
+	syntax.ResetCache()
 	warmSyntax([]change{c})
-	syntaxCache.Lock()
-	entries := len(syntaxCache.entries)
-	_, whole := syntaxCache.entries[syntaxKey{c.path, diff, ""}]
-	syntaxCache.Unlock()
+	entries := syntax.CacheSize()
+	whole := syntax.CachesWholeFile(c.path, diff)
 	if entries == 0 || whole {
 		t.Fatal("warmSyntax tokenized every whole file instead of only displayed lines")
 	}
@@ -111,7 +109,7 @@ func assertCommentRows(t *testing.T, changes []change, texts ...string) {
 		for _, r := range rows {
 			if r.text == text {
 				found = true
-				if len(r.syntaxSpans()) == 0 || r.syntaxSpans()[0].color != "\x1b[90m" {
+				if len(r.syntaxSpans()) == 0 || r.syntaxSpans()[0].Color != "\x1b[90m" {
 					t.Errorf("%q not highlighted as comment: %#v", text, r.syntaxSpans())
 				}
 			}
@@ -197,7 +195,7 @@ func TestDataEngineeringSyntax(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.path, func(t *testing.T) {
-			lexer := syntaxLexer(test.path)
+			lexer := syntax.Lexer(test.path)
 			if lexer == nil || lexer.Config().Name != test.lexer {
 				t.Fatalf("wrong lexer for %s: %v", test.path, lexer)
 			}
@@ -256,7 +254,7 @@ func TestPythonSyntaxTokensAndExtensions(t *testing.T) {
 		}{{1, "def", "\x1b[35m"}, {1, "greet", "\x1b[34m"}, {2, "hello", "\x1b[32m"}, {3, "# comment", "\x1b[90m"}} {
 			found := false
 			for _, span := range rows[test.row].syntaxSpans() {
-				if span.color == test.color && strings.Contains(rows[test.row].text[span.start:span.end], test.text) {
+				if span.Color == test.color && strings.Contains(rows[test.row].text[span.Start:span.End], test.text) {
 					found = true
 				}
 			}
@@ -310,7 +308,7 @@ func TestUntrackedPythonSyntax(t *testing.T) {
 		t.Fatal(err)
 	}
 	rows := buildRows(s.unstaged, 80, true)
-	if len(rows) < 2 || len(rows[1].syntaxSpans()) == 0 || rows[1].syntaxSpans()[0].color != "\x1b[35m" {
+	if len(rows) < 2 || len(rows[1].syntaxSpans()) == 0 || rows[1].syntaxSpans()[0].Color != "\x1b[35m" {
 		t.Fatalf("untracked Python file missing keyword highlighting: %#v", rows)
 	}
 }
@@ -323,7 +321,7 @@ func assertStringRows(t *testing.T, changes []change, texts ...string) {
 		for _, r := range rows {
 			if r.text == text {
 				found = true
-				if len(r.syntaxSpans()) == 0 || r.syntaxSpans()[0].color != "\x1b[32m" {
+				if len(r.syntaxSpans()) == 0 || r.syntaxSpans()[0].Color != "\x1b[32m" {
 					t.Errorf("%q not highlighted as string: %#v", text, r.syntaxSpans())
 				}
 			}
@@ -335,7 +333,7 @@ func assertStringRows(t *testing.T, changes []change, texts ...string) {
 }
 
 func TestWindowedSyntaxMatchesWholeFile(t *testing.T) {
-	source, err := os.ReadFile("syntax.go")
+	source, err := os.ReadFile("internal/syntax/syntax.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,17 +355,15 @@ func TestWindowedSyntaxMatchesWholeFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := s.unstaged[0]
-	fullOld, fullNew := tokenizeDiff(c.path, c.syntaxDiff, "")
-	windowOld, windowNew := tokenizeDiff(c.path, c.syntaxDiff, c.diff)
-	oldLines, newLines := displayedLines(c.diff)
-	if len(oldLines) == 0 || len(newLines) == 0 {
+	windowOld, windowNew := syntax.LinesFor(c.path, c.syntaxDiff, c.diff)
+	fullOld, fullNew := syntax.LinesFor(c.path, c.syntaxDiff, "")
+	if len(windowOld) == 0 || len(windowNew) == 0 {
 		t.Fatal("no displayed lines")
 	}
 	for _, side := range []struct {
-		full, window map[int]syntaxLine
-		lines        []int
-	}{{fullOld, windowOld, oldLines}, {fullNew, windowNew, newLines}} {
-		for _, n := range side.lines {
+		full, window map[int]syntax.Line
+	}{{fullOld, windowOld}, {fullNew, windowNew}} {
+		for n := range side.window {
 			if !reflect.DeepEqual(side.full[n], side.window[n]) {
 				t.Errorf("line %d: windowed %+v, whole file %+v", n, side.window[n], side.full[n])
 			}

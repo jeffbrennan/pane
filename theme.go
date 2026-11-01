@@ -5,6 +5,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
+
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 type themeTracking struct {
@@ -20,8 +22,8 @@ type terminalBackgroundChanged bool
 type terminalThemeNotifications bool
 
 const (
-	darkAddedBackground   = "\x1b[48;2;30;55;40m"
-	darkRemovedBackground = "\x1b[48;2;65;37;41m"
+	darkAddedBackground   = syntax.DarkAddedBackground
+	darkRemovedBackground = syntax.DarkRemovedBackground
 )
 
 func lightBackgroundResponse(response string) (bool, bool) {
@@ -62,21 +64,4 @@ func lightThemeFromEnv(theme, colorFGBG string) bool {
 	}
 	color, err := strconv.Atoi(parts[len(parts)-1])
 	return err == nil && (color == 7 || color >= 9 && color <= 15)
-}
-
-func lightSyntaxColor(color string) string {
-	switch color {
-	case "\x1b[90m":
-		return "\x1b[38;2;100;100;100m"
-	case "\x1b[35m":
-		return "\x1b[38;2;128;35;108m"
-	case "\x1b[32m":
-		return "\x1b[38;2;30;105;55m"
-	case "\x1b[36m":
-		return "\x1b[38;2;0;105;110m"
-	case "\x1b[34m":
-		return "\x1b[38;2;30;75;150m"
-	default:
-		return color
-	}
 }

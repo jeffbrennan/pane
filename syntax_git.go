@@ -1,9 +1,9 @@
 package main
 
 import (
-	"runtime"
 	"strings"
-	"sync"
+
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 // The Git layer loads and warms syntax for a set of changes. syntax.go itself
@@ -42,7 +42,7 @@ func markSyntaxSkipped(changes []change, end int) {
 }
 
 func highlightable(c change) bool {
-	return syntaxLexer(c.path) != nil && !c.conflict
+	return syntax.Lexable(c.path) && !c.conflict
 }
 
 // Highlighting stops after this many files or diff lines in one call. Change
@@ -75,36 +75,12 @@ func (r repository) syntaxDiffs(changes []change, key contextKey) []string {
 	return diffs
 }
 
-// syntaxFile is one file's tokenizing work: the full-context diff and the
-// display diff that says which lines are on screen.
-type syntaxFile struct {
-	path, diff, display string
-}
-
-// warmSyntax tokenizes the displayed lines of changes ahead of time, off the
-// UI goroutine, one file per core. The file under the cursor gets its whole
-// content tokenized later; that covers context expansion and runs whose
-// lead-in missed an opening comment, without tokenizing every file.
 func warmSyntax(changes []change) {
-	files := make([]syntaxFile, 0, len(changes))
+	files := make([]syntax.File, 0, len(changes))
 	for _, c := range changes {
 		if c.syntaxDiff != "" {
-			files = append(files, syntaxFile{path: c.path, diff: c.syntaxDiff, display: c.diff})
+			files = append(files, syntax.File{Path: c.path, Diff: c.syntaxDiff, Display: c.diff})
 		}
 	}
-	warmSyntaxFiles(files)
-}
-
-func warmSyntaxFiles(files []syntaxFile) {
-	var wg sync.WaitGroup
-	limit := make(chan struct{}, runtime.GOMAXPROCS(0))
-	for _, file := range files {
-		wg.Add(1)
-		limit <- struct{}{}
-		go func() {
-			defer func() { <-limit; wg.Done() }()
-			syntaxLinesFor(file.path, file.diff, file.display)
-		}()
-	}
-	wg.Wait()
+	syntax.Warm(files)
 }
