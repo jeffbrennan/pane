@@ -145,7 +145,7 @@ func (m model) branchView() string {
 	if m.branch.remote {
 		title += styleDim + " · including remotes" + styleReset
 	}
-	lines = append(lines, " "+title)
+	lines = append(lines, m.titleBar(" "+title, styleDim+"read-only"+styleReset))
 	now := time.Now()
 	matches := m.filteredBranches()
 	offset, visible := m.branchViewport(len(matches))

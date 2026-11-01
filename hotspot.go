@@ -465,7 +465,7 @@ func (m model) hotView() string {
 	if m.hotspots.author != "" {
 		title += " · author " + m.hotspots.author
 	}
-	lines := []string{" " + m.accent() + clean(title) + styleReset}
+	lines := []string{m.titleBar(" "+m.accent()+clean(title)+styleReset, styleDim+"read-only"+styleReset)}
 	now := time.Now()
 	if m.hotspots.mode == "authors" {
 		authors := m.hotAuthorList()

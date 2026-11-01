@@ -109,7 +109,7 @@ func (m model) worktreeViewport(count int) (int, int) {
 }
 
 func (m model) worktreeView() string {
-	lines := []string{" " + m.accent() + "worktrees" + styleReset}
+	lines := []string{m.titleBar(" "+m.accent()+"worktrees"+styleReset, styleDim+"read-only"+styleReset)}
 	entries := m.sortedWorktrees()
 	offset, visible := m.worktreeViewport(len(entries))
 	current, _ := os.Getwd()
