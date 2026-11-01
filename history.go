@@ -596,6 +596,8 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			break
 		}
 		return m.openBranches()
+	case "X":
+		return m.openHotspots(hotSinceDefault(), "")
 	case "n":
 		if len(matches) == 0 || m.history.loading {
 			break

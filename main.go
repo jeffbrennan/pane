@@ -121,6 +121,7 @@ type model struct {
 	stash                 stashState
 	branch                branchState
 	worktrees             worktreeState
+	hotspots              hotspotState
 	base                  baseState
 	contextBase           bool
 	fileHistoryReturn     *model
@@ -269,6 +270,29 @@ func initialModel(repo repository, args []string) (model, error) {
 	if len(args) == 3 && args[0] == "log" && args[1] == "--" {
 		return initialFileHistory(repo, args[2])
 	}
+	if len(args) > 0 && args[0] == "hot" {
+		since, author := hotSinceDefault(), ""
+		for i := 1; i < len(args); i++ {
+			arg := args[i]
+			switch {
+			case arg == "--since" && i+1 < len(args):
+				i++
+				since = args[i]
+			case strings.HasPrefix(arg, "--since="):
+				since = strings.TrimPrefix(arg, "--since=")
+			case arg == "--author" && i+1 < len(args):
+				i++
+				author = args[i]
+			case strings.HasPrefix(arg, "--author="):
+				author = strings.TrimPrefix(arg, "--author=")
+			default:
+				return model{}, fmt.Errorf("usage: pane hot [--since <window>] [--author <pattern>]")
+			}
+		}
+		m := model{repo: repo, wrap: true, loading: true, startup: true, viewed: newViewedStore(repo.root)}
+		next, _ := m.openHotspots(since, author)
+		return next.(model), nil
+	}
 	if len(args) > 2 || (len(args) == 2 && args[0] != "--base" && args[0] != "-b") {
 		return model{}, fmt.Errorf("%s", fileHistoryUsage())
 	}
@@ -349,6 +373,9 @@ func (m model) Init() tea.Cmd {
 			}
 		}
 	}
+	if m.screen == "hotspots" && m.hotspots.loading {
+		commands = append(commands, m.loadHotspots())
+	}
 	return tea.Batch(commands...)
 }
 
@@ -368,7 +395,7 @@ func (m model) queryTheme() tea.Cmd {
 }
 
 func (m model) readOnlyDiff() bool {
-	return m.screen == "commit" || m.screen == "sequence" || m.screen == "stashes" || m.screen == "branches" || m.screen == "worktrees" || (m.screen == "history" && m.history.path != "")
+	return m.screen == "commit" || m.screen == "sequence" || m.screen == "stashes" || m.screen == "branches" || m.screen == "worktrees" || m.screen == "hotspots" || (m.screen == "history" && m.history.path != "")
 }
 
 func (m model) queryThemeOnTick() tea.Cmd {
@@ -774,6 +801,17 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.stash.entries = msg.entries
 		m.stash.selected = min(m.stash.selected, max(0, len(msg.entries)-1))
+	case hotspotsLoaded:
+		if m.screen != "hotspots" || msg.request != m.hotspots.request {
+			break
+		}
+		m.hotspots.loading = false
+		if msg.err != nil {
+			m.flash = "Hotspots: " + msg.err.Error()
+			break
+		}
+		m.hotspots.files, m.hotspots.authors = msg.files, msg.authors
+		m.hotspots.selected, m.hotspots.offset = 0, 0
 	case blameLoaded:
 		return m.applyBlame(msg)
 	case branchesLoaded:
@@ -1022,6 +1060,9 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.screen == "worktrees" {
 				return m.handleWorktreeKey(msg)
+			}
+			if m.screen == "hotspots" {
+				return m.handleHotspotKey(msg)
 			}
 			if m.screen == "sequence" {
 				return m.handleSequenceKey(msg)
@@ -1882,6 +1923,9 @@ func (m model) View() string {
 	}
 	if m.screen == "worktrees" {
 		return m.worktreeView()
+	}
+	if m.screen == "hotspots" {
+		return m.hotView()
 	}
 	if m.screen == "stashes" {
 		return m.stashView()

@@ -146,5 +146,23 @@ func initialFileHistory(repo repository, path string) (model, error) {
 }
 
 func fileHistoryUsage() string {
-	return "usage: pane [commit-or-range | --base <revision> | [log] -- <path>]"
+	return "usage: pane [commit-or-range | --base <revision> | hot | [log] -- <path>]"
+}
+
+// openPathHistory opens file history for a path outside the diff views, as the
+// hotspot screen does.
+func (m model) openPathHistory(path string) (tea.Model, tea.Cmd) {
+	if path == "" {
+		return m, nil
+	}
+	previous := m
+	previous.cancelCommitLoad()
+	previous.fileHistoryReturn = nil
+	m.fileHistoryReturn = &previous
+	m.history = historyState{path: path, request: m.history.request}
+	m.stash.viewing = false
+	m.screen = "history"
+	m.pending, m.count = "", 0
+	m, cmd := m.reloadHistory()
+	return m, tea.Batch(cmd, m.loadWorktreeHeads())
 }

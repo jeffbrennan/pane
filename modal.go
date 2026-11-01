@@ -65,6 +65,7 @@ var shortcutSections = []struct {
 		{"u", "Edit latest unpublished commit message"},
 		{"S", "Open stashes"},
 		{"b", "Open branches (tab switches to worktrees)"},
+		{"X", "Open hotspots for the last year"},
 		{"R", "Review from this commit to the working tree"},
 		{"V", "Select a commit range to review"},
 		{"esc / q", "Back"},
@@ -90,6 +91,14 @@ var shortcutSections = []struct {
 		{"d / D", "Remove worktree / force remove"},
 		{"p", "Prune stale worktrees"},
 		{"y, /", "Copy path, filter"},
+		{"esc / q", "Back to history"},
+	}},
+	{"Hotspots", []shortcut{
+		{"X", "Open from history, or run pane hot"},
+		{"tab", "Switch between the file tree and authors"},
+		{"s", "Sort by score or path"},
+		{"h / l", "Fold a directory"},
+		{"↵", "Open file history or filter by author"},
 		{"esc / q", "Back to history"},
 	}},
 	{"Search input", []shortcut{
