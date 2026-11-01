@@ -136,6 +136,16 @@ func run(binary, repo, revision, scenario, paneArgs string, idle, settle time.Du
 	case <-time.After(30 * time.Second):
 		return fmt.Errorf("timed out waiting for the title")
 	}
+	var firstContent time.Time
+	if content != "" {
+		select {
+		case firstContent = <-contentPainted:
+		case <-readDone:
+			return fmt.Errorf("pane exited before the requested content appeared")
+		case <-time.After(30 * time.Second):
+			return fmt.Errorf("timed out waiting for content %q", content)
+		}
+	}
 	if key != "" {
 		if _, err := io.WriteString(terminal, key); err != nil {
 			return err
@@ -148,16 +158,6 @@ func run(binary, repo, revision, scenario, paneArgs string, idle, settle time.Du
 			return fmt.Errorf("pane exited before the requested key point")
 		case <-time.After(30 * time.Second):
 			return fmt.Errorf("timed out waiting for %q", after)
-		}
-	}
-	var firstContent time.Time
-	if content != "" {
-		select {
-		case firstContent = <-contentPainted:
-		case <-readDone:
-			return fmt.Errorf("pane exited before the requested content appeared")
-		case <-time.After(30 * time.Second):
-			return fmt.Errorf("timed out waiting for content %q", content)
 		}
 	}
 	time.Sleep(settle)
