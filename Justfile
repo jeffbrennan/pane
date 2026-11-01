@@ -67,6 +67,13 @@ perf-external:
 perf-diff:
     go run ./perf/diff .scratch/perf-log.tsv
 
+# Set PANE_PERF_WORKTREES to a comma-separated list or a directory of worktrees.
+perf-multi:
+    #!/usr/bin/env bash
+    set -eu
+    go build -o .scratch/perf-pane .
+    go run ./perf/firstpaint -binary .scratch/perf-pane -instances "${PANE_PERF_INSTANCES:-3}" -worktrees "${PANE_PERF_WORKTREES:?set PANE_PERF_WORKTREES}" -idle "${PANE_PERF_IDLE:-60s}" -log .scratch/perf-log.tsv
+
 perf-check:
     #!/usr/bin/env bash
     set -eu
