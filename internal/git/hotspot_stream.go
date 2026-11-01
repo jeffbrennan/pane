@@ -1,4 +1,4 @@
-package main
+package git
 
 import (
 	"bufio"
@@ -16,7 +16,7 @@ import (
 
 // hotSpotReader reads one git log --numstat process.
 type hotSpotReader struct {
-	repo repository
+	repo Repo
 	args []string
 
 	mu     sync.Mutex
@@ -28,7 +28,7 @@ type hotSpotReader struct {
 	header bool
 }
 
-func newHotSpotReader(repo repository, args []string) *hotSpotReader {
+func newHotSpotReader(repo Repo, args []string) *hotSpotReader {
 	return &hotSpotReader{repo: repo, args: args}
 }
 
@@ -41,7 +41,7 @@ func (s *hotSpotReader) start() error {
 	if s.cmd != nil || s.done {
 		return nil
 	}
-	cmd := s.repo.gitCommand(s.args...)
+	cmd := s.repo.GitCommand(s.args...)
 	cmd.Stderr = &s.stderr
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -82,7 +82,7 @@ func (s *hotSpotReader) finish(kill bool) error {
 	}
 	err := cmd.Wait()
 	if err != nil && !kill {
-		return gitError(s.stderr.Bytes(), err)
+		return GitError(s.stderr.Bytes(), err)
 	}
 	return nil
 }
@@ -97,14 +97,14 @@ func (s *hotSpotReader) close() {
 	_ = s.finish(true)
 }
 
-func (s *hotSpotReader) nextPage(limit int) ([]hotCacheCommit, bool, error) {
+func (s *hotSpotReader) nextPage(limit int) ([]HotCacheCommit, bool, error) {
 	if s == nil {
 		return nil, true, nil
 	}
 	if err := s.start(); err != nil {
 		return nil, true, err
 	}
-	page := make([]hotCacheCommit, 0, min(limit, 128))
+	page := make([]HotCacheCommit, 0, min(limit, 128))
 	for len(page) < limit {
 		if !s.header {
 			field, err := s.readField()
@@ -172,15 +172,15 @@ func (s *hotSpotReader) nextPage(limit int) ([]hotCacheCommit, bool, error) {
 }
 
 type hotSpotPage struct {
-	commits []hotCacheCommit
+	commits []HotCacheCommit
 	done    bool
 	err     error
 }
 
-// hotSpotStream merges one or more git log readers so a large window can be
+// HotSpotStream merges one or more git log readers so a large window can be
 // walked in parallel. It still yields commits in pages.
-type hotSpotStream struct {
-	repo          repository
+type HotSpotStream struct {
+	repo          Repo
 	since, author string
 	revisionRange string
 
@@ -194,11 +194,11 @@ type hotSpotStream struct {
 	err        error
 }
 
-func newHotSpotStream(repo repository, since, author, revisionRange string) *hotSpotStream {
-	return &hotSpotStream{repo: repo, since: since, author: author, revisionRange: revisionRange, closed: make(chan struct{})}
+func NewHotSpotStream(repo Repo, since, author, revisionRange string) *HotSpotStream {
+	return &HotSpotStream{repo: repo, since: since, author: author, revisionRange: revisionRange, closed: make(chan struct{})}
 }
 
-func (s *hotSpotStream) start() error {
+func (s *HotSpotStream) start() error {
 	s.mu.Lock()
 	if s.started {
 		s.mu.Unlock()
@@ -252,11 +252,11 @@ func (s *hotSpotStream) start() error {
 }
 
 var (
-	hotspotParallelThreshold = 1000
-	hotspotWorkers           = 0
+	HotspotParallelThreshold = 1000
+	HotspotWorkers           = 0
 )
 
-func (s *hotSpotStream) buildReaders() ([]*hotSpotReader, error) {
+func (s *HotSpotStream) buildReaders() ([]*hotSpotReader, error) {
 	single := func() []*hotSpotReader {
 		args := []string{"log", "--numstat", "-M", "-z", "--format=%x00%H%x00%ct%x00%aN"}
 		if s.since != "" {
@@ -284,7 +284,7 @@ func (s *hotSpotStream) buildReaders() ([]*hotSpotReader, error) {
 		args = append(args, "--author="+s.author)
 	}
 	args = append(args, "HEAD")
-	out, err := s.repo.commandStdout(args...)
+	out, err := s.repo.CommandStdout(args...)
 	if err != nil {
 		return single(), nil
 	}
@@ -294,10 +294,10 @@ func (s *hotSpotStream) buildReaders() ([]*hotSpotReader, error) {
 			hashes = append(hashes, hash)
 		}
 	}
-	if len(hashes) < hotspotParallelThreshold {
+	if len(hashes) < HotspotParallelThreshold {
 		return single(), nil
 	}
-	workers := hotspotWorkers
+	workers := HotspotWorkers
 	if workers <= 0 {
 		workers = min(24, runtime.GOMAXPROCS(0)*3)
 	}
@@ -316,19 +316,19 @@ func (s *hotSpotStream) buildReaders() ([]*hotSpotReader, error) {
 	return readers, nil
 }
 
-func (s *hotSpotStream) nextPage(limit int) ([]hotCacheCommit, bool, error) {
+func (s *HotSpotStream) NextPage(limit int) ([]HotCacheCommit, bool, error) {
 	if s == nil {
 		return nil, true, nil
 	}
 	if err := s.start(); err != nil {
 		return nil, true, err
 	}
-	page := make([]hotCacheCommit, 0, min(limit, 128))
+	page := make([]HotCacheCommit, 0, min(limit, 128))
 	for len(page) < limit {
 		select {
 		case result := <-s.results:
 			if result.err != nil {
-				s.close()
+				s.Close()
 				return page, true, result.err
 			}
 			page = append(page, result.commits...)
@@ -345,7 +345,7 @@ func (s *hotSpotStream) nextPage(limit int) ([]hotCacheCommit, bool, error) {
 	return page, false, nil
 }
 
-func (s *hotSpotStream) close() {
+func (s *HotSpotStream) Close() {
 	if s == nil {
 		return
 	}
@@ -363,13 +363,13 @@ func (s *hotSpotStream) close() {
 	}
 }
 
-func parseHotCommitFields(hash, timestamp, author string, fields []string) (hotCacheCommit, error) {
+func parseHotCommitFields(hash, timestamp, author string, fields []string) (HotCacheCommit, error) {
 	seconds, err := strconv.ParseInt(timestamp, 10, 64)
 	if err != nil {
-		return hotCacheCommit{}, fmt.Errorf("unexpected Git hotspot timestamp")
+		return HotCacheCommit{}, fmt.Errorf("unexpected Git hotspot timestamp")
 	}
-	commit := hotCacheCommit{Hash: hash, Time: seconds, Author: author}
-	byPath := make(map[string]*hotCacheChange)
+	commit := HotCacheCommit{Hash: hash, Time: seconds, Author: author}
+	byPath := make(map[string]*HotCacheChange)
 	for i := 0; i < len(fields); i++ {
 		line := strings.TrimPrefix(fields[i], "\n")
 		if line == "" {
@@ -394,7 +394,7 @@ func parseHotCommitFields(hash, timestamp, author string, fields []string) (hotC
 		}
 		change := byPath[path]
 		if change == nil {
-			change = &hotCacheChange{Path: path}
+			change = &HotCacheChange{Path: path}
 			byPath[path] = change
 		}
 		change.Added += added

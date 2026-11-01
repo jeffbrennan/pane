@@ -7,20 +7,20 @@ import (
 	"testing"
 )
 
-func testRepo(t *testing.T) repository {
+func testRepo(t *testing.T) Repo {
 	t.Helper()
-	r := repository{root: t.TempDir()}
+	r := Repo{Root: t.TempDir()}
 	for _, args := range [][]string{{"init"}, {"config", "user.email", "test@example.com"}, {"config", "user.name", "Test"}} {
-		if out, err := r.command(args...); err != nil {
+		if out, err := r.Command(args...); err != nil {
 			t.Fatalf("git %v: %s: %v", args, out, err)
 		}
 	}
 	return r
 }
 
-func writeFile(t *testing.T, r repository, path, content string) {
+func writeFile(t *testing.T, r Repo, path, content string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(r.root, path), []byte(content), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(r.Root, path), []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -28,31 +28,31 @@ func writeFile(t *testing.T, r repository, path, content string) {
 func TestStagingAndUnbornUnstaging(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "new file.txt", "hello\n")
-	s, err := r.load()
+	s, err := r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.unstaged) != 1 || !strings.Contains(s.unstaged[0].diff, "+hello") {
+	if len(s.Unstaged) != 1 || !strings.Contains(s.Unstaged[0].Diff, "+hello") {
 		t.Fatalf("untracked: %#v", s)
 	}
-	if err := r.stage("new file.txt", false); err != nil {
+	if err := r.Stage("new file.txt", false); err != nil {
 		t.Fatal(err)
 	}
-	s, err = r.load()
+	s, err = r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.staged) != 1 || len(s.unstaged) != 0 {
+	if len(s.Staged) != 1 || len(s.Unstaged) != 0 {
 		t.Fatalf("staged: %#v", s)
 	}
-	if err := r.stage("new file.txt", true); err != nil {
+	if err := r.Stage("new file.txt", true); err != nil {
 		t.Fatal(err)
 	}
-	s, err = r.load()
+	s, err = r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.staged) != 0 || len(s.unstaged) != 1 {
+	if len(s.Staged) != 0 || len(s.Unstaged) != 1 {
 		t.Fatalf("unstaged: %#v", s)
 	}
 }
@@ -60,42 +60,42 @@ func TestStagingAndUnbornUnstaging(t *testing.T) {
 func TestPartiallyStagedFile(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file", "initial\n")
-	if err := r.stage("file", false); err != nil {
+	if err := r.Stage("file", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.action("commit", "-m", "initial"); err != nil {
+	if _, err := r.Action("commit", "-m", "initial"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "file", "staged\n")
-	if err := r.stage("file", false); err != nil {
+	if err := r.Stage("file", false); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "file", "final\n")
-	s, err := r.load()
+	s, err := r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.staged) != 1 || len(s.unstaged) != 1 {
+	if len(s.Staged) != 1 || len(s.Unstaged) != 1 {
 		t.Fatalf("partial: %#v", s)
 	}
-	if err := r.stage("file", false); err != nil {
+	if err := r.Stage("file", false); err != nil {
 		t.Fatal(err)
 	}
-	s, err = r.load()
+	s, err = r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.unstaged) != 0 || !strings.Contains(s.staged[0].diff, "+final") {
+	if len(s.Unstaged) != 0 || !strings.Contains(s.Staged[0].Diff, "+final") {
 		t.Fatalf("whole file: %#v", s)
 	}
-	if err := r.stage("file", true); err != nil {
+	if err := r.Stage("file", true); err != nil {
 		t.Fatal(err)
 	}
-	s, err = r.load()
+	s, err = r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.staged) != 0 || len(s.unstaged) != 1 {
+	if len(s.Staged) != 0 || len(s.Unstaged) != 1 {
 		t.Fatalf("unstaged: %#v", s)
 	}
 }
@@ -103,30 +103,30 @@ func TestPartiallyStagedFile(t *testing.T) {
 func TestBinaryAndDeletedFile(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "binary", "\x00\x01\x02")
-	s, err := r.load()
+	s, err := r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.unstaged) != 1 || !strings.Contains(s.unstaged[0].diff, "Binary files") {
+	if len(s.Unstaged) != 1 || !strings.Contains(s.Unstaged[0].Diff, "Binary files") {
 		t.Fatalf("binary: %#v", s)
 	}
-	if err := r.stage("binary", false); err != nil {
+	if err := r.Stage("binary", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.action("commit", "-m", "binary"); err != nil {
+	if _, err := r.Action("commit", "-m", "binary"); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(filepath.Join(r.root, "binary")); err != nil {
+	if err := os.Remove(filepath.Join(r.Root, "binary")); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.stage("binary", false); err != nil {
+	if err := r.Stage("binary", false); err != nil {
 		t.Fatal(err)
 	}
-	s, err = r.load()
+	s, err = r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.staged) != 1 || len(s.unstaged) != 0 {
+	if len(s.Staged) != 1 || len(s.Unstaged) != 0 {
 		t.Fatalf("deletion: %#v", s)
 	}
 }
@@ -134,11 +134,11 @@ func TestBinaryAndDeletedFile(t *testing.T) {
 func TestUntrackedDiffPresentation(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "new.txt", "first\nsecond\n")
-	s, err := r.load()
+	s, err := r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows := buildRows(s.unstaged, 80, true)
+	rows := buildRows(s.Unstaged, 80, true)
 	if len(rows) != 3 || rowGutter(rows[1], 3) != "  1 + " || rows[1].text != "first" || rows[2].text != "second" {
 		t.Fatalf("unexpected rows: %#v", rows)
 	}
@@ -147,20 +147,20 @@ func TestUntrackedDiffPresentation(t *testing.T) {
 func TestCommitStagesAllWhenIndexEmpty(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "tracked", "old\n")
-	if err := r.stage("tracked", false); err != nil {
+	if err := r.Stage("tracked", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "tracked", "updated\n")
 	writeFile(t, r, "untracked", "new\n")
 	writeFile(t, r, ".gitignore", "ignored\n")
 	writeFile(t, r, "ignored", "secret\n")
-	if _, err := r.commit("all changes"); err != nil {
+	if _, err := r.Commit("all changes"); err != nil {
 		t.Fatal(err)
 	}
-	out, err := r.command("show", "--format=", "--name-only", "HEAD")
+	out, err := r.Command("show", "--format=", "--name-only", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,24 +178,24 @@ func TestCommitPreservesUnstagedChanges(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "staged", "staged content\n")
 	writeFile(t, r, "unstaged", "unstaged content\n")
-	if err := r.stage("staged", false); err != nil {
+	if err := r.Stage("staged", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.commit("staged only"); err != nil {
+	if _, err := r.Commit("staged only"); err != nil {
 		t.Fatal(err)
 	}
-	out, err := r.command("show", "--format=", "--name-only", "HEAD")
+	out, err := r.Command("show", "--format=", "--name-only", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(out) != "staged\n" {
 		t.Fatalf("committed files: %q", out)
 	}
-	s, err := r.load()
+	s, err := r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.unstaged) != 1 || s.unstaged[0].path != "unstaged" {
+	if len(s.Unstaged) != 1 || s.Unstaged[0].Path != "unstaged" {
 		t.Fatalf("remaining changes: %#v", s)
 	}
 }
@@ -203,14 +203,14 @@ func TestCommitPreservesUnstagedChanges(t *testing.T) {
 func TestCommitStagesInitialUntrackedFiles(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "first", "initial\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
-	s, err := r.load()
+	s, err := r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.staged) != 0 || len(s.unstaged) != 0 {
+	if len(s.Staged) != 0 || len(s.Unstaged) != 0 {
 		t.Fatalf("remaining changes: %#v", s)
 	}
 }
@@ -220,36 +220,36 @@ func TestLoadBatchesDiffsAndFallsBackForQuotedPaths(t *testing.T) {
 	for _, path := range []string{"plain", "a b", `q"t`} {
 		writeFile(t, r, path, "old\n")
 	}
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{"plain", "a b", `q"t`} {
 		writeFile(t, r, path, "staged "+path+"\n")
-		if err := r.stage(path, false); err != nil {
+		if err := r.Stage(path, false); err != nil {
 			t.Fatal(err)
 		}
 		writeFile(t, r, path, "unstaged "+path+"\n")
 	}
 	writeFile(t, r, "untracked", "new\n")
-	s, err := r.load()
+	s, err := r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.staged) != 3 || len(s.unstaged) != 4 || s.unstaged[3].path != "untracked" {
+	if len(s.Staged) != 3 || len(s.Unstaged) != 4 || s.Unstaged[3].Path != "untracked" {
 		t.Fatalf("snapshot: %#v", s)
 	}
-	for _, c := range s.staged {
-		if strings.Count(c.diff, "diff --git") != 1 || !strings.Contains(c.diff, "+staged "+c.path) {
-			t.Errorf("staged %q: %q", c.path, c.diff)
+	for _, c := range s.Staged {
+		if strings.Count(c.Diff, "diff --git") != 1 || !strings.Contains(c.Diff, "+staged "+c.Path) {
+			t.Errorf("staged %q: %q", c.Path, c.Diff)
 		}
 	}
-	for _, c := range s.unstaged[:3] {
-		if strings.Count(c.diff, "diff --git") != 1 || !strings.Contains(c.diff, "+unstaged "+c.path) {
-			t.Errorf("unstaged %q: %q", c.path, c.diff)
+	for _, c := range s.Unstaged[:3] {
+		if strings.Count(c.Diff, "diff --git") != 1 || !strings.Contains(c.Diff, "+unstaged "+c.Path) {
+			t.Errorf("unstaged %q: %q", c.Path, c.Diff)
 		}
 	}
-	again, err := r.load()
-	if err != nil || !s.equal(again) {
+	again, err := r.Load()
+	if err != nil || !s.Equal(again) {
 		t.Fatalf("unchanged snapshots differ: %v", err)
 	}
 }

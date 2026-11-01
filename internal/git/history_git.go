@@ -1,4 +1,4 @@
-package main
+package git
 
 import (
 	"bytes"
@@ -8,83 +8,83 @@ import (
 	"strings"
 )
 
-type commitInfo struct {
-	hash, author, email, date, subject, message string
-	committer, committerEmail, committerDate    string
-	refs                                        string
-	parents                                     []string
-	filePath                                    string
-	search                                      string
-	added, deleted, binary                      int
-	statsLoaded                                 bool
+type CommitInfo struct {
+	Hash, Author, Email, Date, Subject, Message string
+	Committer, CommitterEmail, CommitterDate    string
+	Refs                                        string
+	Parents                                     []string
+	FilePath                                    string
+	Search                                      string
+	Added, Deleted, Binary                      int
+	StatsLoaded                                 bool
 }
 
 const historyPage = 200
 
-func (r repository) resolveCommit(revision string) (commitInfo, error) {
+func (r Repo) ResolveCommit(revision string) (CommitInfo, error) {
 	if revision == "" {
-		return commitInfo{}, fmt.Errorf("commit revision cannot be empty")
+		return CommitInfo{}, fmt.Errorf("commit revision cannot be empty")
 	}
-	out, err := r.command("rev-parse", "--verify", "--end-of-options", revision+"^{commit}")
+	out, err := r.Command("rev-parse", "--verify", "--end-of-options", revision+"^{commit}")
 	if err != nil {
-		return commitInfo{}, fmt.Errorf("invalid commit %q: %w", revision, gitError(out, err))
+		return CommitInfo{}, fmt.Errorf("invalid commit %q: %w", revision, GitError(out, err))
 	}
 	hash := strings.TrimSpace(string(out))
-	commit, err := r.commitDetail(hash)
+	commit, err := r.CommitDetail(hash)
 	if err != nil {
-		return commitInfo{}, err
+		return CommitInfo{}, err
 	}
-	if commit.hash == "" {
-		return commitInfo{}, fmt.Errorf("could not read commit %q", revision)
+	if commit.Hash == "" {
+		return CommitInfo{}, fmt.Errorf("could not read commit %q", revision)
 	}
 	return commit, nil
 }
 
-// commitDetail loads the metadata a commit header shows: identity, dates,
+// CommitDetail loads the metadata a commit header shows: identity, dates,
 // parents, refs and the full message. It runs alongside the patch stream.
-func (r repository) commitDetail(hash string) (commitInfo, error) {
-	out, err := r.commandStdout("show", "-s", "--decorate=short", "-z",
+func (r Repo) CommitDetail(hash string) (CommitInfo, error) {
+	out, err := r.CommandStdout("show", "-s", "--decorate=short", "-z",
 		"--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00%P%x00%cn%x00%ce%x00%cI%x00%D%x00", hash, "--")
 	if err != nil {
-		return commitInfo{}, gitError(out, err)
+		return CommitInfo{}, GitError(out, err)
 	}
 	return parseCommitDetail(out)
 }
 
-func parseCommitDetail(out []byte) (commitInfo, error) {
+func parseCommitDetail(out []byte) (CommitInfo, error) {
 	fields := bytes.Split(out, []byte{0})
 	if len(fields) < 12 {
-		return commitInfo{}, fmt.Errorf("unexpected Git commit detail format")
+		return CommitInfo{}, fmt.Errorf("unexpected Git commit detail format")
 	}
-	commit := commitInfo{
-		hash: string(fields[1]), author: string(fields[2]), email: string(fields[3]),
-		date: string(fields[4]), subject: string(fields[5]), message: string(fields[6]),
-		committer: string(fields[8]), committerEmail: string(fields[9]), committerDate: string(fields[10]),
-		refs: string(fields[11]),
+	commit := CommitInfo{
+		Hash: string(fields[1]), Author: string(fields[2]), Email: string(fields[3]),
+		Date: string(fields[4]), Subject: string(fields[5]), Message: string(fields[6]),
+		Committer: string(fields[8]), CommitterEmail: string(fields[9]), CommitterDate: string(fields[10]),
+		Refs: string(fields[11]),
 	}
 	if parents := strings.Fields(string(fields[7])); len(parents) > 0 {
-		commit.parents = parents
+		commit.Parents = parents
 	}
-	commit.search = strings.ToLower(commit.hash + "\n" + commit.author + "\n" + commit.email + "\n" + commit.message + "\n" + commit.subject)
+	commit.Search = strings.ToLower(commit.Hash + "\n" + commit.Author + "\n" + commit.Email + "\n" + commit.Message + "\n" + commit.Subject)
 	return commit, nil
 }
 
-// history loads up to limit commits after skipping the newest skip commits.
-func (r repository) history(skip, limit int) ([]commitInfo, error) {
-	return r.historyWithDate(skip, limit, "%aI")
+// History loads up to limit commits after skipping the newest skip commits.
+func (r Repo) History(skip, limit int) ([]CommitInfo, error) {
+	return r.HistoryWithDate(skip, limit, "%aI")
 }
 
-func (r repository) historyWithDate(skip, limit int, dateFormat string) ([]commitInfo, error) {
-	return r.historyWithPath(skip, limit, dateFormat, "")
+func (r Repo) HistoryWithDate(skip, limit int, dateFormat string) ([]CommitInfo, error) {
+	return r.HistoryWithPath(skip, limit, dateFormat, "")
 }
 
-func (r repository) historyWithPath(skip, limit int, dateFormat, path string) ([]commitInfo, error) {
-	out, err := r.command("rev-parse", "--verify", "--quiet", "HEAD")
+func (r Repo) HistoryWithPath(skip, limit int, dateFormat, path string) ([]CommitInfo, error) {
+	out, err := r.Command("rev-parse", "--verify", "--quiet", "HEAD")
 	if err != nil {
 		if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 1 {
 			return nil, nil
 		}
-		return nil, gitError(out, err)
+		return nil, GitError(out, err)
 	}
 	format := "--format=%x00%H%x00%an%x00%ae%x00" + dateFormat + "%x00%s%x00%B%x00"
 	logSkip, logLimit := skip, limit
@@ -95,9 +95,9 @@ func (r repository) historyWithPath(skip, limit int, dateFormat, path string) ([
 	if path != "" {
 		args = append(args, "--follow", "--name-status", "-M", "--", path)
 	}
-	out, err = r.commandStdout(args...)
+	out, err = r.CommandStdout(args...)
 	if err != nil {
-		return nil, gitError(out, err)
+		return nil, GitError(out, err)
 	}
 	if path != "" {
 		commits, err := parseFileHistory(out, path)
@@ -109,9 +109,9 @@ func (r repository) historyWithPath(skip, limit int, dateFormat, path string) ([
 	return parseHistory(out, false)
 }
 
-func parseFileHistory(out []byte, path string) ([]commitInfo, error) {
+func parseFileHistory(out []byte, path string) ([]CommitInfo, error) {
 	fields := bytes.Split(out, []byte{0})
-	var commits []commitInfo
+	var commits []CommitInfo
 	for i := 0; i < len(fields); {
 		for i < len(fields) && len(fields[i]) == 0 {
 			i++
@@ -122,8 +122,8 @@ func parseFileHistory(out []byte, path string) ([]commitInfo, error) {
 		if i+6 > len(fields) {
 			return nil, fmt.Errorf("unexpected Git file history format")
 		}
-		c := commitInfo{hash: string(fields[i]), author: string(fields[i+1]), email: string(fields[i+2]), date: string(fields[i+3]), subject: string(fields[i+4]), message: string(fields[i+5]), filePath: path}
-		c.search = strings.ToLower(c.hash + "\n" + c.author + "\n" + c.email + "\n" + c.message + "\n" + c.subject)
+		c := CommitInfo{Hash: string(fields[i]), Author: string(fields[i+1]), Email: string(fields[i+2]), Date: string(fields[i+3]), Subject: string(fields[i+4]), Message: string(fields[i+5]), FilePath: path}
+		c.Search = strings.ToLower(c.Hash + "\n" + c.Author + "\n" + c.Email + "\n" + c.Message + "\n" + c.Subject)
 		i += 6
 		for i < len(fields) && len(fields[i]) == 0 {
 			i++
@@ -137,13 +137,13 @@ func parseFileHistory(out []byte, path string) ([]commitInfo, error) {
 			if i >= len(fields) || len(fields[i]) == 0 {
 				return nil, fmt.Errorf("unexpected Git file history path")
 			}
-			c.filePath = string(fields[i])
+			c.FilePath = string(fields[i])
 			i++
 			if strings.HasPrefix(status, "R") || strings.HasPrefix(status, "C") {
 				if i >= len(fields) || len(fields[i]) == 0 {
 					return nil, fmt.Errorf("unexpected Git file history rename")
 				}
-				c.filePath = string(fields[i])
+				c.FilePath = string(fields[i])
 				i++
 			}
 		}
@@ -152,24 +152,24 @@ func parseFileHistory(out []byte, path string) ([]commitInfo, error) {
 	return commits, nil
 }
 
-func (r repository) historyStats(hashes []string) ([]commitInfo, error) {
+func (r Repo) HistoryStats(hashes []string) ([]CommitInfo, error) {
 	args := []string{"log", "--no-walk=unsorted", "-z", "--numstat", "-M", "--no-ext-diff", "--no-textconv", "--diff-merges=first-parent", "--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00"}
 	args = append(args, hashes...)
 	args = append(args, "--")
-	out, err := r.commandStdout(args...)
+	out, err := r.CommandStdout(args...)
 	if err != nil {
-		return nil, gitError(out, err)
+		return nil, GitError(out, err)
 	}
 	commits, err := parseHistory(out, true)
 	if err == nil {
-		r.stats.put(commits)
+		r.Stats.Put(commits)
 	}
 	return commits, err
 }
 
-func parseHistory(out []byte, statsLoaded bool) ([]commitInfo, error) {
+func parseHistory(out []byte, statsLoaded bool) ([]CommitInfo, error) {
 	fields := bytes.Split(out, []byte{0})
-	var commits []commitInfo
+	var commits []CommitInfo
 	for i := 0; i < len(fields); {
 		if len(fields[i]) == 0 {
 			i++
@@ -178,8 +178,8 @@ func parseHistory(out []byte, statsLoaded bool) ([]commitInfo, error) {
 		if i+6 > len(fields) {
 			return nil, fmt.Errorf("unexpected Git history format")
 		}
-		c := commitInfo{hash: string(fields[i]), author: string(fields[i+1]), email: string(fields[i+2]), date: string(fields[i+3]), subject: string(fields[i+4]), message: string(fields[i+5]), statsLoaded: statsLoaded}
-		c.search = strings.ToLower(c.hash + "\n" + c.author + "\n" + c.email + "\n" + c.message + "\n" + c.subject)
+		c := CommitInfo{Hash: string(fields[i]), Author: string(fields[i+1]), Email: string(fields[i+2]), Date: string(fields[i+3]), Subject: string(fields[i+4]), Message: string(fields[i+5]), StatsLoaded: statsLoaded}
+		c.Search = strings.ToLower(c.Hash + "\n" + c.Author + "\n" + c.Email + "\n" + c.Message + "\n" + c.Subject)
 		i += 6
 		for i < len(fields) && len(fields[i]) == 0 {
 			i++
@@ -190,15 +190,15 @@ func parseHistory(out []byte, statsLoaded bool) ([]commitInfo, error) {
 				return nil, fmt.Errorf("unexpected Git history statistics")
 			}
 			if string(parts[0]) == "-" && string(parts[1]) == "-" {
-				c.binary++
+				c.Binary++
 			} else {
 				added, addErr := strconv.Atoi(string(parts[0]))
 				deleted, delErr := strconv.Atoi(string(parts[1]))
 				if addErr != nil || delErr != nil {
 					return nil, fmt.Errorf("unexpected Git history statistics")
 				}
-				c.added += added
-				c.deleted += deleted
+				c.Added += added
+				c.Deleted += deleted
 			}
 			i++
 			if len(parts[2]) == 0 {
@@ -213,41 +213,41 @@ func parseHistory(out []byte, statsLoaded bool) ([]commitInfo, error) {
 	return commits, nil
 }
 
-func (r repository) commitChanges(hash string) ([]change, error) {
-	changes, err := r.commitChangesWithoutSyntax(hash)
+func (r Repo) CommitChanges(hash string) ([]Change, error) {
+	changes, err := r.CommitChangesWithoutSyntax(hash)
 	if err == nil {
-		r.loadSyntaxDiffs(changes, contextKey{commit: hash})
+		r.LoadSyntaxDiffs(changes, Context{Commit: hash})
 	}
 	return changes, err
 }
 
-// commitChangesFirstScreen loads a commit's changes with the files on its
+// CommitChangesFirstScreen loads a commit's changes with the files on its
 // first screen highlighted, so opening it paints in color. The first screen
 // starts at focus when a change has that path. Later files start plain for
 // loadCommitSyntax, or in a commit over the syntax budget for syntaxDemand;
 // see startupSyntaxLines.
-func (r repository) commitChangesFirstScreen(hash, focus string) ([]change, error) {
-	changes, err := r.commitChangesWithoutSyntax(hash)
+func (r Repo) CommitChangesFirstScreen(hash, focus string) ([]Change, error) {
+	changes, err := r.CommitChangesWithoutSyntax(hash)
 	if err != nil {
 		return changes, err
 	}
 	start := 0
 	for i, c := range changes {
-		if focus != "" && (c.path == focus || c.oldPath == focus) {
+		if focus != "" && (c.Path == focus || c.OldPath == focus) {
 			start = i
 			break
 		}
 	}
 	end, shown := start, 0
 	for ; end < len(changes) && shown < startupSyntaxLines; end++ {
-		shown += strings.Count(changes[end].diff, "\n")
+		shown += strings.Count(changes[end].Diff, "\n")
 	}
 	first := changes[start:end]
-	r.loadSyntaxDiffs(first, contextKey{commit: hash})
-	warmSyntax(first)
+	r.LoadSyntaxDiffs(first, Context{Commit: hash})
+	WarmSyntax(first)
 	// Past the first screen, a commit over the syntax budget highlights files
 	// as they near the viewport instead of all at once.
-	rest := append(append([]change(nil), changes[:start]...), changes[end:]...)
+	rest := append(append([]Change(nil), changes[:start]...), changes[end:]...)
 	if syntaxBudgetEnd(rest) < len(rest) {
 		markSyntaxSkipped(changes[:start], 0)
 		markSyntaxSkipped(changes[end:], 0)
@@ -255,7 +255,7 @@ func (r repository) commitChangesFirstScreen(hash, focus string) ([]change, erro
 	return changes, nil
 }
 
-func (r repository) commitChangesWithoutSyntax(hash string) ([]change, error) {
+func (r Repo) CommitChangesWithoutSyntax(hash string) ([]Change, error) {
 	// The patch does not depend on the name status, so both load at once.
 	type result struct {
 		out []byte
@@ -265,37 +265,37 @@ func (r repository) commitChangesWithoutSyntax(hash string) ([]change, error) {
 	go func() {
 		args := append([]string{"show", "--first-parent", "--format="}, r.diffOptions()...)
 		args = append(args, "--src-prefix=a/", "--dst-prefix=b/", hash, "--")
-		out, err := r.commandStdout(args...)
+		out, err := r.CommandStdout(args...)
 		patchResult <- result{out, err}
 	}()
-	out, err := r.commandStdout("show", "--first-parent", "--format=", "--name-status", "-M", "-z", hash, "--")
+	out, err := r.CommandStdout("show", "--first-parent", "--format=", "--name-status", "-M", "-z", hash, "--")
 	loadedPatch := <-patchResult
-	if r.context != nil && r.context.Err() != nil {
-		return nil, r.context.Err()
+	if r.Context != nil && r.Context.Err() != nil {
+		return nil, r.Context.Err()
 	}
 	if err != nil {
-		return nil, gitError(out, err)
+		return nil, GitError(out, err)
 	}
 	patch, err := loadedPatch.out, loadedPatch.err
 	if err != nil {
-		return nil, gitError(patch, err)
+		return nil, GitError(patch, err)
 	}
-	patches := splitPatch(string(patch))
+	patches := SplitPatch(string(patch))
 	paths, oldPaths, err := parseCommitPaths(out)
 	if err != nil {
 		return nil, err
 	}
-	generated := r.generatedPaths(paths)
+	generated := r.GeneratedPaths(paths)
 	changes, err := parallelDiffs(paths, func(path string) (string, error) {
-		if r.context != nil && r.context.Err() != nil {
-			return "", r.context.Err()
+		if r.Context != nil && r.Context.Err() != nil {
+			return "", r.Context.Err()
 		}
 		diff, ok := patches[path]
-		return r.commitFileDiff(hash, path, oldPaths[path], diff, ok)
+		return r.CommitFileDiff(hash, path, oldPaths[path], diff, ok)
 	})
 	for i := range changes {
-		changes[i].oldPath = oldPaths[changes[i].path]
-		changes[i].generated = generated[changes[i].path]
+		changes[i].OldPath = oldPaths[changes[i].Path]
+		changes[i].Generated = generated[changes[i].Path]
 	}
 	return changes, err
 }
@@ -325,11 +325,11 @@ func parseCommitPaths(out []byte) ([]string, map[string]string, error) {
 	return paths, oldPaths, nil
 }
 
-func (r repository) commitFileDiff(hash, path, oldPath, diff string, ok bool) (string, error) {
+func (r Repo) CommitFileDiff(hash, path, oldPath, diff string, ok bool) (string, error) {
 	return r.revisionFileDiff(commitPatchPrefix, hash, path, oldPath, diff, ok)
 }
 
-func (r repository) baseFileDiff(hash, path, oldPath, diff string, ok bool) (string, error) {
+func (r Repo) BaseFileDiff(hash, path, oldPath, diff string, ok bool) (string, error) {
 	return r.revisionFileDiff(basePatchPrefix, hash, path, oldPath, diff, ok)
 }
 
@@ -338,7 +338,7 @@ var (
 	basePatchPrefix   = []string{"diff"}
 )
 
-func (r repository) revisionFileDiff(prefix []string, hash, path, oldPath, diff string, ok bool) (string, error) {
+func (r Repo) revisionFileDiff(prefix []string, hash, path, oldPath, diff string, ok bool) (string, error) {
 	args := func(withPrefix bool) []string {
 		full := append(append([]string{}, prefix...), r.diffOptions()...)
 		if withPrefix {
@@ -351,20 +351,20 @@ func (r repository) revisionFileDiff(prefix []string, hash, path, oldPath, diff 
 		return full
 	}
 	if !ok {
-		out, err := r.commandStdout(args(true)...)
+		out, err := r.CommandStdout(args(true)...)
 		if err != nil {
-			return "", gitError(out, err)
+			return "", GitError(out, err)
 		}
 		diff = string(out)
 	}
 	if strings.TrimSpace(diff) == "" {
 		diff = "No diff available for this file."
-		if r.ignoreSpace {
+		if r.IgnoreSpace {
 			original := r
-			original.ignoreSpace = false
-			out, err := original.commandStdout(args(false)...)
+			original.IgnoreSpace = false
+			out, err := original.CommandStdout(args(false)...)
 			if err != nil {
-				return "", gitError(out, err)
+				return "", GitError(out, err)
 			}
 			if len(out) > 0 {
 				diff = "Whitespace-only changes"

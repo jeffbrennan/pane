@@ -7,19 +7,19 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func changeFor(t *testing.T, r repository, hash, path string) change {
+func changeFor(t *testing.T, r Repo, hash, path string) Change {
 	t.Helper()
-	changes, err := r.commitChanges(hash)
+	changes, err := r.CommitChanges(hash)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range changes {
-		if c.path == path {
+		if c.Path == path {
 			return c
 		}
 	}
 	t.Fatalf("no change for %s", path)
-	return change{}
+	return Change{}
 }
 
 func TestGeneratedByPath(t *testing.T) {
@@ -39,18 +39,18 @@ func TestBuiltinGeneratedFileStartsCollapsed(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "go.sum", strings.Repeat("example.com/mod v1.0.0 h1:abc\n", 5))
 	writeFile(t, r, "main.go", "package main\n\nfunc main() {}\n")
-	if _, err := r.commit("add files"); err != nil {
+	if _, err := r.Commit("add files"); err != nil {
 		t.Fatal(err)
 	}
-	commit, err := r.resolveCommit("HEAD")
+	commit, err := r.ResolveCommit("HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
-	changes, err := r.commitChanges(commit.hash)
+	changes, err := r.CommitChanges(commit.Hash)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if generated := changeFor(t, r, commit.hash, "go.sum").generated; !generated {
+	if generated := changeFor(t, r, commit.Hash, "go.sum").Generated; !generated {
 		t.Fatal("go.sum was not marked generated")
 	}
 	m := model{width: 100, height: 40, wrap: true, screen: "commit", history: historyState{current: commit, meta: commit, changes: changes, request: 1}}
@@ -101,22 +101,22 @@ func TestGitattributesGeneratedAndDiffMarkers(t *testing.T) {
 	writeFile(t, r, "vendor.txt", "generated one\ngenerated two\n")
 	writeFile(t, r, "secret.txt", "secret one\n")
 	writeFile(t, r, "normal.txt", "normal one\n")
-	if _, err := r.commit("attributes"); err != nil {
+	if _, err := r.Commit("attributes"); err != nil {
 		t.Fatal(err)
 	}
-	commit, err := r.resolveCommit("HEAD")
+	commit, err := r.ResolveCommit("HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.commitChanges(commit.hash); err != nil {
+	if _, err := r.CommitChanges(commit.Hash); err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{"vendor.txt", "secret.txt"} {
-		if !changeFor(t, r, commit.hash, path).generated {
+		if !changeFor(t, r, commit.Hash, path).Generated {
 			t.Fatalf("%s was not marked generated", path)
 		}
 	}
-	if changeFor(t, r, commit.hash, "normal.txt").generated {
+	if changeFor(t, r, commit.Hash, "normal.txt").Generated {
 		t.Fatal("normal.txt was marked generated")
 	}
 }
@@ -124,12 +124,12 @@ func TestGitattributesGeneratedAndDiffMarkers(t *testing.T) {
 func TestWorkingTreeGeneratedFileStartsCollapsed(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "main.go", "package main\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "go.sum", "example.com/mod v1.0.0 h1:abc\n")
 	writeFile(t, r, "main.go", "package main\n\n// changed\n")
-	snapshot, err := r.load()
+	snapshot, err := r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}

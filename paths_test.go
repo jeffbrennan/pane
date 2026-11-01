@@ -24,19 +24,19 @@ func TestDisplayPath(t *testing.T) {
 }
 
 func TestShortPathsToggleInDiffViews(t *testing.T) {
-	c := change{oldPath: "old/root/file.go", path: "new/parent/file.go", diff: "similarity index 100%\n"}
+	c := Change{OldPath: "old/root/file.go", Path: "new/parent/file.go", Diff: "similarity index 100%\n"}
 	for _, screen := range []string{"", "commit", "sequence"} {
 		t.Run(map[string]string{"": "working", "commit": "commit", "sequence": "sequence"}[screen], func(t *testing.T) {
 			m := model{width: 80, height: 12, wrap: true, screen: screen}
 			switch screen {
 			case "":
-				m.snapshot.unstaged = []change{c}
+				m.snapshot.Unstaged = []Change{c}
 				m.rebuild()
 			case "commit":
-				m.history.changes = []change{c}
+				m.history.changes = []Change{c}
 				m.rebuildCommit()
 			case "sequence":
-				m.sequence = sequenceState{commits: []commitInfo{{hash: "abcd"}}, changes: [][]change{{c}}, states: []sequenceLoadState{sequenceReady}}
+				m.sequence = sequenceState{commits: []CommitInfo{{Hash: "abcd"}}, changes: [][]Change{{c}}, states: []sequenceLoadState{sequenceReady}}
 				m.rebuildSequence()
 			}
 			key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("B")}
@@ -52,7 +52,7 @@ func TestShortPathsToggleInDiffViews(t *testing.T) {
 			if len(view.rows) < 2 || !strings.Contains(view.rows[0].text, "…/root/file.go") || !strings.Contains(view.rows[1].text, "…/parent/file.go") {
 				t.Fatalf("short rows: %#v", view.rows)
 			}
-			if view.rows[0].path != c.path || view.rows[0].oldPath != c.oldPath {
+			if view.rows[0].path != c.Path || view.rows[0].oldPath != c.OldPath {
 				t.Fatalf("paths changed: %#v", view.rows[0])
 			}
 			if len(filterFiles(view.fileEntries(), "old/root")) != 1 {
@@ -68,7 +68,7 @@ func TestShortPathsToggleInDiffViews(t *testing.T) {
 			} else {
 				view = m
 			}
-			if m.shortPaths || !strings.Contains(view.rows[0].text, c.oldPath) {
+			if m.shortPaths || !strings.Contains(view.rows[0].text, c.OldPath) {
 				t.Fatalf("full paths not restored: %#v", view.rows)
 			}
 		})
@@ -76,8 +76,8 @@ func TestShortPathsToggleInDiffViews(t *testing.T) {
 }
 
 func TestShortPinnedRenameUsesDestination(t *testing.T) {
-	c := change{oldPath: "old/root/file.go", path: "new/parent/file.go", diff: "@@ -1 +1 @@\n-old\n+new\n"}
-	m := model{width: 40, height: 8, wrap: true, shortPaths: true, snapshot: snapshot{unstaged: []change{c}}}
+	c := Change{OldPath: "old/root/file.go", Path: "new/parent/file.go", Diff: "@@ -1 +1 @@\n-old\n+new\n"}
+	m := model{width: 40, height: 8, wrap: true, shortPaths: true, snapshot: Snapshot{Unstaged: []Change{c}}}
 	m.rebuild()
 	pinned := m.fileHeaderAt(len(m.rows) - 1)
 	if pinned == nil || !strings.Contains(pinned.text, "…/parent/file.go") {

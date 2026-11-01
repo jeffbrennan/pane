@@ -7,17 +7,17 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func viewedTestModel(t *testing.T, r repository) model {
+func viewedTestModel(t *testing.T, r Repo) model {
 	t.Helper()
-	commit, err := r.resolveCommit("HEAD")
+	commit, err := r.ResolveCommit("HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
-	changes, err := r.commitChanges(commit.hash)
+	changes, err := r.CommitChanges(commit.Hash)
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := model{width: 100, height: 40, wrap: true, screen: "commit", viewed: newViewedStore(r.root),
+	m := model{width: 100, height: 40, wrap: true, screen: "commit", viewed: newViewedStore(r.Root),
 		history: historyState{current: commit, meta: commit, changes: changes, request: 1}}
 	m.history.loading = false
 	m.rebuildCommit()
@@ -61,7 +61,7 @@ func TestToggleViewedCollapsesAndAdvances(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "one.go", "package one\n")
 	writeFile(t, r, "two.go", "package two\n")
-	if _, err := r.commit("two files"); err != nil {
+	if _, err := r.Commit("two files"); err != nil {
 		t.Fatal(err)
 	}
 	m := viewedTestModel(t, r)
@@ -81,11 +81,11 @@ func TestToggleViewedCollapsesAndAdvances(t *testing.T) {
 	if m.history.rows[m.history.pos].path != "two.go" || m.history.rows[m.history.pos].kind != 'f' {
 		t.Fatalf("cursor did not advance: row %#v", m.history.rows[m.history.pos])
 	}
-	identity := "commit:" + m.history.current.hash
+	identity := "commit:" + m.history.current.Hash
 	blob := ""
 	for _, c := range m.history.changes {
-		if c.path == "one.go" {
-			blob = diffBlob(c.diff)
+		if c.Path == "one.go" {
+			blob = diffBlob(c.Diff)
 		}
 	}
 	if !m.viewed.marked(identity, "one.go", blob) {
@@ -115,7 +115,7 @@ func TestViewedMarkReappliesOnReopen(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	r := testRepo(t)
 	writeFile(t, r, "one.go", "package one\n")
-	if _, err := r.commit("one file"); err != nil {
+	if _, err := r.Commit("one file"); err != nil {
 		t.Fatal(err)
 	}
 	m := viewedTestModel(t, r)
@@ -145,7 +145,7 @@ func TestPickerShowsAndHidesViewed(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "one.go", "package one\n")
 	writeFile(t, r, "two.go", "package two\n")
-	if _, err := r.commit("two files"); err != nil {
+	if _, err := r.Commit("two files"); err != nil {
 		t.Fatal(err)
 	}
 	m := viewedTestModel(t, r)

@@ -139,7 +139,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.stageSelection(msg.String() == "s")
 	case "c":
 		if !m.busy {
-			if len(m.snapshot.staged) == 0 && len(m.snapshot.unstaged) == 0 {
+			if len(m.snapshot.Staged) == 0 && len(m.snapshot.Unstaged) == 0 {
 				m.message = "Nothing to commit"
 				return m, nil
 			}
@@ -157,7 +157,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.recentCommitRequest++
 			repo, request := m.repo, m.recentCommitRequest
 			return m, func() tea.Msg {
-				commits, err := repo.historyWithDate(0, 5, "%cI")
+				commits, err := repo.HistoryWithDate(0, 5, "%cI")
 				return recentCommitsLoaded{commits: commits, err: err, request: request}
 			}
 		}
@@ -272,7 +272,7 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.busy = true
 			m.generation++
 			return m, func() tea.Msg {
-				return completed{message: "Discarded changes", err: repo.discard(request)}
+				return completed{message: "Discarded changes", err: repo.Discard(request)}
 			}
 		case "n", "esc", "q", "ctrl+c":
 			m.modal = ""
@@ -390,14 +390,14 @@ func (m model) runAction(args ...string) (tea.Model, tea.Cmd) {
 	m.generation++
 	repo := m.repo
 	return m, func() tea.Msg {
-		output, err := repo.action(args...)
+		output, err := repo.Action(args...)
 		return completed{message: output, action: args[0], err: err}
 	}
 }
 
-func (m model) currentChanges() []change {
+func (m model) currentChanges() []Change {
 	if m.staged {
-		return m.snapshot.staged
+		return m.snapshot.Staged
 	}
-	return m.snapshot.unstaged
+	return m.snapshot.Unstaged
 }

@@ -44,7 +44,7 @@ func TestTerminalBackgroundResponse(t *testing.T) {
 
 func TestLightThemeDiffRendering(t *testing.T) {
 	m := model{width: 80, height: 12, lightTheme: true}
-	rows := buildRows([]change{{path: "file.go", diff: "@@ -1 +1 @@\n-old\n+new\n"}}, 78, true)
+	rows := buildRows([]Change{{Path: "file.go", Diff: "@@ -1 +1 @@\n-old\n+new\n"}}, 78, true)
 	for _, tc := range []struct {
 		index int
 		want  string

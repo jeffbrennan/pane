@@ -1,4 +1,4 @@
-package main
+package git
 
 import (
 	"bufio"
@@ -10,8 +10,8 @@ import (
 	"sync"
 )
 
-type historyStream struct {
-	repo  repository
+type HistoryStream struct {
+	repo  Repo
 	path  string
 	since string
 
@@ -25,15 +25,15 @@ type historyStream struct {
 	pending string
 }
 
-func newHistoryStream(repo repository, path string, since ...string) *historyStream {
-	stream := &historyStream{repo: repo, path: path}
+func NewHistoryStream(repo Repo, path string, since ...string) *HistoryStream {
+	stream := &HistoryStream{repo: repo, path: path}
 	if len(since) > 0 {
 		stream.since = since[0]
 	}
 	return stream
 }
 
-func (s *historyStream) start() error {
+func (s *HistoryStream) start() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -42,13 +42,13 @@ func (s *historyStream) start() error {
 	if s.cmd != nil || s.done {
 		return nil
 	}
-	out, err := s.repo.command("rev-parse", "--verify", "--quiet", "HEAD")
+	out, err := s.repo.Command("rev-parse", "--verify", "--quiet", "HEAD")
 	if err != nil {
 		if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 1 {
 			s.done = true
 			return nil
 		}
-		return gitError(out, err)
+		return GitError(out, err)
 	}
 	args := []string{"log", "-z", "--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00"}
 	if s.since != "" {
@@ -59,7 +59,7 @@ func (s *historyStream) start() error {
 	} else {
 		args = append(args, "--")
 	}
-	cmd := s.repo.gitCommand(args...)
+	cmd := s.repo.GitCommand(args...)
 	cmd.Stderr = &s.stderr
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -72,7 +72,7 @@ func (s *historyStream) start() error {
 	return nil
 }
 
-func (s *historyStream) finish(kill bool) error {
+func (s *HistoryStream) finish(kill bool) error {
 	if s.done {
 		return nil
 	}
@@ -85,12 +85,12 @@ func (s *historyStream) finish(kill bool) error {
 	}
 	err := s.cmd.Wait()
 	if err != nil && !kill {
-		return gitError(s.stderr.Bytes(), err)
+		return GitError(s.stderr.Bytes(), err)
 	}
 	return nil
 }
 
-func (s *historyStream) close() {
+func (s *HistoryStream) Close() {
 	if s == nil {
 		return
 	}
@@ -105,7 +105,7 @@ func (s *historyStream) close() {
 	_ = s.finish(true)
 }
 
-func (s *historyStream) field() (string, error) {
+func (s *HistoryStream) field() (string, error) {
 	field, err := s.reader.ReadBytes(0)
 	if err != nil {
 		if err == io.EOF && len(field) != 0 {
@@ -116,14 +116,14 @@ func (s *historyStream) field() (string, error) {
 	return string(field[:len(field)-1]), nil
 }
 
-func (s *historyStream) nextCommit() (commitInfo, error) {
+func (s *HistoryStream) nextCommit() (CommitInfo, error) {
 	hash := s.pending
 	s.pending = ""
 	for hash == "" {
 		var err error
 		hash, err = s.field()
 		if err != nil {
-			return commitInfo{}, err
+			return CommitInfo{}, err
 		}
 	}
 	fields := make([]string, 5)
@@ -131,11 +131,11 @@ func (s *historyStream) nextCommit() (commitInfo, error) {
 		var err error
 		fields[i], err = s.field()
 		if err != nil {
-			return commitInfo{}, fmt.Errorf("unexpected Git history format: %w", err)
+			return CommitInfo{}, fmt.Errorf("unexpected Git history format: %w", err)
 		}
 	}
-	c := commitInfo{hash: hash, author: fields[0], email: fields[1], date: fields[2], subject: fields[3], message: fields[4], filePath: s.path}
-	c.search = strings.ToLower(c.hash + "\n" + c.author + "\n" + c.email + "\n" + c.message + "\n" + c.subject)
+	c := CommitInfo{Hash: hash, Author: fields[0], Email: fields[1], Date: fields[2], Subject: fields[3], Message: fields[4], FilePath: s.path}
+	c.Search = strings.ToLower(c.Hash + "\n" + c.Author + "\n" + c.Email + "\n" + c.Message + "\n" + c.Subject)
 	if s.path == "" {
 		return c, nil
 	}
@@ -145,7 +145,7 @@ func (s *historyStream) nextCommit() (commitInfo, error) {
 			return c, nil
 		}
 		if err != nil {
-			return commitInfo{}, err
+			return CommitInfo{}, err
 		}
 		if token == "" {
 			continue
@@ -154,15 +154,15 @@ func (s *historyStream) nextCommit() (commitInfo, error) {
 		if len(status) > 0 && strings.ContainsRune("AMDRCTUXB", rune(status[0])) && (len(status) == 1 || ((status[0] == 'R' || status[0] == 'C') && len(status) <= 4)) {
 			path, err := s.field()
 			if err != nil || path == "" {
-				return commitInfo{}, fmt.Errorf("unexpected Git file history path")
+				return CommitInfo{}, fmt.Errorf("unexpected Git file history path")
 			}
-			c.filePath = path
+			c.FilePath = path
 			if status[0] == 'R' || status[0] == 'C' {
 				newPath, err := s.field()
 				if err != nil || newPath == "" {
-					return commitInfo{}, fmt.Errorf("unexpected Git file history rename")
+					return CommitInfo{}, fmt.Errorf("unexpected Git file history rename")
 				}
-				c.filePath = newPath
+				c.FilePath = newPath
 				s.path = path
 			}
 			continue
@@ -172,13 +172,13 @@ func (s *historyStream) nextCommit() (commitInfo, error) {
 	}
 }
 
-func (s *historyStream) nextPage(limit int) ([]commitInfo, error) {
+func (s *HistoryStream) NextPage(limit int) ([]CommitInfo, error) {
 	s.readMu.Lock()
 	defer s.readMu.Unlock()
 	if err := s.start(); err != nil {
 		return nil, err
 	}
-	var commits []commitInfo
+	var commits []CommitInfo
 	for len(commits) < limit && !s.done {
 		commit, err := s.nextCommit()
 		if err == io.EOF {
@@ -192,3 +192,12 @@ func (s *historyStream) nextPage(limit int) ([]commitInfo, error) {
 	}
 	return commits, nil
 }
+
+// Reaped reports whether the stream's Git process has exited and been waited
+// on.
+func (s *HistoryStream) Reaped() bool {
+	return s.cmd == nil || s.cmd.ProcessState != nil
+}
+
+// Running reports whether the stream has started a Git process.
+func (s *HistoryStream) Running() bool { return s.cmd != nil }

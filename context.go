@@ -55,13 +55,13 @@ func (m model) foldContextFiles(rows []row) []row {
 	return folded
 }
 
-func (m model) localContextRows(rows []row, changes []change) []row {
+func (m model) localContextRows(rows []row, changes []Change) []row {
 	if len(m.contextFiles) == 0 {
 		return rows
 	}
-	byPath := make(map[string]change, len(changes))
+	byPath := make(map[string]Change, len(changes))
 	for _, c := range changes {
-		byPath[c.path] = c
+		byPath[c.Path] = c
 	}
 	var result []row
 	for start := 0; start < len(rows); {
@@ -77,7 +77,7 @@ func (m model) localContextRows(rows []row, changes []change) []row {
 		path := rows[start].path
 		c := byPath[path]
 		file, ok := m.contextFiles[contextKey{path: path, commit: m.contextCommit, staged: m.staged, base: m.contextBase}]
-		if !ok || file.base != c.diff || file.diff == "" || len(file.ranges) == 0 {
+		if !ok || file.base != c.Diff || file.diff == "" || len(file.ranges) == 0 {
 			result = append(result, rows[start:end]...)
 			start = end
 			continue
@@ -88,8 +88,8 @@ func (m model) localContextRows(rows []row, changes []change) []row {
 				visible[r.target] = true
 			}
 		}
-		c.diff = file.diff
-		full, _ := buildRowsDisplay([]change{c}, m.diffContentWidth(), m.wrap, m.expandedDeleted, m.gutterWidth, m.shortPaths)
+		c.Diff = file.diff
+		full, _ := buildRowsDisplay([]Change{c}, m.diffContentWidth(), m.wrap, m.expandedDeleted, m.gutterWidth, m.shortPaths)
 		var gap *row
 		for _, r := range full {
 			show := r.kind != ' ' || visible[r.target]
@@ -169,15 +169,15 @@ func (m model) changeContext(key string) (tea.Model, tea.Cmd) {
 		m.contextFiles[fileKey] = file
 		return m.rebuildContext(), nil
 	}
-	changes := view.snapshot.unstaged
+	changes := view.snapshot.Unstaged
 	if view.staged {
-		changes = view.snapshot.staged
+		changes = view.snapshot.Staged
 	}
 	for _, c := range changes {
-		if c.path != path {
+		if c.Path != path {
 			continue
 		}
-		if strings.Contains(c.diff, "\ndeleted file mode ") && !strings.Contains(c.diff, "\nnew file mode ") {
+		if strings.Contains(c.Diff, "\ndeleted file mode ") && !strings.Contains(c.Diff, "\nnew file mode ") {
 			m = m.inDiff(func(view *model) {
 				if view.expandedDeleted == nil {
 					view.expandedDeleted = make(map[string]bool)
@@ -187,8 +187,8 @@ func (m model) changeContext(key string) (tea.Model, tea.Cmd) {
 			m = m.rebuildContext()
 		}
 		current, ok := m.contextFiles[fileKey]
-		if !ok || current.base != c.diff {
-			current = contextFile{base: c.diff}
+		if !ok || current.base != c.Diff {
+			current = contextFile{base: c.Diff}
 		}
 		span := contextRange{start: max(1, selected.target-10), end: selected.target + 10, anchor: selected.target}
 		if selected.kind == '@' && strings.TrimSpace(selected.text) == "···" {
@@ -220,40 +220,11 @@ func (m model) changeContext(key string) (tea.Model, tea.Cmd) {
 		m.flash = "Loading file context…"
 		repo := m.repo
 		return m, func() tea.Msg {
-			diff, err := repo.fullContext(fileKey, c.diff, c.oldPath)
-			return contextLoaded{key: fileKey, base: c.diff, diff: diff, request: request, err: err}
+			diff, err := repo.FullContext(fileKey.gitContext(), c.Diff, c.OldPath)
+			return contextLoaded{key: fileKey, base: c.Diff, diff: diff, request: request, err: err}
 		}
 	}
 	return m, nil
-}
-
-func (r repository) fullContext(key contextKey, base, oldPath string) (string, error) {
-	if strings.Contains(base, "\nnew file mode ") {
-		return base, nil
-	}
-	paths := []string{key.path}
-	if oldPath != "" {
-		paths = append(paths, oldPath)
-	}
-	out, err := r.command(r.fullContextArgs(key, paths)...)
-	if err != nil {
-		return "", gitError(out, err)
-	}
-	return string(out), nil
-}
-
-func (r repository) fullContextArgs(key contextKey, paths []string) []string {
-	args := append([]string{"diff"}, r.diffOptions()...)
-	args = append(args, "--unified=1000000")
-	if key.base {
-		args = append(args, key.commit)
-	} else if key.commit != "" {
-		args = append([]string{"show", "--first-parent", "--format="}, r.diffOptions()...)
-		args = append(args, "--unified=1000000", key.commit)
-	} else if key.staged {
-		args = append(args, "--cached")
-	}
-	return append(append(args, "--"), paths...)
 }
 
 func (m model) applyContext(msg contextLoaded) model {
@@ -273,7 +244,7 @@ func (m model) applyContext(msg contextLoaded) model {
 	file.request = 0
 	m.contextFiles[msg.key] = file
 	m.flash = ""
-	if (m.screen == "base" && msg.key.base && m.base.hash == msg.key.commit) || (m.screen == "commit" && !msg.key.base && m.history.current.hash == msg.key.commit) || (m.screen == "" && msg.key.commit == "" && m.staged == msg.key.staged) {
+	if (m.screen == "base" && msg.key.base && m.base.hash == msg.key.commit) || (m.screen == "commit" && !msg.key.base && m.history.current.Hash == msg.key.commit) || (m.screen == "" && msg.key.commit == "" && m.staged == msg.key.staged) {
 		return m.rebuildContext()
 	}
 	return m

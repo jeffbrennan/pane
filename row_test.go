@@ -30,7 +30,7 @@ func TestRowSpansAreSparseAndCopyOnWrite(t *testing.T) {
 
 func TestHighlightRowsDoesNotModifyCopiedRows(t *testing.T) {
 	diff := "diff --git a/file.go b/file.go\n@@ -1 +1 @@\n-var total = 1\n+var total = 2\n"
-	original := buildRows([]change{{path: "file.go", diff: diff}}, 80, false)
+	original := buildRows([]Change{{Path: "file.go", Diff: diff}}, 80, false)
 	for i := range original {
 		if original[i].kind == '+' {
 			original[i].setInlineSpans([]syntaxSpan{{Start: 4, End: 9}})
@@ -113,7 +113,7 @@ func TestLargeSourceLinesAndOutOfRangeHeaders(t *testing.T) {
 	}
 	large := int64(math.MaxInt32) + 1
 	diff := "@@ -0,0 +" + strconv.FormatInt(large, 10) + " @@\n+large line\n"
-	rows := buildRows([]change{{path: "file", diff: diff}}, 80, false)
+	rows := buildRows([]Change{{Path: "file", Diff: diff}}, 80, false)
 	m := model{width: 80, height: 10, gutterWidth: 10, rows: rows}
 	m.sourceLineJump(int(large))
 	if got := m.rows[m.pos]; got.sourceLine != int(large) || got.target != int(large) {

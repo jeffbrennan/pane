@@ -15,15 +15,15 @@ func TestExpandFileContext(t *testing.T) {
 		lines = append(lines, fmt.Sprintf("line %02d", i))
 	}
 	writeFile(t, r, "file", strings.Join(lines, "\n")+"\n")
-	if err := r.stage("file", false); err != nil {
+	if err := r.Stage("file", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.action("commit", "-m", "initial"); err != nil {
+	if _, err := r.Action("commit", "-m", "initial"); err != nil {
 		t.Fatal(err)
 	}
 	lines[14] = "changed"
 	writeFile(t, r, "file", strings.Join(lines, "\n")+"\n")
-	s, err := r.load()
+	s, err := r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestExpandFileContext(t *testing.T) {
 }
 
 func TestContextResponseAfterCollapseIsIgnored(t *testing.T) {
-	m := model{width: 40, height: 10, snapshot: snapshot{unstaged: []change{longFile("file")}}}
+	m := model{width: 40, height: 10, snapshot: Snapshot{Unstaged: []Change{longFile("file")}}}
 	m.rebuild()
 	m.pos = 1
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
@@ -87,7 +87,7 @@ func TestContextKeysOnChangedAndHunkSeparatorRows(t *testing.T) {
 	base := "@@ -2 +2 @@\n-old\n+new\n@@ -12 +12 @@\n-before\n+after\n"
 	for _, kind := range []byte{'+', '@'} {
 		t.Run(string(kind), func(t *testing.T) {
-			m := model{width: 40, height: 10, wrap: true, snapshot: snapshot{unstaged: []change{{path: "first", diff: base}, longFile("second")}}}
+			m := model{width: 40, height: 10, wrap: true, snapshot: Snapshot{Unstaged: []Change{{Path: "first", Diff: base}, longFile("second")}}}
 			m.rebuild()
 			for i, r := range m.rows {
 				if r.kind == kind {
@@ -139,7 +139,7 @@ func TestContextKeysOnChangedAndHunkSeparatorRows(t *testing.T) {
 
 func TestExpandDeletedFileWithContextKey(t *testing.T) {
 	diff := "diff --git a/file b/file\ndeleted file mode 100644\n@@ -1,2 +0,0 @@\n-first\n-second\n"
-	m := model{width: 40, height: 10, snapshot: snapshot{unstaged: []change{{path: "file", diff: diff}}}}
+	m := model{width: 40, height: 10, snapshot: Snapshot{Unstaged: []Change{{Path: "file", Diff: diff}}}}
 	m.rebuild()
 	m.toggleDeletedFile()
 	if !strings.Contains(m.View(), "first") {
@@ -155,7 +155,7 @@ func TestExpandDeletedFileWithContextKey(t *testing.T) {
 func TestContextLoadKeepsSelectionAndRejectsStaleDiff(t *testing.T) {
 	base := "@@ -10,2 +10,2 @@\n same\n-old\n+new\n"
 	full := "@@ -1,11 +1,11 @@\n" + strings.Repeat(" earlier\n", 9) + " same\n-old\n+new\n"
-	m := model{width: 40, height: 10, wrap: true, snapshot: snapshot{unstaged: []change{{path: "file", diff: base}}}}
+	m := model{width: 40, height: 10, wrap: true, snapshot: Snapshot{Unstaged: []Change{{Path: "file", Diff: base}}}}
 	m.rebuild()
 	m.pos = 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
@@ -167,7 +167,7 @@ func TestContextLoadKeepsSelectionAndRejectsStaleDiff(t *testing.T) {
 	if got := m.rows[m.pos]; got.text != anchor.text || got.target != anchor.target || got.kind != anchor.kind {
 		t.Fatalf("selection changed after expansion: %#v", got)
 	}
-	m.snapshot.unstaged[0].diff = "@@ -1 +1 @@\n-other\n+updated\n"
+	m.snapshot.Unstaged[0].Diff = "@@ -1 +1 @@\n-other\n+updated\n"
 	m.rebuild()
 	if strings.Contains(m.View(), "earlier") {
 		t.Fatal("expanded context was reused for a changed diff")
@@ -176,7 +176,7 @@ func TestContextLoadKeepsSelectionAndRejectsStaleDiff(t *testing.T) {
 
 func TestExpandContextInCommitView(t *testing.T) {
 	base := "@@ -10 +10 @@\n-old\n+new\n"
-	m := model{width: 40, height: 10, wrap: true, screen: "commit", history: historyState{current: commitInfo{hash: "abc"}, changes: []change{{path: "file", diff: base}}}}
+	m := model{width: 40, height: 10, wrap: true, screen: "commit", history: historyState{current: CommitInfo{Hash: "abc"}, changes: []Change{{Path: "file", Diff: base}}}}
 	m.rebuildCommit()
 	m.history.pos = 1
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
@@ -210,26 +210,26 @@ func TestContextUsesCorrectGitVersion(t *testing.T) {
 	r := testRepo(t)
 	base := strings.Repeat("before\n", 15) + "old\n" + strings.Repeat("after\n", 15)
 	writeFile(t, r, "file", base)
-	if err := r.stage("file", false); err != nil {
+	if err := r.Stage("file", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.action("commit", "-m", "initial"); err != nil {
+	if _, err := r.Action("commit", "-m", "initial"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "file", strings.Replace(base, "old\n", "staged\n", 1))
-	if err := r.stage("file", false); err != nil {
+	if err := r.Stage("file", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.action("commit", "-m", "second"); err != nil {
+	if _, err := r.Action("commit", "-m", "second"); err != nil {
 		t.Fatal(err)
 	}
-	hashBytes, err := r.command("rev-parse", "HEAD")
+	hashBytes, err := r.Command("rev-parse", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
 	hash := strings.TrimSpace(string(hashBytes))
 	writeFile(t, r, "file", strings.Replace(base, "old\n", "index\n", 1))
-	if err := r.stage("file", false); err != nil {
+	if err := r.Stage("file", false); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "file", strings.Replace(base, "old\n", "working\n", 1))
@@ -237,7 +237,7 @@ func TestContextUsesCorrectGitVersion(t *testing.T) {
 		key  contextKey
 		want string
 	}{{contextKey{path: "file"}, "+working"}, {contextKey{path: "file", staged: true}, "+index"}, {contextKey{path: "file", commit: hash}, "+staged"}} {
-		diff, err := r.fullContext(tt.key, "", "")
+		diff, err := r.FullContext(tt.key.gitContext(), "", "")
 		if err != nil || !strings.Contains(diff, tt.want) || !strings.Contains(diff, " before\n") {
 			t.Fatalf("context for %#v: %v %q", tt.key, err, diff)
 		}
@@ -251,15 +251,15 @@ func TestIncrementalContextBetweenHunks(t *testing.T) {
 		lines = append(lines, fmt.Sprintf("line %03d", i))
 	}
 	writeFile(t, r, "file", strings.Join(lines, "\n")+"\n")
-	if err := r.stage("file", false); err != nil {
+	if err := r.Stage("file", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.action("commit", "-m", "initial"); err != nil {
+	if _, err := r.Action("commit", "-m", "initial"); err != nil {
 		t.Fatal(err)
 	}
 	lines[19], lines[79] = "first change", "second change"
 	writeFile(t, r, "file", strings.Join(lines, "\n")+"\n")
-	s, err := r.load()
+	s, err := r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,11 +11,11 @@ func noteTestModel(t *testing.T) model {
 	t.Helper()
 	r := testRepo(t)
 	writeFile(t, r, "one.txt", "first\nsecond\nthird\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "one.txt", "first\nchanged\nthird\n")
-	snapshot, err := r.load()
+	snapshot, err := r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,11 +130,11 @@ func TestNotesSurviveWorkingTreeRefresh(t *testing.T) {
 
 	// Change a different file and splice the refresh.
 	writeFile(t, m.repo, "two.txt", "new file\n")
-	snapshot, err := m.repo.load()
+	snapshot, err := m.repo.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.previousChanges = append([]change(nil), m.currentChanges()...)
+	m.previousChanges = append([]Change(nil), m.currentChanges()...)
 	m.snapshot = snapshot
 	m.refreshRows()
 	count := 0

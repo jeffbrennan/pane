@@ -10,18 +10,18 @@ import (
 func TestInitialModelOpensCommitRevision(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file.txt", "first\n")
-	if _, err := r.commit("first commit"); err != nil {
+	if _, err := r.Commit("first commit"); err != nil {
 		t.Fatal(err)
 	}
-	hash, err := r.action("rev-parse", "HEAD")
+	hash, err := r.Action("rev-parse", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.action("tag", "-a", "release", "-m", "release"); err != nil {
+	if _, err := r.Action("tag", "-a", "release", "-m", "release"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "file.txt", "second\n")
-	if _, err := r.commit("second commit"); err != nil {
+	if _, err := r.Commit("second commit"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "file.txt", "uncommitted\n")
@@ -31,7 +31,7 @@ func TestInitialModelOpensCommitRevision(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if m.screen != "commit" || !m.history.loading || m.history.current.hash != hash || m.history.current.subject != "first commit" {
+			if m.screen != "commit" || !m.history.loading || m.history.current.Hash != hash || m.history.current.Subject != "first commit" {
 				t.Fatalf("incorrect startup model: %#v", m.history)
 			}
 			batch, ok := m.Init()().(tea.BatchMsg)
@@ -39,7 +39,7 @@ func TestInitialModelOpensCommitRevision(t *testing.T) {
 				t.Fatalf("missing startup commands: %#v", batch)
 			}
 			result, ok := batch[2]().(commitStreamLoaded)
-			if !ok || result.chunk.err != nil || len(result.chunk.changes) != 1 || !strings.Contains(result.chunk.changes[0].diff, "+first") {
+			if !ok || result.chunk.Err != nil || len(result.chunk.Changes) != 1 || !strings.Contains(result.chunk.Changes[0].Diff, "+first") {
 				t.Fatalf("incorrect commit diff: %#v", result)
 			}
 			m.width, m.height = 60, 12
@@ -64,10 +64,10 @@ func TestInitialModelRejectsInvalidCommitArguments(t *testing.T) {
 		}
 	}
 	writeFile(t, r, "file", "text\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
-	blob, err := r.action("rev-parse", "HEAD:file")
+	blob, err := r.Action("rev-parse", "HEAD:file")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestInitialModelRejectsInvalidCommitArguments(t *testing.T) {
 func TestDirectCommitBackBeforeLoading(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file", "text\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
 	m, err := initialModel(r, []string{"HEAD"})
@@ -92,7 +92,7 @@ func TestDirectCommitBackBeforeLoading(t *testing.T) {
 	if m.screen != "history" || cmd == nil || m.history.request == request {
 		t.Fatal("back did not load history and invalidate the commit request")
 	}
-	updated, _ = m.Update(commitLoaded{request: request, changes: []change{{path: "stale"}}})
+	updated, _ = m.Update(commitLoaded{request: request, changes: []Change{{Path: "stale"}}})
 	if got := updated.(model); got.screen != "history" || len(got.history.changes) != 0 {
 		t.Fatal("stale commit response changed history")
 	}
@@ -103,10 +103,10 @@ func TestInitialModelOpensCommitRange(t *testing.T) {
 	var hashes []string
 	for _, content := range []string{"first", "second", "third"} {
 		writeFile(t, r, "file", content+"\n")
-		if _, err := r.commit(content); err != nil {
+		if _, err := r.Commit(content); err != nil {
 			t.Fatal(err)
 		}
-		hash, err := r.action("rev-parse", "HEAD")
+		hash, err := r.Action("rev-parse", "HEAD")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -119,13 +119,13 @@ func TestInitialModelOpensCommitRange(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if m.screen != "sequence" || len(m.sequence.commits) != 2 || m.sequence.commits[0].hash != hashes[2] || m.sequence.commits[1].hash != hashes[1] {
+			if m.screen != "sequence" || len(m.sequence.commits) != 2 || m.sequence.commits[0].Hash != hashes[2] || m.sequence.commits[1].Hash != hashes[1] {
 				t.Fatalf("incorrect range order or boundaries: %#v", m.sequence.commits)
 			}
 			batch := m.Init()().(tea.BatchMsg)
 			first := batch[2]().(sequenceChunkLoaded)
 			last := batch[3]().(sequenceChunkLoaded)
-			if first.chunk.err != nil || last.chunk.err != nil || first.chunk.meta.hash != hashes[2] || last.chunk.meta.hash != hashes[1] {
+			if first.chunk.Err != nil || last.chunk.Err != nil || first.chunk.Meta.Hash != hashes[2] || last.chunk.Meta.Hash != hashes[1] {
 				t.Fatalf("range diffs did not load: %#v %#v", first.chunk, last.chunk)
 			}
 		})
@@ -140,32 +140,32 @@ func TestInitialModelOpensCommitRange(t *testing.T) {
 func TestInitialModelOpensSymmetricRange(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "base", "base\n")
-	if _, err := r.commit("base"); err != nil {
+	if _, err := r.Commit("base"); err != nil {
 		t.Fatal(err)
 	}
-	base, err := r.action("rev-parse", "HEAD")
+	base, err := r.Action("rev-parse", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.action("checkout", "-b", "feature"); err != nil {
+	if _, err := r.Action("checkout", "-b", "feature"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "feature", "feature\n")
-	if _, err := r.commit("feature"); err != nil {
+	if _, err := r.Commit("feature"); err != nil {
 		t.Fatal(err)
 	}
-	feature, err := r.action("rev-parse", "HEAD")
+	feature, err := r.Action("rev-parse", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.action("checkout", "--detach", base); err != nil {
+	if _, err := r.Action("checkout", "--detach", base); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "other", "other\n")
-	if _, err := r.commit("other"); err != nil {
+	if _, err := r.Commit("other"); err != nil {
 		t.Fatal(err)
 	}
-	other, err := r.action("rev-parse", "HEAD")
+	other, err := r.Action("rev-parse", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestInitialModelOpensSymmetricRange(t *testing.T) {
 	}
 	got := map[string]bool{}
 	for _, commit := range m.sequence.commits {
-		got[commit.hash] = true
+		got[commit.Hash] = true
 	}
 	if m.screen != "sequence" || len(m.sequence.commits) != 2 || !got[feature] || !got[other] || got[base] {
 		t.Fatalf("incorrect symmetric range: %#v", m.sequence.commits)
@@ -189,29 +189,29 @@ func TestCommitFirstScreenIsHighlighted(t *testing.T) {
 	}
 	writeFile(t, r, "a.go", body("a"))
 	writeFile(t, r, "b.go", body("b"))
-	if _, err := r.commit("first"); err != nil {
+	if _, err := r.Commit("first"); err != nil {
 		t.Fatal(err)
 	}
-	hash, err := r.action("rev-parse", "HEAD")
+	hash, err := r.Action("rev-parse", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
-	changes, err := r.commitChangesFirstScreen(hash, "")
+	changes, err := r.CommitChangesFirstScreen(hash, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(changes) != 2 || changes[0].syntaxDiff == "" || changes[1].syntaxDiff != "" {
+	if len(changes) != 2 || changes[0].SyntaxDiff == "" || changes[1].SyntaxDiff != "" {
 		t.Fatal("only the first screen's file should be highlighted when a commit opens")
 	}
-	focused, err := r.commitChangesFirstScreen(hash, "b.go")
+	focused, err := r.CommitChangesFirstScreen(hash, "b.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if focused[0].syntaxDiff != "" || focused[1].syntaxDiff == "" {
+	if focused[0].SyntaxDiff != "" || focused[1].SyntaxDiff == "" {
 		t.Fatal("the first screen should start at the focused file")
 	}
 	msg, ok := loadCommitSyntax(r, hash, 1, changes)().(commitSyntaxLoaded)
-	if !ok || msg.changes[0].syntaxDiff != changes[0].syntaxDiff || msg.changes[1].syntaxDiff == "" {
+	if !ok || msg.changes[0].SyntaxDiff != changes[0].SyntaxDiff || msg.changes[1].SyntaxDiff == "" {
 		t.Fatal("follow-up load should highlight the deferred file")
 	}
 	if loadCommitSyntax(r, hash, 1, msg.changes) != nil {
@@ -230,10 +230,10 @@ func TestSkippedFilesHighlightNearViewport(t *testing.T) {
 	for _, name := range []string{"c", "d", "e"} {
 		writeFile(t, r, name+".go", "package main\nvar "+name+" = 1\n")
 	}
-	if _, err := r.commit("first"); err != nil {
+	if _, err := r.Commit("first"); err != nil {
 		t.Fatal(err)
 	}
-	hash, err := r.action("rev-parse", "HEAD")
+	hash, err := r.Action("rev-parse", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,13 +242,13 @@ func TestSkippedFilesHighlightNearViewport(t *testing.T) {
 		t.Fatal(err)
 	}
 	m = update(t, m, tea.WindowSizeMsg{Width: 80, Height: 20})
-	changes, err := r.commitChangesFirstScreen(hash, "")
+	changes, err := r.CommitChangesFirstScreen(hash, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for i, c := range changes {
-		if c.syntaxSkipped != (i > 0) || (c.syntaxDiff != "") != (i == 0) {
-			t.Fatalf("%s: skipped %t, highlighted %t", c.path, c.syntaxSkipped, c.syntaxDiff != "")
+		if c.SyntaxSkipped != (i > 0) || (c.SyntaxDiff != "") != (i == 0) {
+			t.Fatalf("%s: skipped %t, highlighted %t", c.Path, c.SyntaxSkipped, c.SyntaxDiff != "")
 		}
 	}
 	highlighted := func(m model, path string) bool {

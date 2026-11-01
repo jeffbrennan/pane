@@ -48,25 +48,25 @@ func (d *syntaxDemand) store(key contextKey, entry demandSyntax) {
 // applySyntaxDemand returns changes with loaded syntax filled in for the
 // skipped files of the view identified by key. It copies changes only when
 // one is filled.
-func (m model) applySyntaxDemand(key contextKey, changes []change) []change {
+func (m model) applySyntaxDemand(key contextKey, changes []Change) []Change {
 	if m.syntaxDemand == nil || len(m.syntaxDemand.loaded) == 0 {
 		return changes
 	}
 	copied := false
 	for i, c := range changes {
-		if !c.syntaxSkipped || c.syntaxDiff != "" {
+		if !c.SyntaxSkipped || c.SyntaxDiff != "" {
 			continue
 		}
-		key.path = c.path
+		key.path = c.Path
 		entry, ok := m.syntaxDemand.loaded[key]
-		if !ok || entry.diff != c.diff || entry.syntaxDiff == "" {
+		if !ok || entry.diff != c.Diff || entry.syntaxDiff == "" {
 			continue
 		}
 		if !copied {
-			changes = append([]change(nil), changes...)
+			changes = append([]Change(nil), changes...)
 			copied = true
 		}
-		changes[i].syntaxDiff = entry.syntaxDiff
+		changes[i].SyntaxDiff = entry.syntaxDiff
 	}
 	return changes
 }
@@ -85,22 +85,22 @@ func (m model) diffSyntaxView() ([]row, int, bool) {
 
 // syntaxContext returns the context key, without a path, and the changes
 // behind rows of commitIndex.
-func (m model) syntaxContext(commitIndex int) (contextKey, []change) {
+func (m model) syntaxContext(commitIndex int) (contextKey, []Change) {
 	switch m.screen {
 	case "commit":
-		return contextKey{commit: m.history.current.hash}, m.history.changes
+		return contextKey{commit: m.history.current.Hash}, m.history.changes
 	case "base":
 		return contextKey{commit: m.base.hash, base: true}, m.history.changes
 	case "sequence":
 		if commitIndex < 0 || commitIndex >= len(m.sequence.changes) || commitIndex >= len(m.sequence.commits) {
 			return contextKey{}, nil
 		}
-		return contextKey{commit: m.sequence.commits[commitIndex].hash}, m.sequence.changes[commitIndex]
+		return contextKey{commit: m.sequence.commits[commitIndex].Hash}, m.sequence.changes[commitIndex]
 	}
 	if m.staged {
-		return contextKey{staged: true}, m.snapshot.staged
+		return contextKey{staged: true}, m.snapshot.Staged
 	}
-	return contextKey{}, m.snapshot.unstaged
+	return contextKey{}, m.snapshot.Unstaged
 }
 
 // syntaxLookahead is how many files past the screen highlight ahead of time,
@@ -110,7 +110,7 @@ const syntaxLookahead = 3
 type syntaxTarget struct {
 	key         contextKey
 	commitIndex int
-	change      change
+	change      Change
 }
 
 // loadVisibleSyntax starts highlighting the skipped files on screen and the
@@ -129,9 +129,9 @@ func (m *model) loadVisibleSyntax() tea.Cmd {
 	last := screen[len(screen)-1]
 	_, changes := m.syntaxContext(int(last.commitIndex))
 	for i, c := range changes {
-		if c.path == last.path {
+		if c.Path == last.path {
 			for _, next := range changes[i+1 : min(len(changes), i+1+syntaxLookahead)] {
-				ahead = m.addSyntaxTarget(ahead, seen, int(last.commitIndex), next.path)
+				ahead = m.addSyntaxTarget(ahead, seen, int(last.commitIndex), next.Path)
 			}
 			break
 		}
@@ -152,13 +152,13 @@ func (m *model) warmCursorSyntax() {
 		return
 	}
 	for _, c := range changes {
-		if c.path != r.path || c.syntaxDiff == "" {
+		if c.Path != r.path || c.SyntaxDiff == "" {
 			continue
 		}
 		m.syntaxWarmPath, m.syntaxWarmCommit = r.path, key.commit
 		go func() {
 			time.Sleep(150 * time.Millisecond)
-			syntaxLines(c.path, c.syntaxDiff)
+			syntaxLines(c.Path, c.SyntaxDiff)
 		}()
 		return
 	}
@@ -174,16 +174,16 @@ func (m *model) addSyntaxTarget(targets []syntaxTarget, seen map[contextKey]bool
 	}
 	seen[key] = true
 	for _, c := range changes {
-		if c.path != path {
+		if c.Path != path {
 			continue
 		}
-		if !c.syntaxSkipped || c.syntaxDiff != "" {
+		if !c.SyntaxSkipped || c.SyntaxDiff != "" {
 			return targets
 		}
 		if m.syntaxDemand == nil {
 			m.syntaxDemand = &syntaxDemand{loaded: make(map[contextKey]demandSyntax), pending: make(map[contextKey]bool)}
 		}
-		if entry, ok := m.syntaxDemand.loaded[key]; m.syntaxDemand.pending[key] || (ok && entry.diff == c.diff) {
+		if entry, ok := m.syntaxDemand.loaded[key]; m.syntaxDemand.pending[key] || (ok && entry.diff == c.Diff) {
 			return targets
 		}
 		m.syntaxDemand.pending[key] = true
@@ -219,32 +219,32 @@ func (m model) loadSyntaxTargets(targets []syntaxTarget) tea.Cmd {
 			}
 			groups[index].indexes = append(groups[index].indexes, i)
 		}
-		contexts := make([]fullContextResult, len(targets))
+		contexts := make([]FullContextResult, len(targets))
 		parallelEach(len(groups), func(i int) {
 			group := groups[i]
-			changes := make([]change, len(group.indexes))
+			changes := make([]Change, len(group.indexes))
 			for j, index := range group.indexes {
 				changes[j] = targets[index].change
 			}
-			for j, result := range repo.fullContexts(changes, group.key) {
+			for j, result := range repo.FullContexts(changes, group.key.gitContext()) {
 				contexts[group.indexes[j]] = result
 			}
 		})
 		parallelEach(len(targets), func(i int) {
 			t := targets[i]
-			results[i] = demandResult{key: t.key, commitIndex: t.commitIndex, diff: t.change.diff}
-			if repo.context != nil && repo.context.Err() != nil {
+			results[i] = demandResult{key: t.key, commitIndex: t.commitIndex, diff: t.change.Diff}
+			if repo.Context != nil && repo.Context.Err() != nil {
 				results[i].cancelled = true
 				return
 			}
-			diff := contexts[i].diff
-			if contexts[i].err != nil || len(diff) > 2*1024*1024 {
+			diff := contexts[i].Diff
+			if contexts[i].Err != nil || len(diff) > 2*1024*1024 {
 				return
 			}
 			results[i].syntaxDiff = diff
 			c := t.change
-			c.syntaxDiff = diff
-			warmSyntax([]change{c})
+			c.SyntaxDiff = diff
+			warmSyntax([]Change{c})
 		})
 		return syntaxDemandLoaded{results: results}
 	}

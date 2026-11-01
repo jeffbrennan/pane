@@ -1,127 +1,37 @@
 package main
 
 import (
-	"bytes"
-	"fmt"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type stashEntry struct{ ref, hash, date, message string }
-
 type stashState struct {
-	entries          []stashEntry
+	entries          []StashEntry
 	selected, offset int
 	request          int
 	loading, viewing bool
 	operation        string
-	target           stashEntry
+	target           StashEntry
 }
 
 type stashesLoaded struct {
-	entries []stashEntry
+	entries []StashEntry
 	request int
 	err     error
 }
 
 type stashDiffLoaded struct {
-	changes []change
-	meta    commitInfo
+	changes []Change
+	meta    CommitInfo
 	request int
 	err     error
 }
 
-func (r repository) stashes() ([]stashEntry, error) {
-	out, err := r.command("stash", "list", "-z", "--format=%gd%x00%H%x00%cI%x00%gs")
-	if err != nil {
-		return nil, gitError(out, err)
-	}
-	fields := bytes.Split(out, []byte{0})
-	var entries []stashEntry
-	for i := 0; i < len(fields) && len(fields[i]) > 0; i += 4 {
-		if i+3 >= len(fields) {
-			return nil, fmt.Errorf("unexpected Git stash format")
-		}
-		entries = append(entries, stashEntry{ref: string(fields[i]), hash: string(fields[i+1]), date: string(fields[i+2]), message: string(fields[i+3])})
-	}
-	return entries, nil
-}
-
-func (r repository) stashChanges(hash string) ([]change, error) {
-	changes, err := r.commitChanges(hash)
-	if err != nil {
-		return nil, err
-	}
-	parents, err := r.command("rev-list", "--parents", "-n", "1", hash)
-	if err != nil {
-		return nil, gitError(parents, err)
-	}
-	fields := strings.Fields(string(parents))
-	if len(fields) >= 4 {
-		untracked, err := r.commitChanges(fields[3])
-		if err != nil {
-			return nil, err
-		}
-		for i := range untracked {
-			untracked[i].untracked = true
-		}
-		changes = append(changes, untracked...)
-	}
-	return changes, nil
-}
-
-func (r repository) stashPush() (string, error) {
-	_, entries, err := r.status()
-	if err != nil {
-		return "", err
-	}
-	if len(entries) == 0 {
-		return "Nothing to stash", nil
-	}
-	out, err := r.action("stash", "push", "--include-untracked")
-	if err != nil {
-		return "", err
-	}
-	if strings.Contains(out, "No local changes to save") {
-		return "Nothing to stash", nil
-	}
-	label := "files"
-	if len(entries) == 1 {
-		label = "file"
-	}
-	return fmt.Sprintf("Stashed %d %s", len(entries), label), nil
-}
-
-func (r repository) stashAction(operation string, target stashEntry) (string, error) {
-	entries, err := r.stashes()
-	if err != nil {
-		return "", err
-	}
-	valid := false
-	for _, entry := range entries {
-		if entry.ref == target.ref && entry.hash == target.hash {
-			valid = true
-			break
-		}
-	}
-	if !valid {
-		return "", fmt.Errorf("stash list changed; reopen the picker and try again")
-	}
-	_, err = r.action("stash", operation, target.ref)
-	if err != nil {
-		return "", err
-	}
-	if operation == "pop" {
-		return "Popped " + target.ref, nil
-	}
-	return "Dropped " + target.ref, nil
-}
-
 func (m model) openStashes() (tea.Model, tea.Cmd) {
 	if m.screen == "history" {
-		m.history.stream.close()
+		m.history.stream.Close()
 		m.history.stream = nil
 	}
 	m.screen = "stashes"
@@ -130,7 +40,7 @@ func (m model) openStashes() (tea.Model, tea.Cmd) {
 	m.stash.loading = true
 	repo, request := m.repo, m.stash.request
 	return m, func() tea.Msg {
-		entries, err := repo.stashes()
+		entries, err := repo.Stashes()
 		return stashesLoaded{entries: entries, request: request, err: err}
 	}
 }
@@ -140,18 +50,18 @@ func (m model) startStashPush() (tea.Model, tea.Cmd) {
 	m.generation++
 	repo := m.repo
 	return m, func() tea.Msg {
-		message, err := repo.stashPush()
+		message, err := repo.StashPush()
 		return completed{action: "stash-push", message: message, err: err}
 	}
 }
 
-func (m model) startStashAction(operation string, target stashEntry) (tea.Model, tea.Cmd) {
+func (m model) startStashAction(operation string, target StashEntry) (tea.Model, tea.Cmd) {
 	m.modal = ""
 	m.busy, m.activeAction = true, "stash-"+operation
 	m.generation++
 	repo := m.repo
 	return m, func() tea.Msg {
-		message, err := repo.stashAction(operation, target)
+		message, err := repo.StashAction(operation, target)
 		return completed{action: "stash-" + operation, message: message, err: err}
 	}
 }
@@ -179,8 +89,8 @@ func (m model) handleStashKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		entry := m.stash.entries[m.stash.selected]
 		m.stash.viewing = true
 		m.screen = "commit"
-		m.history.current = commitInfo{hash: entry.hash, subject: entry.ref + " · " + entry.message}
-		m.history.meta = commitInfo{}
+		m.history.current = CommitInfo{Hash: entry.Hash, Subject: entry.Ref + " · " + entry.Message}
+		m.history.meta = CommitInfo{}
 		m.history.moved = nil
 		m.history.request++
 		repo := m.startCommitLoad()
@@ -192,10 +102,10 @@ func (m model) handleStashKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.history.expandedDeleted, m.history.jumps = nil, nil
 		m.history.jumpIndex = 0
 		m.pickerReturn, m.pickerBackToHistory = false, false
-		hash, request := entry.hash, m.history.request
+		hash, request := entry.Hash, m.history.request
 		return m, func() tea.Msg {
-			changes, err := repo.stashChanges(hash)
-			detail, detailErr := repo.commitDetail(hash)
+			changes, err := repo.StashChanges(hash)
+			detail, detailErr := repo.CommitDetail(hash)
 			if err == nil {
 				err = detailErr
 			}
@@ -234,7 +144,7 @@ func (m model) stashView() string {
 			if index == selected {
 				prefix = m.accent() + "▸ " + styleReset
 			}
-			line = prefix + clean(entry.ref+"  "+relativeCommitTime(entry.date, time.Now())+"  "+entry.message)
+			line = prefix + clean(entry.Ref+"  "+relativeCommitTime(entry.Date, time.Now())+"  "+entry.Message)
 		} else if i == 0 {
 			line = " No stashes"
 			if m.stash.loading {
@@ -265,7 +175,7 @@ func (m model) showStashConfirm(lines []string) {
 	boxWidth := min(64, m.width-2)
 	placeDialog(lines, m.width, dialog{
 		width: boxWidth, title: action + " stash?", titleStyle: m.danger(),
-		body: []string{clean(m.stash.target.ref + " · " + shortHash(m.stash.target.hash)), clean(m.stash.target.message), styleDim + warning + styleReset},
+		body: []string{clean(m.stash.target.Ref + " · " + shortHash(m.stash.target.Hash)), clean(m.stash.target.Message), styleDim + warning + styleReset},
 		hint: keyHints("y", strings.ToLower(action), "n/esc", "cancel"),
 	}.render())
 }

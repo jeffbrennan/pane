@@ -47,11 +47,11 @@ func remotePermalink(remote, hash, path string, line int) string {
 	return u.String()
 }
 
-func copyLocationCmd(repo repository, hash, path string, line int) tea.Cmd {
+func copyLocationCmd(repo Repo, hash, path string, line int) tea.Cmd {
 	return func() tea.Msg {
 		text := locationText(path, line)
 		if hash != "" {
-			if out, err := repo.command("config", "--get", "remote.origin.url"); err == nil {
+			if out, err := repo.Command("config", "--get", "remote.origin.url"); err == nil {
 				if link := remotePermalink(strings.TrimSpace(string(out)), hash, path, line); link != "" {
 					text = link
 				}

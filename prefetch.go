@@ -17,38 +17,38 @@ type startupPrefetch struct {
 	status  chan tea.Msg
 	clean   chan bool
 	history chan historyLoaded
-	stream  *historyStream
+	stream  *HistoryStream
 }
 
-func startPrefetch(repo repository) *startupPrefetch {
-	p := &startupPrefetch{status: make(chan tea.Msg, 1), clean: make(chan bool, 1), history: make(chan historyLoaded, 1), stream: newHistoryStream(repo, "")}
+func startPrefetch(repo Repo) *startupPrefetch {
+	p := &startupPrefetch{status: make(chan tea.Msg, 1), clean: make(chan bool, 1), history: make(chan historyLoaded, 1), stream: NewHistoryStream(repo, "")}
 	go func() {
 		msg := loadWith(repo, 0, nil, true)()
 		loadedMsg, ok := msg.(loaded)
-		p.clean <- ok && loadedMsg.err == nil && len(loadedMsg.snapshot.unstaged) == 0 && len(loadedMsg.snapshot.staged) == 0
+		p.clean <- ok && loadedMsg.err == nil && len(loadedMsg.snapshot.Unstaged) == 0 && len(loadedMsg.snapshot.Staged) == 0
 		p.status <- msg
 	}()
 	go func() {
-		commits, err := p.stream.nextPage(historyPage)
-		repo.stats.fill(commits)
+		commits, err := p.stream.NextPage(historyPage)
+		repo.Stats.Fill(commits)
 		if !<-p.clean || err != nil {
 			p.history <- historyLoaded{commits: commits, err: err, limit: historyPage}
 			return
 		}
 		count := make(chan int, 1)
 		go func() {
-			entries, _ := repo.stashes()
+			entries, _ := repo.Stashes()
 			count <- len(entries)
 		}()
 		var missing []string
 		for _, c := range commits[:min(len(commits), startupStatsCount)] {
-			if !c.statsLoaded {
-				missing = append(missing, c.hash)
+			if !c.StatsLoaded {
+				missing = append(missing, c.Hash)
 			}
 		}
 		if len(missing) > 0 {
 			// Counts are a nicety; history still opens if they fail.
-			if stats, statsErr := repo.historyStats(missing); statsErr == nil {
+			if stats, statsErr := repo.HistoryStats(missing); statsErr == nil {
 				applyStats(commits, stats)
 			}
 		}
@@ -57,15 +57,15 @@ func startPrefetch(repo repository) *startupPrefetch {
 	return p
 }
 
-func applyStats(commits, stats []commitInfo) {
-	byHash := make(map[string]commitInfo, len(stats))
+func applyStats(commits, stats []CommitInfo) {
+	byHash := make(map[string]CommitInfo, len(stats))
 	for _, s := range stats {
-		byHash[s.hash] = s
+		byHash[s.Hash] = s
 	}
 	for i, c := range commits {
-		if s, ok := byHash[c.hash]; ok {
-			commits[i].added, commits[i].deleted, commits[i].binary = s.added, s.deleted, s.binary
-			commits[i].statsLoaded = true
+		if s, ok := byHash[c.Hash]; ok {
+			commits[i].Added, commits[i].Deleted, commits[i].Binary = s.Added, s.Deleted, s.Binary
+			commits[i].StatsLoaded = true
 		}
 	}
 }
@@ -86,6 +86,6 @@ func (p *startupPrefetch) loadHistory(request int) tea.Cmd {
 
 func (p *startupPrefetch) close() {
 	if p != nil {
-		p.stream.close()
+		p.stream.Close()
 	}
 }

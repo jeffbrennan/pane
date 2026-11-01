@@ -1,16 +1,16 @@
-package main
+package git
 
 import "strings"
 
-type fullContextResult struct {
-	diff string
-	err  error
+type FullContextResult struct {
+	Diff string
+	Err  error
 }
 
-// fullContexts keeps renames and unparseable sections on the per-file path,
+// FullContexts keeps renames and unparseable sections on the per-file path,
 // where Git's rename detection and quoted-path behavior are unchanged.
-func (r repository) fullContexts(changes []change, key contextKey) []fullContextResult {
-	results := make([]fullContextResult, len(changes))
+func (r Repo) FullContexts(changes []Change, key Context) []FullContextResult {
+	results := make([]FullContextResult, len(changes))
 	var batches [][]int
 	var batch []int
 	batchBytes := 0
@@ -21,27 +21,27 @@ func (r repository) fullContexts(changes []change, key contextKey) []fullContext
 		}
 	}
 	for i, c := range changes {
-		if strings.Contains(c.diff, "\nnew file mode ") {
-			results[i].diff = c.diff
+		if strings.Contains(c.Diff, "\nnew file mode ") {
+			results[i].Diff = c.Diff
 			continue
 		}
-		if c.oldPath != "" || !batchableSyntaxPath(c.path) {
+		if c.OldPath != "" || !batchableSyntaxPath(c.Path) {
 			batches = append(batches, []int{i})
 			continue
 		}
-		if len(batch) >= 32 || batchBytes+len(c.path)+1 > 64*1024 {
+		if len(batch) >= 32 || batchBytes+len(c.Path)+1 > 64*1024 {
 			flush()
 		}
 		batch = append(batch, i)
-		batchBytes += len(c.path) + 1
+		batchBytes += len(c.Path) + 1
 	}
 	flush()
 	parallelEach(len(batches), func(batchIndex int) {
 		indexes := batches[batchIndex]
 		loadOne := func(i int) {
 			fileKey := key
-			fileKey.path = changes[i].path
-			results[i].diff, results[i].err = r.fullContext(fileKey, changes[i].diff, changes[i].oldPath)
+			fileKey.Path = changes[i].Path
+			results[i].Diff, results[i].Err = r.FullContext(fileKey, changes[i].Diff, changes[i].OldPath)
 		}
 		if len(indexes) == 1 {
 			loadOne(indexes[0])
@@ -49,21 +49,21 @@ func (r repository) fullContexts(changes []change, key contextKey) []fullContext
 		}
 		paths := make([]string, len(indexes))
 		for i, index := range indexes {
-			paths[i] = changes[index].path
+			paths[i] = changes[index].Path
 		}
-		out, err := r.command(r.fullContextArgs(key, paths)...)
+		out, err := r.Command(r.FullContextArgs(key, paths)...)
 		var patches map[string]string
 		if err == nil {
-			patches = splitPatch(string(out))
+			patches = SplitPatch(string(out))
 		}
 		var fallback []int
 		for _, index := range indexes {
-			if r.context != nil && r.context.Err() != nil {
-				results[index].err = r.context.Err()
+			if r.Context != nil && r.Context.Err() != nil {
+				results[index].Err = r.Context.Err()
 				continue
 			}
-			if diff, ok := patches[changes[index].path]; ok {
-				results[index].diff = strings.Clone(diff)
+			if diff, ok := patches[changes[index].Path]; ok {
+				results[index].Diff = strings.Clone(diff)
 			} else {
 				fallback = append(fallback, index)
 			}

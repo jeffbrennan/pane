@@ -130,11 +130,11 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.refreshCache = msg.cache
 		m.whitespaceRefreshing = false
-		headChanged := m.snapshot.branch.available && msg.snapshot.branch.available && m.snapshot.branch.head != msg.snapshot.branch.head
-		changed := !m.snapshot.equal(msg.snapshot)
+		headChanged := m.snapshot.Branch.Available && msg.snapshot.Branch.Available && m.snapshot.Branch.Head != msg.snapshot.Branch.Head
+		changed := !m.snapshot.Equal(msg.snapshot)
 		splice := changed && m.screen == "" && m.rows != nil
 		if splice {
-			m.previousChanges = append([]change(nil), m.currentChanges()...)
+			m.previousChanges = append([]Change(nil), m.currentChanges()...)
 		}
 		m.snapshot = msg.snapshot
 		if changed {
@@ -161,13 +161,13 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.startup {
 			m.startup = false
-			if len(msg.snapshot.unstaged) == 0 && len(msg.snapshot.staged) == 0 && m.screen == "" && m.modal == "" {
+			if len(msg.snapshot.Unstaged) == 0 && len(msg.snapshot.Staged) == 0 && m.screen == "" && m.modal == "" {
 				return m.openHistory()
 			}
 		}
 		m.prefetch.close()
 		m.prefetch = nil
-		if msg.cache != nil && msg.cache.plain {
+		if msg.cache != nil && msg.cache.Plain {
 			// Highlight the files that started plain right away.
 			return m.refresh()
 		}
@@ -274,7 +274,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.recentCommitError = msg.err != nil
 		m.recentCommits = msg.commits
 		if msg.err == nil && m.recentCommits == nil {
-			m.recentCommits = []commitInfo{}
+			m.recentCommits = []CommitInfo{}
 		}
 	case worktreeHeadsLoaded:
 		if msg.request == m.worktreeHeadRequest {
@@ -301,11 +301,11 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.history.commits = append(m.history.commits[:len(m.history.commits):len(m.history.commits)], msg.commits...)
 		} else {
 			for i, c := range msg.commits {
-				if cached, ok := m.history.statsCache[c.hash]; ok {
-					msg.commits[i].added = cached.added
-					msg.commits[i].deleted = cached.deleted
-					msg.commits[i].binary = cached.binary
-					msg.commits[i].statsLoaded = true
+				if cached, ok := m.history.statsCache[c.Hash]; ok {
+					msg.commits[i].Added = cached.Added
+					msg.commits[i].Deleted = cached.Deleted
+					msg.commits[i].Binary = cached.Binary
+					msg.commits[i].StatsLoaded = true
 				}
 			}
 			m.history.commits = msg.commits
@@ -336,9 +336,9 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.modal = "error"
 			break
 		}
-		stats := make(map[string]commitInfo, len(msg.commits))
+		stats := make(map[string]CommitInfo, len(msg.commits))
 		for _, c := range msg.commits {
-			stats[c.hash] = c
+			stats[c.Hash] = c
 		}
 		for _, hash := range msg.hashes {
 			if _, ok := stats[hash]; !ok {
@@ -349,11 +349,11 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		for i, c := range m.history.commits {
-			if s, ok := stats[c.hash]; ok {
-				m.history.commits[i].added = s.added
-				m.history.commits[i].deleted = s.deleted
-				m.history.commits[i].binary = s.binary
-				m.history.commits[i].statsLoaded = true
+			if s, ok := stats[c.Hash]; ok {
+				m.history.commits[i].Added = s.Added
+				m.history.commits[i].Deleted = s.Deleted
+				m.history.commits[i].Binary = s.Binary
+				m.history.commits[i].StatsLoaded = true
 			}
 		}
 		m.cacheHistoryStats()
@@ -392,7 +392,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case hotspotsStarted:
 		if m.screen != "hotspots" || msg.request != m.hotspots.request || msg.err != nil {
 			if msg.plan.stream != nil {
-				msg.plan.stream.close()
+				msg.plan.stream.Close()
 			}
 			if msg.err != nil {
 				m.flash = "Hotspots: " + msg.err.Error()
@@ -490,7 +490,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.worktrees.selected = min(m.worktrees.selected, max(0, len(msg.entries)-1))
 		cmds := make([]tea.Cmd, 0, len(msg.entries))
 		for _, entry := range msg.entries {
-			cmds = append(cmds, loadWorktreeStatus(m.repo, entry.path, m.worktrees.request))
+			cmds = append(cmds, loadWorktreeStatus(m.repo, entry.Path, m.worktrees.request))
 		}
 		return m, tea.Batch(cmds...)
 	case worktreeStatusLoaded:
@@ -518,7 +518,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.history.changes = msg.changes
-		if msg.meta.hash != "" {
+		if msg.meta.Hash != "" {
 			m.history.meta = msg.meta
 		}
 		m.rebuildCommit()
@@ -535,12 +535,12 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		chunk := msg.chunk
-		if chunk.meta.hash != "" {
-			m.history.meta = chunk.meta
+		if chunk.Meta.Hash != "" {
+			m.history.meta = chunk.Meta
 		}
-		m.history.streamPaths, m.history.streamLoaded = chunk.paths, chunk.loaded
+		m.history.streamPaths, m.history.streamLoaded = chunk.Paths, chunk.Loaded
 		m.history.commitLoadingVisible = false
-		m.appendCommitChanges(chunk.changes, chunk.done)
+		m.appendCommitChanges(chunk.Changes, chunk.Done)
 		if m.picker.pendingPath != "" {
 			for i, r := range m.history.rows {
 				if r.kind == 'f' && (r.path == m.picker.pendingPath || r.oldPath == m.picker.pendingPath) {
@@ -552,7 +552,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if m.history.pendingPosition != nil {
-			m.restoreCommitPosition(chunk.done)
+			m.restoreCommitPosition(chunk.Done)
 		}
 		if m.history.streamEndPending && len(m.history.rows) > 0 {
 			m.history.pos = len(m.history.rows) - 1
@@ -561,7 +561,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.modal == "search" && m.search.draft != "" {
 			m = m.inDiff(func(view *model) { view.updateSearchDraft() })
 		}
-		if chunk.done {
+		if chunk.Done {
 			m.history.streamActive, m.history.loading, m.history.streamEndPending = false, false, false
 			m.picker.cache = nil
 			if len(m.history.rows) > 500000 {
@@ -569,8 +569,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// that capacity to the OS once the diff is complete.
 				debug.FreeOSMemory()
 			}
-			if chunk.err != nil {
-				m.history.streamError = "Commit load: " + chunk.err.Error()
+			if chunk.Err != nil {
+				m.history.streamError = "Commit load: " + chunk.Err.Error()
 			}
 			if m.picker.pendingPath != "" {
 				m.flash = "File not found: " + m.picker.pendingPath
@@ -602,7 +602,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.history.pos = 0
 		m.rebuildCommit()
 		m.jumpToHistoryFile()
-		return m, loadCommitSyntax(m.commitRepository(), m.history.current.hash, m.history.request, m.history.changes)
+		return m, loadCommitSyntax(m.commitRepository(), m.history.current.Hash, m.history.request, m.history.changes)
 	case commitSyntaxLoaded:
 		if m.screen != "commit" || msg.request != m.history.request {
 			break
@@ -615,24 +615,24 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		index := msg.index
 		chunk := msg.chunk
-		if chunk.meta.hash != "" {
-			m.sequence.commits[index] = chunk.meta
+		if chunk.Meta.Hash != "" {
+			m.sequence.commits[index] = chunk.Meta
 		}
-		if len(chunk.changes) > 0 {
-			m.sequence.changes[index] = append(m.sequence.changes[index], chunk.changes...)
+		if len(chunk.Changes) > 0 {
+			m.sequence.changes[index] = append(m.sequence.changes[index], chunk.Changes...)
 			if index < len(m.sequence.rowCache) {
 				m.sequence.rowCache[index] = nil
 			}
 		}
-		if chunk.done {
+		if chunk.Done {
 			errText := ""
-			if chunk.err != nil {
-				errText = chunk.err.Error()
+			if chunk.Err != nil {
+				errText = chunk.Err.Error()
 				if strings.Contains(errText, "bad revision") || strings.Contains(errText, "unknown revision") || strings.Contains(errText, "not a valid object") {
-					errText = fmt.Sprintf("invalid commit %q: %s", m.sequence.commits[index].hash, errText)
+					errText = fmt.Sprintf("invalid commit %q: %s", m.sequence.commits[index].Hash, errText)
 				}
 			}
-			if chunk.err != nil && len(m.sequence.changes[index]) == 0 {
+			if chunk.Err != nil && len(m.sequence.changes[index]) == 0 {
 				m.sequence.states[index] = sequenceFailed
 				m.sequence.errors[index] = errText
 			} else {

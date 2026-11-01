@@ -28,7 +28,7 @@ func (m *model) saveCommitPosition() {
 	if m.history.positions == nil {
 		m.history.positions = make(map[string]commitPosition)
 	}
-	m.history.positions[m.history.current.hash] = commitPosition{path: selected.path, line: selected.sourceLine}
+	m.history.positions[m.history.current.Hash] = commitPosition{path: selected.path, line: selected.sourceLine}
 }
 
 // restoreCommitPosition moves to the remembered line once its file is loaded.
@@ -70,7 +70,7 @@ func (m model) commitListPosition() (int, int) {
 	}
 	commits := m.filteredHistory()
 	for i, commit := range commits {
-		if commit.hash == m.history.current.hash {
+		if commit.Hash == m.history.current.Hash {
 			return i + 1, len(commits)
 		}
 	}
@@ -86,7 +86,7 @@ func (m model) stepCommit(direction int) (tea.Model, tea.Cmd) {
 	commits := m.filteredHistory()
 	index := -1
 	for i, commit := range commits {
-		if commit.hash == m.history.current.hash {
+		if commit.Hash == m.history.current.Hash {
 			index = i
 			break
 		}

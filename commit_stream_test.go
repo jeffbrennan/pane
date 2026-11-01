@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"testing/iotest"
+
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func TestPatchReaderMatchesSplitPatch(t *testing.T) {
@@ -23,10 +25,10 @@ func TestPatchReaderMatchesSplitPatch(t *testing.T) {
 		"diff --git a/one b/one\n@@ -1 +1 @@\n-again\n+final"
 	want := splitPatch(patch)
 	for _, reader := range []io.Reader{strings.NewReader(patch), iotest.OneByteReader(strings.NewReader(patch)), iotest.HalfReader(strings.NewReader(patch))} {
-		stream := newPatchReader(reader)
+		stream := git.NewPatchReader(reader)
 		got := make(map[string]string)
 		for {
-			path, section, err := stream.next()
+			path, section, err := stream.Next()
 			if err == io.EOF {
 				break
 			}
@@ -48,20 +50,20 @@ func TestStreamShape(t *testing.T) {
 	if dir == "" || os.Getenv("PANE_PERF") != "1" {
 		t.Skip("set PANE_PERF=1 and PANE_PERF_REPO")
 	}
-	repo := repository{root: dir}
+	repo := Repo{Root: dir}
 	revision := os.Getenv("PANE_PERF_COMMIT")
 	if revision == "" {
 		revision = "HEAD"
 	}
-	for chunk := range repo.streamCommit(context.Background(), revision, startupSyntaxLines) {
+	for chunk := range repo.StreamCommit(context.Background(), revision, startupSyntaxLines) {
 		lines, width := 0, 0
-		for _, c := range chunk.changes {
-			lines += strings.Count(c.diff, "\n")
-			width = max(width, lineNumberWidth(strings.Split(c.diff, "\n")))
+		for _, c := range chunk.Changes {
+			lines += strings.Count(c.Diff, "\n")
+			width = max(width, lineNumberWidth(strings.Split(c.Diff, "\n")))
 		}
-		t.Logf("loaded=%d files=%d lines=%d width=%d done=%t", chunk.loaded, len(chunk.changes), lines, width, chunk.done)
-		if chunk.err != nil {
-			t.Fatal(chunk.err)
+		t.Logf("loaded=%d files=%d lines=%d width=%d done=%t", chunk.Loaded, len(chunk.Changes), lines, width, chunk.Done)
+		if chunk.Err != nil {
+			t.Fatal(chunk.Err)
 		}
 	}
 }
@@ -72,38 +74,38 @@ func TestStreamCommitMatchesCompleteLoad(t *testing.T) {
 		writeFile(t, r, fmt.Sprintf("file-%02d.txt", i), strings.Repeat("some lines\n", 10))
 	}
 	writeFile(t, r, "quoted-界.txt", "quoted\n")
-	if _, err := r.commit("many files"); err != nil {
+	if _, err := r.Commit("many files"); err != nil {
 		t.Fatal(err)
 	}
-	want, err := r.commitChangesWithoutSyntax("HEAD")
+	want, err := r.CommitChangesWithoutSyntax("HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	var got []change
+	var got []Change
 	chunks := 0
-	for chunk := range r.streamCommit(ctx, "HEAD", 20) {
-		if chunk.err != nil {
-			t.Fatal(chunk.err)
+	for chunk := range r.StreamCommit(ctx, "HEAD", 20) {
+		if chunk.Err != nil {
+			t.Fatal(chunk.Err)
 		}
 		chunks++
-		got = append(got, chunk.changes...)
+		got = append(got, chunk.Changes...)
 	}
 	if chunks < 2 {
 		t.Fatal("expected an early chunk")
 	}
-	byPath := make(map[string]change)
+	byPath := make(map[string]Change)
 	for _, c := range got {
-		c.syntaxSkipped = false
-		byPath[c.path] = c
+		c.SyntaxSkipped = false
+		byPath[c.Path] = c
 	}
 	if len(byPath) != len(want) {
 		t.Fatalf("got %d files, want %d", len(byPath), len(want))
 	}
 	for _, c := range want {
-		if byPath[c.path] != c {
-			t.Fatalf("change mismatch for %q", c.path)
+		if byPath[c.Path] != c {
+			t.Fatalf("change mismatch for %q", c.Path)
 		}
 	}
 }

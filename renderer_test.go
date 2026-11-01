@@ -10,7 +10,7 @@ import (
 )
 
 func TestCommitReviewHybridLineNumbers(t *testing.T) {
-	changes := []change{{path: "file.txt", diff: "@@ -100,3 +100,3 @@\n first\n second\n third\n"}}
+	changes := []Change{{Path: "file.txt", Diff: "@@ -100,3 +100,3 @@\n first\n second\n third\n"}}
 	m := model{width: 40, height: 10, wrap: true, screen: "commit", history: historyState{changes: changes}}
 	m.rebuildCommit()
 	m.history.pos = 2
@@ -76,7 +76,7 @@ func nextDiffFrame(t *testing.T, writes <-chan string) string {
 }
 
 func TestDiffRedrawDoesNotClearLinesBeforePainting(t *testing.T) {
-	m := model{width: 60, height: 12, wrap: true, snapshot: snapshot{unstaged: []change{longFile("first.go"), longFile("second.go")}}}
+	m := model{width: 60, height: 12, wrap: true, snapshot: Snapshot{Unstaged: []Change{longFile("first.go"), longFile("second.go")}}}
 	m.rebuild()
 	writes := make(chan string, 256)
 	p := tea.NewProgram(renderTestModel{m}, tea.WithInput(nil), tea.WithOutput(renderCapture{writes}), tea.WithAltScreen(), tea.WithoutSignalHandler())

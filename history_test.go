@@ -28,7 +28,7 @@ func TestHistoryCommitTime(t *testing.T) {
 }
 
 func TestHistoryViewShowsRecentRelativeTime(t *testing.T) {
-	m := model{width: 80, height: 12, screen: "history", history: historyState{commits: []commitInfo{{subject: "recent", author: "Alice", date: time.Now().Add(-2 * time.Hour).Format(time.RFC3339)}}}}
+	m := model{width: 80, height: 12, screen: "history", history: historyState{commits: []CommitInfo{{Subject: "recent", Author: "Alice", Date: time.Now().Add(-2 * time.Hour).Format(time.RFC3339)}}}}
 	if view := m.View(); !strings.Contains(view, "2h ago") || !strings.Contains(view, "Alice") {
 		t.Fatalf("missing recent relative time: %q", view)
 	}
@@ -36,47 +36,47 @@ func TestHistoryViewShowsRecentRelativeTime(t *testing.T) {
 
 func TestHistoryAndCommitChanges(t *testing.T) {
 	r := testRepo(t)
-	if commits, err := r.history(0, historyPage); err != nil || len(commits) != 0 {
+	if commits, err := r.History(0, historyPage); err != nil || len(commits) != 0 {
 		t.Fatalf("empty history: %#v %v", commits, err)
 	}
 	writeFile(t, r, "first file", "initial\n")
-	if _, err := r.commit("first commit"); err != nil {
+	if _, err := r.Commit("first commit"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "first file", "updated\n")
 	writeFile(t, r, "second", "new\n")
-	if _, err := r.commit("second commit\n\nDetailed body"); err != nil {
+	if _, err := r.Commit("second commit\n\nDetailed body"); err != nil {
 		t.Fatal(err)
 	}
-	commits, err := r.history(0, historyPage)
+	commits, err := r.History(0, historyPage)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(commits) != 2 || commits[0].subject != "second commit" || commits[1].author != "Test" || commits[0].email != "test@example.com" {
+	if len(commits) != 2 || commits[0].Subject != "second commit" || commits[1].Author != "Test" || commits[0].Email != "test@example.com" {
 		t.Fatalf("history: %#v", commits)
 	}
-	if !strings.Contains(commits[0].message, "Detailed body") {
+	if !strings.Contains(commits[0].Message, "Detailed body") {
 		t.Fatalf("missing body: %#v", commits[0])
 	}
-	commits, err = r.historyStats([]string{commits[0].hash, commits[1].hash})
+	commits, err = r.HistoryStats([]string{commits[0].Hash, commits[1].Hash})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if commits[0].added != 2 || commits[0].deleted != 1 || commits[1].added != 1 {
+	if commits[0].Added != 2 || commits[0].Deleted != 1 || commits[1].Added != 1 {
 		t.Fatalf("wrong line counts: %#v", commits)
 	}
-	changes, err := r.commitChanges(commits[0].hash)
+	changes, err := r.CommitChanges(commits[0].Hash)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(changes) != 2 || !strings.Contains(changes[0].diff, "+updated") {
+	if len(changes) != 2 || !strings.Contains(changes[0].Diff, "+updated") {
 		t.Fatalf("changes: %#v", changes)
 	}
-	changes, err = r.commitChanges(commits[1].hash)
+	changes, err = r.CommitChanges(commits[1].Hash)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(changes) != 1 || !strings.Contains(changes[0].diff, "+initial") {
+	if len(changes) != 1 || !strings.Contains(changes[0].Diff, "+initial") {
 		t.Fatalf("root changes: %#v", changes)
 	}
 }
@@ -84,50 +84,50 @@ func TestHistoryAndCommitChanges(t *testing.T) {
 func TestHistoryMergeFirstParent(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "base", "base\n")
-	if _, err := r.commit("base"); err != nil {
+	if _, err := r.Commit("base"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.action("checkout", "-b", "feature"); err != nil {
+	if _, err := r.Action("checkout", "-b", "feature"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "feature", "feature\n")
-	if _, err := r.commit("feature"); err != nil {
+	if _, err := r.Commit("feature"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.action("checkout", "-"); err != nil {
+	if _, err := r.Action("checkout", "-"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "main", "main\n")
-	if _, err := r.commit("main"); err != nil {
+	if _, err := r.Commit("main"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.action("merge", "--no-ff", "-m", "merge", "feature"); err != nil {
+	if _, err := r.Action("merge", "--no-ff", "-m", "merge", "feature"); err != nil {
 		t.Fatal(err)
 	}
-	commits, err := r.history(0, historyPage)
+	commits, err := r.History(0, historyPage)
 	if err != nil {
 		t.Fatal(err)
 	}
-	commits, err = r.historyStats([]string{commits[0].hash})
+	commits, err = r.HistoryStats([]string{commits[0].Hash})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if commits[0].added != 1 || commits[0].deleted != 0 {
+	if commits[0].Added != 1 || commits[0].Deleted != 0 {
 		t.Fatalf("merge counts: %#v", commits[0])
 	}
-	changes, err := r.commitChanges(commits[0].hash)
+	changes, err := r.CommitChanges(commits[0].Hash)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(changes) != 1 || changes[0].path != "feature" || !strings.Contains(changes[0].diff, "+feature") {
+	if len(changes) != 1 || changes[0].Path != "feature" || !strings.Contains(changes[0].Diff, "+feature") {
 		t.Fatalf("merge changes: %#v", changes)
 	}
 }
 
 func TestHistorySearchAndReadOnlyNavigation(t *testing.T) {
-	m := model{width: 60, height: 10, wrap: true, screen: "history", history: historyState{commits: []commitInfo{
-		{hash: "abc123456789", author: "Alice", email: "a@example.com", subject: "One"},
-		{hash: "def123456789", author: "Bob", email: "b@example.com", subject: "Fix issue", message: "Fix issue\n\nbody detail"},
+	m := model{width: 60, height: 10, wrap: true, screen: "history", history: historyState{commits: []CommitInfo{
+		{Hash: "abc123456789", Author: "Alice", Email: "a@example.com", Subject: "One"},
+		{Hash: "def123456789", Author: "Bob", Email: "b@example.com", Subject: "Fix issue", Message: "Fix issue\n\nbody detail"},
 	}}}
 	for _, query := range []string{"ALICE", "example.com", "fix", "def123", "body detail"} {
 		m.history.filter = query
@@ -145,7 +145,7 @@ func TestHistorySearchAndReadOnlyNavigation(t *testing.T) {
 	}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(model)
-	if m.screen != "commit" || cmd == nil || m.history.current.author != "Bob" || m.history.searching || m.history.filter != "fix" {
+	if m.screen != "commit" || cmd == nil || m.history.current.Author != "Bob" || m.history.searching || m.history.filter != "fix" {
 		t.Fatal("commit not opened")
 	}
 	for _, key := range []string{" ", "c", "p", "P"} {
@@ -183,7 +183,7 @@ func TestCommitLoadingIsDelayed(t *testing.T) {
 }
 
 func TestCommitLoadsDiffBeforeSyntax(t *testing.T) {
-	changes := []change{longFile("first.go")}
+	changes := []Change{longFile("first.go")}
 	m := model{width: 60, height: 12, wrap: true, screen: "commit", history: historyState{loading: true, request: 4}}
 	updated, cmd := m.Update(commitLoaded{changes: changes, request: 4})
 	m = updated.(model)
@@ -203,7 +203,7 @@ func TestCommitLoadsDiffBeforeSyntax(t *testing.T) {
 }
 
 func TestCommitHeadingShowsHashAndSubject(t *testing.T) {
-	m := model{width: 60, height: 10, screen: "commit", history: historyState{current: commitInfo{hash: "123456789abcdef", subject: "commit subject"}}}
+	m := model{width: 60, height: 10, screen: "commit", history: historyState{current: CommitInfo{Hash: "123456789abcdef", Subject: "commit subject"}}}
 	header := strings.Split(plain(m.View()), "\n")[0]
 	if !strings.HasPrefix(header, " 12345678  commit subject ") || !strings.HasSuffix(header, "read-only") || strings.Contains(header, "pane") {
 		t.Fatalf("unexpected commit heading: %q", header)
@@ -214,7 +214,7 @@ func TestCommitPickerBackNavigation(t *testing.T) {
 	for _, back := range []string{"esc", "q"} {
 		for _, close := range []string{"esc", "q"} {
 			t.Run(back+"_"+close, func(t *testing.T) {
-				m := model{width: 60, height: 12, wrap: true, screen: "commit", history: historyState{changes: []change{longFile("first.go"), longFile("second.go")}}}
+				m := model{width: 60, height: 12, wrap: true, screen: "commit", history: historyState{changes: []Change{longFile("first.go"), longFile("second.go")}}}
 				m.rebuildCommit()
 				m = keys(t, m, "f", "/", "s", "e", "c", "o", "n", "d", "enter", "j")
 				if m.screen != "commit" || m.modal != "" || !m.pickerReturn {
@@ -238,7 +238,7 @@ func TestCommitPickerBackNavigation(t *testing.T) {
 }
 
 func TestCommitPickerCanReopenFileAfterGoingBack(t *testing.T) {
-	m := model{width: 60, height: 12, wrap: true, screen: "commit", history: historyState{changes: []change{longFile("first.go"), longFile("second.go")}}}
+	m := model{width: 60, height: 12, wrap: true, screen: "commit", history: historyState{changes: []Change{longFile("first.go"), longFile("second.go")}}}
 	m.rebuildCommit()
 	m = keys(t, m, "f", "/", "s", "e", "c", "o", "n", "d", "enter", "esc", "enter")
 	if m.screen != "commit" || m.modal != "" || !m.pickerReturn {
@@ -251,7 +251,7 @@ func TestCommitPickerCanReopenFileAfterGoingBack(t *testing.T) {
 }
 
 func TestClosingInitiallyOpenedCommitPickerReturnsToDiff(t *testing.T) {
-	m := model{width: 60, height: 12, wrap: true, screen: "commit", history: historyState{changes: []change{longFile("file.go")}}}
+	m := model{width: 60, height: 12, wrap: true, screen: "commit", history: historyState{changes: []Change{longFile("file.go")}}}
 	m.rebuildCommit()
 	m = keys(t, m, "f", "q")
 	if m.screen != "commit" || m.modal != "" {
@@ -264,7 +264,7 @@ func TestClosingInitiallyOpenedCommitPickerReturnsToDiff(t *testing.T) {
 }
 
 func TestSearchEnterWithNoMatchesKeepsSearchOpen(t *testing.T) {
-	m := model{screen: "history", history: historyState{searching: true, draft: "missing", commits: []commitInfo{{subject: "present"}}}}
+	m := model{screen: "history", history: historyState{searching: true, draft: "missing", commits: []CommitInfo{{Subject: "present"}}}}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	got := updated.(model)
 	if got.screen != "history" || !got.history.searching || cmd != nil {
@@ -273,23 +273,23 @@ func TestSearchEnterWithNoMatchesKeepsSearchOpen(t *testing.T) {
 }
 
 func TestSearchEnterOpensFocusedResult(t *testing.T) {
-	m := model{screen: "history", history: historyState{searching: true, draft: "fix", commits: []commitInfo{
-		{hash: "first", subject: "fix one"}, {hash: "second", subject: "fix two"},
+	m := model{screen: "history", history: historyState{searching: true, draft: "fix", commits: []CommitInfo{
+		{Hash: "first", Subject: "fix one"}, {Hash: "second", Subject: "fix two"},
 	}}}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m = updated.(model)
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	got := updated.(model)
-	if cmd == nil || got.screen != "commit" || got.history.current.hash != "second" {
+	if cmd == nil || got.screen != "commit" || got.history.current.Hash != "second" {
 		t.Fatalf("wrong focused result: %#v", got.history)
 	}
 }
 
 func TestSpaceOpensSelectedCommit(t *testing.T) {
-	m := model{screen: "history", history: historyState{selected: 1, commits: []commitInfo{{hash: "first"}, {hash: "second"}}}}
+	m := model{screen: "history", history: historyState{selected: 1, commits: []CommitInfo{{Hash: "first"}, {Hash: "second"}}}}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	got := updated.(model)
-	if cmd == nil || got.screen != "commit" || got.history.current.hash != "second" {
+	if cmd == nil || got.screen != "commit" || got.history.current.Hash != "second" {
 		t.Fatal("space did not open the selected commit")
 	}
 
@@ -302,10 +302,10 @@ func TestSpaceOpensSelectedCommit(t *testing.T) {
 }
 
 func TestHistorySelectionPresentationAndScrolling(t *testing.T) {
-	m := model{width: 60, height: 9, screen: "history", history: historyState{commits: []commitInfo{
-		{hash: "aaaaaaaa", author: "Alice", subject: "first", statsLoaded: true},
-		{hash: "bbbbbbbb", author: "Bob", subject: "second", statsLoaded: true},
-		{hash: "cccccccc", author: "Carol", subject: "third", statsLoaded: true},
+	m := model{width: 60, height: 9, screen: "history", history: historyState{commits: []CommitInfo{
+		{Hash: "aaaaaaaa", Author: "Alice", Subject: "first", StatsLoaded: true},
+		{Hash: "bbbbbbbb", Author: "Bob", Subject: "second", StatsLoaded: true},
+		{Hash: "cccccccc", Author: "Carol", Subject: "third", StatsLoaded: true},
 	}}}
 	view := m.historyView()
 	if !strings.Contains(view, "▸ \x1b[0m\x1b[1mfirst") || !strings.Contains(view, "\x1b[2m  second") || !strings.Contains(view, "\x1b[32m+0") || !strings.Contains(view, "\x1b[31m -0") {
@@ -319,7 +319,7 @@ func TestHistorySelectionPresentationAndScrolling(t *testing.T) {
 }
 
 func TestHistoryReverseScrollKeepsViewportStill(t *testing.T) {
-	m := model{width: 60, height: 12, screen: "history", history: historyState{commits: make([]commitInfo, 12)}}
+	m := model{width: 60, height: 12, screen: "history", history: historyState{commits: make([]CommitInfo, 12)}}
 	for i := 0; i < 8; i++ {
 		m = keys(t, m, "j")
 	}
@@ -346,21 +346,21 @@ func TestHistoryReverseScrollKeepsViewportStill(t *testing.T) {
 func TestHistoryEmptyAndBinaryCommits(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "binary", "\x00\x01\x02")
-	if _, err := r.commit("binary"); err != nil {
+	if _, err := r.Commit("binary"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.action("commit", "--allow-empty", "-m", "empty"); err != nil {
+	if _, err := r.Action("commit", "--allow-empty", "-m", "empty"); err != nil {
 		t.Fatal(err)
 	}
-	commits, err := r.history(0, historyPage)
+	commits, err := r.History(0, historyPage)
 	if err != nil {
 		t.Fatal(err)
 	}
-	commits, err = r.historyStats([]string{commits[0].hash, commits[1].hash})
+	commits, err = r.HistoryStats([]string{commits[0].Hash, commits[1].Hash})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(commits) != 2 || commits[0].subject != "empty" || commits[1].binary != 1 || commits[1].added != 0 {
+	if len(commits) != 2 || commits[0].Subject != "empty" || commits[1].Binary != 1 || commits[1].Added != 0 {
 		t.Fatalf("history: %#v", commits)
 	}
 }
@@ -375,7 +375,7 @@ func TestSuccessfulCommitOpensHistory(t *testing.T) {
 }
 
 func TestParagraphHistoryAndCommitJumps(t *testing.T) {
-	m := model{screen: "history", history: historyState{commits: make([]commitInfo, 7)}}
+	m := model{screen: "history", history: historyState{commits: make([]CommitInfo, 7)}}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("}")})
 	m = updated.(model)
 	if m.history.selected != 5 {
@@ -409,10 +409,10 @@ func TestCommitChangesBatchesQuotedAndSpacedPaths(t *testing.T) {
 	for _, path := range []string{"plain", "a b", `q"t`} {
 		writeFile(t, r, path, "content "+path+"\n")
 	}
-	if _, err := r.commit("files"); err != nil {
+	if _, err := r.Commit("files"); err != nil {
 		t.Fatal(err)
 	}
-	changes, err := r.commitChanges("HEAD")
+	changes, err := r.CommitChanges("HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -420,8 +420,8 @@ func TestCommitChangesBatchesQuotedAndSpacedPaths(t *testing.T) {
 		t.Fatalf("changes: %#v", changes)
 	}
 	for _, c := range changes {
-		if strings.Count(c.diff, "diff --git") != 1 || !strings.Contains(c.diff, "+content "+c.path) {
-			t.Errorf("%q: %q", c.path, c.diff)
+		if strings.Count(c.Diff, "diff --git") != 1 || !strings.Contains(c.Diff, "+content "+c.Path) {
+			t.Errorf("%q: %q", c.Path, c.Diff)
 		}
 	}
 }
@@ -430,17 +430,17 @@ func TestHistoryPaging(t *testing.T) {
 	r := testRepo(t)
 	for _, name := range []string{"one", "two", "three"} {
 		writeFile(t, r, name, name+"\n")
-		if _, err := r.commit(name); err != nil {
+		if _, err := r.Commit(name); err != nil {
 			t.Fatal(err)
 		}
 	}
-	page, err := r.history(1, 1)
-	if err != nil || len(page) != 1 || page[0].subject != "two" || page[0].search == "" {
+	page, err := r.History(1, 1)
+	if err != nil || len(page) != 1 || page[0].Subject != "two" || page[0].Search == "" {
 		t.Fatalf("page: %#v %v", page, err)
 	}
 
 	m := model{height: 20, screen: "history", history: historyState{loading: true, request: 1}}
-	full := make([]commitInfo, historyPage)
+	full := make([]CommitInfo, historyPage)
 	updated, cmd := m.Update(historyLoaded{commits: full, request: 1, limit: historyPage})
 	m = updated.(model)
 	if cmd != nil || !m.history.more || m.history.fetching {
@@ -470,11 +470,11 @@ func TestHistoryStatsLoadForViewportAndFollowScrolling(t *testing.T) {
 	r := testRepo(t)
 	for _, name := range []string{"one", "two", "three", "four", "five", "six", "seven", "eight"} {
 		writeFile(t, r, name, name+"\n")
-		if _, err := r.commit(name); err != nil {
+		if _, err := r.Commit(name); err != nil {
 			t.Fatal(err)
 		}
 	}
-	commits, err := r.history(0, historyPage)
+	commits, err := r.History(0, historyPage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -489,7 +489,7 @@ func TestHistoryStatsLoadForViewportAndFollowScrolling(t *testing.T) {
 	}
 	updated, cmd := m.Update(msg)
 	m = updated.(model)
-	if cmd != nil || !m.history.commits[0].statsLoaded || !m.history.commits[5].statsLoaded || m.history.commits[6].statsLoaded {
+	if cmd != nil || !m.history.commits[0].StatsLoaded || !m.history.commits[5].StatsLoaded || m.history.commits[6].StatsLoaded {
 		t.Fatal("statistics did not load for the viewport and lookahead")
 	}
 	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyDown})
@@ -498,16 +498,16 @@ func TestHistoryStatsLoadForViewportAndFollowScrolling(t *testing.T) {
 		t.Fatal("scrolling did not request newly visible statistics")
 	}
 	updated, _ = m.Update(cmd())
-	if !updated.(model).history.commits[6].statsLoaded {
+	if !updated.(model).history.commits[6].StatsLoaded {
 		t.Fatal("new lookahead statistics were not applied")
 	}
 }
 
 func TestStaleHistoryStatsAreIgnored(t *testing.T) {
-	m := model{screen: "history", history: historyState{request: 2, statsFetching: true, commits: []commitInfo{{hash: "a"}}}}
-	updated, _ := m.Update(historyStatsLoaded{request: 1, commits: []commitInfo{{hash: "a", statsLoaded: true}}})
+	m := model{screen: "history", history: historyState{request: 2, statsFetching: true, commits: []CommitInfo{{Hash: "a"}}}}
+	updated, _ := m.Update(historyStatsLoaded{request: 1, commits: []CommitInfo{{Hash: "a", StatsLoaded: true}}})
 	got := updated.(model)
-	if got.history.commits[0].statsLoaded || !got.history.statsFetching {
+	if got.history.commits[0].StatsLoaded || !got.history.statsFetching {
 		t.Fatal("stale statistics changed the current history")
 	}
 }
@@ -516,7 +516,7 @@ func TestHistoryStatsCachedWhenReopening(t *testing.T) {
 	r := testRepo(t)
 	for _, name := range []string{"one", "two"} {
 		writeFile(t, r, name, name+"\n")
-		if _, err := r.commit(name); err != nil {
+		if _, err := r.Commit(name); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -531,7 +531,7 @@ func TestHistoryStatsCachedWhenReopening(t *testing.T) {
 	m = updated.(model)
 	opened, cmd = m.openHistory()
 	m, cmd = applyBatch(t, opened.(model), cmd)
-	if cmd != nil || !m.history.commits[0].statsLoaded || !m.history.commits[1].statsLoaded || m.history.commits[0].added != 1 {
+	if cmd != nil || !m.history.commits[0].StatsLoaded || !m.history.commits[1].StatsLoaded || m.history.commits[0].Added != 1 {
 		t.Fatal("reopened history did not reuse cached statistics")
 	}
 }
@@ -560,9 +560,9 @@ func applyBatch(t *testing.T, m model, cmd tea.Cmd) (model, tea.Cmd) {
 }
 
 func TestHistoryStatsCacheTracksNewestCommits(t *testing.T) {
-	commits := make([]commitInfo, historyStatsCacheSize+1)
+	commits := make([]CommitInfo, historyStatsCacheSize+1)
 	for i := range commits {
-		commits[i] = commitInfo{hash: fmt.Sprint(i), statsLoaded: true, added: i}
+		commits[i] = CommitInfo{Hash: fmt.Sprint(i), StatsLoaded: true, Added: i}
 	}
 	m := model{screen: "history", history: historyState{commits: commits}}
 	m.cacheHistoryStats()
@@ -570,15 +570,15 @@ func TestHistoryStatsCacheTracksNewestCommits(t *testing.T) {
 		t.Fatal("cache did not respect its size limit")
 	}
 	m.history.request++
-	updated, _ := m.Update(historyLoaded{request: m.history.request, commits: []commitInfo{{hash: "new"}, {hash: "1"}}, limit: historyPage})
+	updated, _ := m.Update(historyLoaded{request: m.history.request, commits: []CommitInfo{{Hash: "new"}, {Hash: "1"}}, limit: historyPage})
 	got := updated.(model)
-	if got.history.commits[0].statsLoaded || !got.history.commits[1].statsLoaded || got.history.commits[1].added != 1 || len(got.history.statsCache) != 1 {
+	if got.history.commits[0].StatsLoaded || !got.history.commits[1].StatsLoaded || got.history.commits[1].Added != 1 || len(got.history.statsCache) != 1 {
 		t.Fatal("cache did not follow commit hashes after history changed")
 	}
 }
 
 func TestSearchFetchesOlderHistory(t *testing.T) {
-	m := model{width: 60, height: 20, screen: "history", history: historyState{commits: make([]commitInfo, historyPage), more: true}}
+	m := model{width: 60, height: 20, screen: "history", history: historyState{commits: make([]CommitInfo, historyPage), more: true}}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
 	m = updated.(model)
 	if cmd != nil {
@@ -594,7 +594,7 @@ func TestSearchFetchesOlderHistory(t *testing.T) {
 func TestHistorySearchUsesLargerPages(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file", "content\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
 	for _, tt := range []struct {
@@ -606,7 +606,7 @@ func TestHistorySearchUsesLargerPages(t *testing.T) {
 		{name: "search", filter: "initial", limit: 5 * historyPage},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			m := model{repo: r, screen: "history", history: historyState{commits: make([]commitInfo, historyPage), selected: historyPage - 1, more: true, filter: tt.filter}}
+			m := model{repo: r, screen: "history", history: historyState{commits: make([]CommitInfo, historyPage), selected: historyPage - 1, more: true, filter: tt.filter}}
 			_, cmd := m.loadMoreHistory()
 			if cmd == nil {
 				t.Fatal("expected a page request")
@@ -622,7 +622,7 @@ func TestHistorySearchUsesLargerPages(t *testing.T) {
 func TestHistoryHeaderHeight(t *testing.T) {
 	for _, available := range []bool{false, true} {
 		for height := 0; height < 10; height++ {
-			m := model{width: 40, height: height, snapshot: snapshot{branch: branchStatus{available: available}}}
+			m := model{width: 40, height: height, snapshot: Snapshot{Branch: BranchStatus{Available: available}}}
 			if got, want := m.historyHeaderHeight(), len(m.historyHeader()); got != want {
 				t.Errorf("height %d available %v: %d != %d", height, available, got, want)
 			}

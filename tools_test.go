@@ -10,10 +10,10 @@ import (
 )
 
 func toolModel() model {
-	m := model{width: 60, height: 12, wrap: true, snapshot: snapshot{unstaged: []change{
-		{path: "cmd/server/main.go", diff: "@@ -1,3 +1,3 @@\n context\n-old Value\n+new value\n"},
-		{path: "pkg/api/types.go", diff: "@@ -10,2 +10,3 @@\n keep\n+added value\n+more\n"},
-		{path: "README.md", diff: "@@ -0,0 +1,20 @@\n" + strings.Repeat("+docs\n", 20)},
+	m := model{width: 60, height: 12, wrap: true, snapshot: Snapshot{Unstaged: []Change{
+		{Path: "cmd/server/main.go", Diff: "@@ -1,3 +1,3 @@\n context\n-old Value\n+new value\n"},
+		{Path: "pkg/api/types.go", Diff: "@@ -10,2 +10,3 @@\n keep\n+added value\n+more\n"},
+		{Path: "README.md", Diff: "@@ -0,0 +1,20 @@\n" + strings.Repeat("+docs\n", 20)},
 	}}}
 	m.rebuild()
 	return m
@@ -72,7 +72,7 @@ func TestFilePickerRefreshesAfterRebuild(t *testing.T) {
 	if len(m.fileEntries()) != 3 {
 		t.Fatalf("entries: %#v", m.fileEntries())
 	}
-	m.snapshot.unstaged = m.snapshot.unstaged[:1]
+	m.snapshot.Unstaged = m.snapshot.Unstaged[:1]
 	m.rebuild()
 	if entries := m.fileEntries(); len(entries) != 1 || !strings.Contains(plain(m.View()), "1/1 │") {
 		t.Fatalf("stale picker after rebuild: %#v", entries)
@@ -91,7 +91,7 @@ func TestWorkingDiffPickerBackNavigation(t *testing.T) {
 				t.Run(name, func(t *testing.T) {
 					m := toolModel()
 					if staged {
-						m.snapshot.staged = m.snapshot.unstaged
+						m.snapshot.Staged = m.snapshot.Unstaged
 						m.staged = true
 						m.rebuild()
 					}
@@ -340,10 +340,10 @@ func TestFilePickerRelativeNumbersAndChangeColumn(t *testing.T) {
 }
 
 func TestFilePickerAlignsChangeCounts(t *testing.T) {
-	m := model{width: 80, height: 15, snapshot: snapshot{unstaged: []change{
-		{path: "small.go", diff: "@@ -1,0 +1,2 @@\n+one\n+two\n"},
-		{path: "large.go", diff: "@@ -1,0 +1,1001 @@\n" + strings.Repeat("+line\n", 1001)},
-		{path: "deleted.go", diff: "@@ -1,1 +1,0 @@\n-line\n"},
+	m := model{width: 80, height: 15, snapshot: Snapshot{Unstaged: []Change{
+		{Path: "small.go", Diff: "@@ -1,0 +1,2 @@\n+one\n+two\n"},
+		{Path: "large.go", Diff: "@@ -1,0 +1,1001 @@\n" + strings.Repeat("+line\n", 1001)},
+		{Path: "deleted.go", Diff: "@@ -1,1 +1,0 @@\n-line\n"},
 	}}}
 	m.rebuild()
 	m = keys(t, m, "f")
@@ -461,8 +461,8 @@ func TestDiffSearch(t *testing.T) {
 func TestCommitViewSharesDiffTools(t *testing.T) {
 	m := toolModel()
 	m.screen = "commit"
-	m.history.changes = m.snapshot.unstaged
-	m.history.current = commitInfo{hash: "abcdef1234567890", subject: "subject"}
+	m.history.changes = m.snapshot.Unstaged
+	m.history.current = CommitInfo{Hash: "abcdef1234567890", Subject: "subject"}
 	m.rebuildCommit()
 	m = keys(t, m, "f", "/", "R", "E", "A", "enter")
 	if m.screen != "commit" || m.history.rows[m.history.pos].path != "README.md" {
@@ -479,7 +479,7 @@ func TestCommitViewSharesDiffTools(t *testing.T) {
 }
 
 func TestRowTargetsAndEditorArgs(t *testing.T) {
-	rows := buildRows([]change{{path: "f", diff: "@@ -5,3 +5,3 @@\n same\n-gone\n+here\n tail\n"}}, 80, true)
+	rows := buildRows([]Change{{Path: "f", Diff: "@@ -5,3 +5,3 @@\n same\n-gone\n+here\n tail\n"}}, 80, true)
 	want := map[string]int{"same": 5, "gone": 6, "here": 6, "tail": 7}
 	for _, r := range rows {
 		if line, ok := want[r.text]; ok && r.target != line {
@@ -504,7 +504,7 @@ func TestRowTargetsAndEditorArgs(t *testing.T) {
 
 func TestOpenEditorRequiresWorkingTreeFile(t *testing.T) {
 	m := toolModel()
-	m.repo = repository{root: t.TempDir()}
+	m.repo = Repo{Root: t.TempDir()}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
 	if cmd != nil || !strings.Contains(updated.(model).flash, "does not exist") {
 		t.Fatalf("missing file: %q", updated.(model).flash)
@@ -520,7 +520,7 @@ func TestOpenEditorRequiresWorkingTreeFile(t *testing.T) {
 }
 
 func TestHistoryCopyAndFlash(t *testing.T) {
-	m := model{width: 60, height: 12, screen: "history", history: historyState{commits: []commitInfo{{hash: "abcdef1234567890", subject: "one"}}}}
+	m := model{width: 60, height: 12, screen: "history", history: historyState{commits: []CommitInfo{{Hash: "abcdef1234567890", Subject: "one"}}}}
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	if cmd == nil {
 		t.Fatal("copy hash unavailable in history")

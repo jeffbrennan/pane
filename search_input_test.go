@@ -30,7 +30,7 @@ func TestDiffSearchEditsAtCursor(t *testing.T) {
 }
 
 func TestHistorySearchEditsWithoutLosingSelection(t *testing.T) {
-	m := model{width: 50, height: 12, screen: "history", history: historyState{commits: []commitInfo{{subject: "abc"}, {subject: "abc again"}}}}
+	m := model{width: 50, height: 12, screen: "history", history: historyState{commits: []CommitInfo{{Subject: "abc"}, {Subject: "abc again"}}}}
 	m = keys(t, m, "/", "a", "b", "c")
 	m = sendInput(t, m, tea.KeyMsg{Type: tea.KeyDown}, tea.KeyMsg{Type: tea.KeyLeft})
 	if m.history.selected != 1 || m.history.draftCursor != 2 {

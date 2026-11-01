@@ -1,31 +1,8 @@
 package main
 
 import (
-	"fmt"
-	"path/filepath"
-	"strings"
-
 	tea "github.com/charmbracelet/bubbletea"
 )
-
-func fileHistoryPath(repo repository, path string) (string, error) {
-	if path == "" {
-		return "", fmt.Errorf("file path cannot be empty")
-	}
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-	root, err := filepath.Abs(repo.root)
-	if err != nil {
-		return "", err
-	}
-	relative, err := filepath.Rel(root, absolute)
-	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("file must be inside the repository")
-	}
-	return filepath.ToSlash(relative), nil
-}
 
 func (m model) openFileHistory() (tea.Model, tea.Cmd) {
 	if m.history.path != "" {
@@ -53,15 +30,15 @@ func (m model) openFileHistory() (tea.Model, tea.Cmd) {
 }
 
 func (m model) leaveFileHistory() (tea.Model, tea.Cmd) {
-	m.history.stream.close()
+	m.history.stream.Close()
 	if m.fileHistoryReturn == nil {
 		return m, tea.Quit
 	}
 	previous := *m.fileHistoryReturn
 	previous.fileHistoryReturn = nil
 	previous.history.request = max(previous.history.request, m.history.request) + 1
-	whitespaceChanged := previous.repo.ignoreSpace != m.repo.ignoreSpace
-	headChanged := previous.snapshot.branch.available && m.snapshot.branch.available && previous.snapshot.branch.head != m.snapshot.branch.head
+	whitespaceChanged := previous.repo.IgnoreSpace != m.repo.IgnoreSpace
+	headChanged := previous.snapshot.Branch.Available && m.snapshot.Branch.Available && previous.snapshot.Branch.Head != m.snapshot.Branch.Head
 	previous.repo, previous.snapshot, previous.refreshCache = m.repo, m.snapshot, m.refreshCache
 	previous.loading, previous.busy, previous.generation = m.loading, m.busy, m.generation
 	previous.activeAction, previous.whitespaceRefreshing = m.activeAction, m.whitespaceRefreshing
@@ -77,10 +54,10 @@ func (m model) leaveFileHistory() (tea.Model, tea.Cmd) {
 		if previous.history.loading {
 			previous.history.request++
 			repo := previous.startCommitLoad()
-			hash, request := previous.history.current.hash, previous.history.request
+			hash, request := previous.history.current.Hash, previous.history.request
 			if previous.stash.viewing {
 				return previous, func() tea.Msg {
-					changes, err := repo.stashChanges(hash)
+					changes, err := repo.StashChanges(hash)
 					return stashDiffLoaded{changes: changes, request: request, err: err}
 				}
 			}
@@ -106,7 +83,7 @@ func (m model) leaveFileHistory() (tea.Model, tea.Cmd) {
 		previous.sequence.request++
 		if whitespaceChanged {
 			previous.sequence.rowCache = nil
-			previous.sequence.changes = make([][]change, len(previous.sequence.commits))
+			previous.sequence.changes = make([][]Change, len(previous.sequence.commits))
 			previous.sequence.states = make([]sequenceLoadState, len(previous.sequence.commits))
 			previous.sequence.errors = make([]string, len(previous.sequence.commits))
 			previous.sequence.loading = len(previous.sequence.commits) > 0
@@ -126,7 +103,7 @@ func (m model) leaveFileHistory() (tea.Model, tea.Cmd) {
 }
 
 func (m *model) jumpToHistoryFile() {
-	path := m.history.current.filePath
+	path := m.history.current.FilePath
 	if path == "" {
 		return
 	}
@@ -138,12 +115,12 @@ func (m *model) jumpToHistoryFile() {
 	}
 }
 
-func initialFileHistory(repo repository, path string) (model, error) {
+func initialFileHistory(repo Repo, path string) (model, error) {
 	resolved, err := fileHistoryPath(repo, path)
 	if err != nil {
 		return model{}, err
 	}
-	return model{repo: repo, wrap: true, loading: true, startup: true, screen: "history", history: historyState{path: resolved, stream: newHistoryStream(repo, resolved), loading: true, request: 1}}, nil
+	return model{repo: repo, wrap: true, loading: true, startup: true, screen: "history", history: historyState{path: resolved, stream: NewHistoryStream(repo, resolved), loading: true, request: 1}}, nil
 }
 
 func fileHistoryUsage() string {

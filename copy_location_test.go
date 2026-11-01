@@ -26,7 +26,7 @@ func TestRemotePermalink(t *testing.T) {
 
 func TestCopyLocationKey(t *testing.T) {
 	r := testRepo(t)
-	if out, err := r.command("remote", "add", "origin", "git@github.com:owner/repo.git"); err != nil {
+	if out, err := r.Command("remote", "add", "origin", "git@github.com:owner/repo.git"); err != nil {
 		t.Fatalf("remote: %s: %v", out, err)
 	}
 	dir := t.TempDir()
@@ -43,8 +43,8 @@ func TestCopyLocationKey(t *testing.T) {
 	}{
 		{name: "working deletion", rows: []row{{path: "file", kind: '-', sourceLine: 10, target: 7}}, want: "file:7"},
 		{name: "deletion at end", rows: []row{{path: "file", kind: '-', sourceLine: 10, target: 8}, {path: "file", kind: ' ', sourceLine: 7, target: 7}}, want: "file:7"},
-		{name: "commit deletion", screen: "commit", history: historyState{current: commitInfo{hash: "abc"}, rows: []row{{path: "a b", kind: '-', sourceLine: 10, target: 7}}}, want: "https://github.com/owner/repo/blob/abc/a%20b#L7"},
-		{name: "file history", screen: "history", history: historyState{commits: []commitInfo{{hash: "abc", filePath: "old name", statsLoaded: true}}}, want: "https://github.com/owner/repo/blob/abc/old%20name"},
+		{name: "commit deletion", screen: "commit", history: historyState{current: CommitInfo{Hash: "abc"}, rows: []row{{path: "a b", kind: '-', sourceLine: 10, target: 7}}}, want: "https://github.com/owner/repo/blob/abc/a%20b#L7"},
+		{name: "file history", screen: "history", history: historyState{commits: []CommitInfo{{Hash: "abc", FilePath: "old name", StatsLoaded: true}}}, want: "https://github.com/owner/repo/blob/abc/old%20name"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			m := model{repo: r, screen: tt.screen, rows: tt.rows, history: tt.history}

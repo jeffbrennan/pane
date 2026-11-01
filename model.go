@@ -9,14 +9,14 @@ import (
 )
 
 type loaded struct {
-	snapshot   snapshot
+	snapshot   Snapshot
 	err        error
 	generation int
-	cache      *refreshCache
+	cache      *RefreshCache
 }
 type loadedUnchanged struct {
 	generation int
-	cache      *refreshCache
+	cache      *RefreshCache
 }
 type tick struct{}
 type resizeRebuild struct{ request int }
@@ -29,21 +29,21 @@ type completed struct {
 }
 
 type recentCommitsLoaded struct {
-	commits []commitInfo
+	commits []CommitInfo
 	err     error
 	request int
 }
 
 type model struct {
-	repo                  repository
-	refreshCache          *refreshCache
-	snapshot              snapshot
+	repo                  Repo
+	refreshCache          *RefreshCache
+	snapshot              Snapshot
 	rows                  []row
 	width, height         int
 	gutterFloor           int
 	gutterWidth           int
 	sequenceGutters       bool
-	previousChanges       []change
+	previousChanges       []Change
 	syntaxWarmPath        string
 	syntaxWarmCommit      string
 	tickStopped           bool
@@ -102,11 +102,11 @@ type model struct {
 	contextRequest        int
 	contextCommit         string
 	syntaxDemand          *syntaxDemand
-	recentCommits         []commitInfo
+	recentCommits         []CommitInfo
 	recentCommitRequest   int
 	recentCommitLoading   bool
 	recentCommitError     bool
-	discard               discardRequest
+	discard               DiscardRequest
 	stageCursor           *stagingCursor
 	sequence              sequenceState
 	stash                 stashState
@@ -122,13 +122,13 @@ type model struct {
 func (m model) closeHistoryStreams() {
 	m.cancelCommitLoad()
 	m.prefetch.close()
-	m.history.stream.close()
+	m.history.stream.Close()
 	if m.fileHistoryReturn != nil {
-		m.fileHistoryReturn.history.stream.close()
+		m.fileHistoryReturn.history.stream.Close()
 	}
 }
 
-func initialModel(repo repository, args []string) (model, error) {
+func initialModel(repo Repo, args []string) (model, error) {
 	if len(args) == 2 && args[0] == "--" {
 		return initialFileHistory(repo, args[1])
 	}
@@ -154,14 +154,14 @@ func initialModel(repo repository, args []string) (model, error) {
 				return model{}, fmt.Errorf("usage: pane hot [--since <window>] [--author <pattern>]")
 			}
 		}
-		m := model{repo: repo, wrap: true, loading: true, startup: true, viewed: newViewedStore(repo.root)}
+		m := model{repo: repo, wrap: true, loading: true, startup: true, viewed: newViewedStore(repo.Root)}
 		next, _ := m.openHotspots(since, author)
 		return next.(model), nil
 	}
 	if len(args) > 2 || (len(args) == 2 && args[0] != "--base" && args[0] != "-b") {
 		return model{}, fmt.Errorf("%s", fileHistoryUsage())
 	}
-	m := model{repo: repo, wrap: true, loading: true, startup: true, viewed: newViewedStore(repo.root)}
+	m := model{repo: repo, wrap: true, loading: true, startup: true, viewed: newViewedStore(repo.Root)}
 	if len(args) == 0 {
 		return m, nil
 	}
@@ -172,7 +172,7 @@ func initialModel(repo repository, args []string) (model, error) {
 			return model{}, fmt.Errorf("invalid base %q", base)
 		}
 	} else if args[0] == "--base" || args[0] == "-b" {
-		upstream, err := repo.defaultBase()
+		upstream, err := repo.DefaultBase()
 		if err != nil {
 			return model{}, err
 		}
@@ -184,7 +184,7 @@ func initialModel(repo repository, args []string) (model, error) {
 		}
 	}
 	if base != "" {
-		hash, err := repo.mergeBase(base)
+		hash, err := repo.MergeBase(base)
 		if err != nil {
 			return model{}, err
 		}
@@ -193,7 +193,7 @@ func initialModel(repo repository, args []string) (model, error) {
 		return m, nil
 	}
 	if strings.Contains(args[0], "..") {
-		out, err := repo.command("rev-list", fmt.Sprintf("--max-count=%d", maxSequenceCommits+1), "--end-of-options", args[0], "--")
+		out, err := repo.Command("rev-list", fmt.Sprintf("--max-count=%d", maxSequenceCommits+1), "--end-of-options", args[0], "--")
 		if err != nil {
 			return model{}, fmt.Errorf("invalid commit range %q: %w", args[0], gitError(out, err))
 		}
@@ -202,7 +202,7 @@ func initialModel(repo repository, args []string) (model, error) {
 		}
 		return initialSequence(repo, strings.NewReader(string(out)))
 	}
-	commit, err := repo.resolveCommit(args[0])
+	commit, err := repo.ResolveCommit(args[0])
 	if err != nil {
 		return model{}, err
 	}
@@ -227,7 +227,7 @@ func (m model) Init() tea.Cmd {
 		commands = append(commands, m.fetchHistory(0, historyPage))
 	}
 	if m.screen == "commit" && m.history.loading && m.history.directCommit {
-		repo, hash, request := m.commitRepository(), m.history.current.hash, m.history.request
+		repo, hash, request := m.commitRepository(), m.history.current.Hash, m.history.request
 		commands = append(commands, startCommitStream(repo, hash, request, m.height))
 		commands = append(commands, commitLoadingTimer(request))
 	}
@@ -270,20 +270,20 @@ func (m model) queryThemeOnTick() tea.Cmd {
 	return m.queryTheme()
 }
 
-func load(repo repository, generation int, cache *refreshCache) tea.Cmd {
+func load(repo Repo, generation int, cache *RefreshCache) tea.Cmd {
 	return loadWith(repo, generation, cache, false)
 }
 
-func loadWith(repo repository, generation int, cache *refreshCache, deferOffscreen bool) tea.Cmd {
+func loadWith(repo Repo, generation int, cache *RefreshCache, deferOffscreen bool) tea.Cmd {
 	return func() tea.Msg {
-		next, unchanged, err := repo.loadChanges(cache, deferOffscreen)
+		next, unchanged, err := repo.LoadChanges(cache, deferOffscreen)
 		if err != nil {
 			return loaded{err: err, generation: generation}
 		}
 		if unchanged {
 			return loadedUnchanged{generation: generation, cache: next}
 		}
-		return loaded{snapshot: next.snapshot, generation: generation, cache: next}
+		return loaded{snapshot: next.Snapshot, generation: generation, cache: next}
 	}
 }
 

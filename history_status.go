@@ -8,7 +8,7 @@ import (
 // historyHeader shows the branch on the title row and a one-line summary of
 // its sync state and local changes below it.
 func (m model) historyHeader() []string {
-	branch := m.snapshot.branch
+	branch := m.snapshot.Branch
 	title := m.historyTitle(branch, max(0, m.width-1))
 	badge := ""
 	if m.history.path != "" {
@@ -19,31 +19,31 @@ func (m model) historyHeader() []string {
 	if m.height-4 <= 0 {
 		return lines
 	}
-	if !branch.available {
+	if !branch.Available {
 		return append(lines, fit(styleDim+" Loading repository status…"+styleReset, m.width))
 	}
 	var parts []string
 	switch {
-	case branch.upstream == "":
+	case branch.Upstream == "":
 		parts = append(parts, styleDim+"no upstream"+styleReset)
-	case !branch.countsKnown:
+	case !branch.CountsKnown:
 		parts = append(parts, styleDim+"upstream unknown"+styleReset)
-	case branch.ahead == 0 && branch.behind == 0:
+	case branch.Ahead == 0 && branch.Behind == 0:
 		parts = append(parts, styleDim+"\x1b[32m✓ up to date"+styleReset)
 	case m.width < 40:
-		parts = append(parts, m.warning()+fmt.Sprintf("↑%d ↓%d", branch.ahead, branch.behind)+styleReset)
+		parts = append(parts, m.warning()+fmt.Sprintf("↑%d ↓%d", branch.Ahead, branch.Behind)+styleReset)
 	default:
-		if branch.ahead > 0 {
-			parts = append(parts, m.warning()+fmt.Sprintf("↑%d ahead", branch.ahead)+styleReset)
+		if branch.Ahead > 0 {
+			parts = append(parts, m.warning()+fmt.Sprintf("↑%d ahead", branch.Ahead)+styleReset)
 		}
-		if branch.behind > 0 {
-			parts = append(parts, m.warning()+fmt.Sprintf("↓%d behind", branch.behind)+styleReset)
+		if branch.Behind > 0 {
+			parts = append(parts, m.warning()+fmt.Sprintf("↓%d behind", branch.Behind)+styleReset)
 		}
 	}
 	count := func(n int, label string) string {
 		return styleBold + fmt.Sprint(n) + styleReset + styleDim + " " + label + styleReset
 	}
-	unstaged, staged := len(m.snapshot.unstaged), len(m.snapshot.staged)
+	unstaged, staged := len(m.snapshot.Unstaged), len(m.snapshot.Staged)
 	if unstaged > 0 {
 		parts = append(parts, count(unstaged, "unstaged"))
 	}
@@ -65,8 +65,8 @@ func (m model) actionStatus() string {
 	}
 	switch m.activeAction {
 	case "push":
-		branch := m.snapshot.branch
-		if branch.available && branch.upstream != "" && branch.countsKnown && branch.ahead == 0 {
+		branch := m.snapshot.Branch
+		if branch.Available && branch.Upstream != "" && branch.CountsKnown && branch.Ahead == 0 {
 			return "Checking push…"
 		}
 		return "Pushing…"
@@ -88,19 +88,19 @@ func (m model) actionStatus() string {
 }
 
 // historyTitle shows the branch and its upstream within width columns.
-func (m model) historyTitle(branch branchStatus, width int) string {
-	if !branch.available || width <= 0 {
+func (m model) historyTitle(branch BranchStatus, width int) string {
+	if !branch.Available || width <= 0 {
 		return ""
 	}
-	name := branch.name
+	name := branch.Name
 	if name == "" {
 		name = "unknown"
 	}
 	name = fit(clean(name), width)
 	result := styleBold + m.accent() + name + styleReset
 	remaining := max(0, width-stringWidth(name))
-	if branch.upstream != "" && remaining > 0 {
-		result += styleDim + fit(" → "+clean(branch.upstream), remaining) + styleReset
+	if branch.Upstream != "" && remaining > 0 {
+		result += styleDim + fit(" → "+clean(branch.Upstream), remaining) + styleReset
 	}
 	return result
 }

@@ -27,20 +27,20 @@ func (m model) openCommitEditor() (tea.Model, tea.Cmd) {
 	}
 	args := editorArgs(editor, path, 0)
 	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Dir = m.repo.root
+	cmd.Dir = m.repo.Root
 	return m, tea.Exec(editorCommand{cmd}, func(err error) tea.Msg {
 		return commitEditorClosed{path: path, err: err}
 	})
 }
 
 func (m model) prepareCommitEditor() (string, error) {
-	out, err := m.repo.command("rev-parse", "--git-path", "PANE_COMMIT_EDITMSG")
+	out, err := m.repo.Command("rev-parse", "--git-path", "PANE_COMMIT_EDITMSG")
 	if err != nil {
 		return "", gitError(out, err)
 	}
 	path := strings.TrimSpace(string(out))
 	if !filepath.IsAbs(path) {
-		path = filepath.Join(m.repo.root, path)
+		path = filepath.Join(m.repo.Root, path)
 	}
 	file, err := os.CreateTemp(filepath.Dir(path), "PANE_COMMIT_EDITMSG-*")
 	if err != nil {
@@ -50,15 +50,15 @@ func (m model) prepareCommitEditor() (string, error) {
 	content.WriteString(strings.TrimRight(m.input+m.inputBody, "\n"))
 	content.WriteString("\n\n# Lines starting with # are ignored. An empty message aborts.\n")
 	if m.amendHash == "" {
-		changes := m.snapshot.staged
+		changes := m.snapshot.Staged
 		label := "Changes to be committed"
 		if len(changes) == 0 {
-			changes = m.snapshot.unstaged
+			changes = m.snapshot.Unstaged
 			label = "All changes to be committed"
 		}
 		fmt.Fprintf(&content, "# %s:\n", label)
 		for _, change := range changes {
-			fmt.Fprintf(&content, "#   %s\n", strings.ReplaceAll(change.path, "\n", "\\n"))
+			fmt.Fprintf(&content, "#   %s\n", strings.ReplaceAll(change.Path, "\n", "\\n"))
 		}
 	}
 	_, err = file.WriteString(content.String())
@@ -118,10 +118,10 @@ func (m model) submitCommit(message string) (tea.Model, tea.Cmd) {
 	repo := m.repo
 	return m, func() tea.Msg {
 		if amendHash != "" {
-			output, err := repo.amendMessage(amendHash, message)
+			output, err := repo.AmendMessage(amendHash, message)
 			return completed{message: output, commitMessage: message, err: err}
 		}
-		output, err := repo.commit(message)
+		output, err := repo.Commit(message)
 		return completed{message: output, commitMessage: message, err: err}
 	}
 }

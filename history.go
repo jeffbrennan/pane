@@ -23,10 +23,10 @@ type historyState struct {
 	streamError                                         string
 	streamLoaded, streamGutter                          int
 	streamActive, streamEndPending                      bool
-	stream                                              *historyStream
-	commits                                             []commitInfo
-	statsCache                                          map[string]commitInfo
-	changes                                             []change
+	stream                                              *HistoryStream
+	commits                                             []CommitInfo
+	statsCache                                          map[string]CommitInfo
+	changes                                             []Change
 	rows                                                []row
 	gutterWidth                                         int
 	selected, offset, pos, horizontal, viewTop, request int
@@ -39,8 +39,8 @@ type historyState struct {
 	commitLoadingVisible                                bool
 	statsFetching                                       bool
 	directCommit                                        bool
-	current                                             commitInfo
-	meta                                                commitInfo
+	current                                             CommitInfo
+	meta                                                CommitInfo
 	moved                                               *movedIndex
 	headerCollapsed                                     bool
 	positions                                           map[string]commitPosition
@@ -53,7 +53,7 @@ type historyState struct {
 	jumpIndex                                           int
 }
 
-func (m *model) startCommitLoad() repository {
+func (m *model) startCommitLoad() Repo {
 	if m.history.commitCancel != nil {
 		m.history.commitCancel()
 	}
@@ -61,9 +61,9 @@ func (m *model) startCommitLoad() repository {
 	return m.commitRepository()
 }
 
-func (m model) commitRepository() repository {
+func (m model) commitRepository() Repo {
 	repo := m.repo
-	repo.context = m.history.commitContext
+	repo.Context = m.history.commitContext
 	return repo
 }
 
@@ -76,7 +76,7 @@ func (m *model) cancelCommitLoad() {
 	m.history.streamActive = false
 }
 
-func (m *model) appendCommitChanges(changes []change, done bool) {
+func (m *model) appendCommitChanges(changes []Change, done bool) {
 	if len(changes) == 0 {
 		return
 	}
@@ -85,8 +85,8 @@ func (m *model) appendCommitChanges(changes []change, done bool) {
 		seeded.contextCommit, seeded.contextBase = m.base.hash, true
 		seeded.viewIdentity = "base:" + m.base.hash + ":" + m.base.revision
 	} else {
-		seeded.contextCommit, seeded.contextBase = m.history.current.hash, false
-		seeded.viewIdentity = "commit:" + m.history.current.hash
+		seeded.contextCommit, seeded.contextBase = m.history.current.Hash, false
+		seeded.viewIdentity = "commit:" + m.history.current.Hash
 	}
 	seeded.staged = false
 	seeded.collapseGenerated(changes)
@@ -108,7 +108,7 @@ func (m *model) appendCommitChanges(changes []change, done bool) {
 		}
 	}
 	for _, c := range changes {
-		width = max(width, lineNumberWidth(strings.Split(c.diff, "\n")))
+		width = max(width, lineNumberWidth(strings.Split(c.Diff, "\n")))
 	}
 	previousWidth := m.history.streamGutter
 	m.history.streamGutter = width
@@ -122,7 +122,7 @@ func (m *model) appendCommitChanges(changes []change, done bool) {
 	if len(view.contextFiles) == 0 && len(view.collapsedFiles) == 0 {
 		parts := make([][]row, len(changes))
 		parallelEach(len(changes), func(i int) {
-			parts[i] = changeRows(changes[i], true, view.diffContentWidth(), view.wrap, view.expandedDeleted[changes[i].path], width, view.shortPaths)
+			parts[i] = changeRows(changes[i], true, view.diffContentWidth(), view.wrap, view.expandedDeleted[changes[i].Path], width, view.shortPaths)
 		})
 		total := 0
 		for _, part := range parts {
@@ -174,7 +174,7 @@ func (m *model) appendCommitChanges(changes []change, done bool) {
 	if last.kind == 'f' {
 		header = len(rows)
 	}
-	separator := row{path: changes[0].path, lineIndex: -2, kind: 's'}
+	separator := row{path: changes[0].Path, lineIndex: -2, kind: 's'}
 	separator.setHeaderRow(header)
 	rows = append(rows, separator)
 	offset := len(rows)
@@ -187,42 +187,42 @@ func (m *model) appendCommitChanges(changes []change, done bool) {
 }
 
 type historyLoaded struct {
-	commits     []commitInfo
+	commits     []CommitInfo
 	err         error
 	request     int
 	skip, limit int
 	stashCount  int
 }
 type commitLoaded struct {
-	changes []change
+	changes []Change
 	err     error
 	request int
 }
 
 type commitSyntaxLoaded struct {
-	changes []change
+	changes []Change
 	request int
 }
 
 type commitLoadingDelay struct{ request int }
 
 type commitStreamLoaded struct {
-	chunk   commitChunk
-	stream  <-chan commitChunk
+	chunk   CommitChunk
+	stream  <-chan CommitChunk
 	request int
 }
 
-func startCommitStream(repo repository, hash string, request, height int) tea.Cmd {
-	return startStream(repo, hash, request, height, repo.streamCommit)
+func startCommitStream(repo Repo, hash string, request, height int) tea.Cmd {
+	return startStream(repo, hash, request, height, repo.StreamCommit)
 }
 
-func startBaseStream(repo repository, hash string, request, height int) tea.Cmd {
-	return startStream(repo, hash, request, height, repo.streamBase)
+func startBaseStream(repo Repo, hash string, request, height int) tea.Cmd {
+	return startStream(repo, hash, request, height, repo.StreamBase)
 }
 
-func startStream(repo repository, hash string, request, height int, open func(context.Context, string, int) <-chan commitChunk) tea.Cmd {
+func startStream(repo Repo, hash string, request, height int, open func(context.Context, string, int) <-chan CommitChunk) tea.Cmd {
 	return func() tea.Msg {
-		ctx := repo.context
+		ctx := repo.Context
 		if ctx == nil {
 			ctx = context.Background()
 		}
@@ -231,11 +231,11 @@ func startStream(repo repository, hash string, request, height int, open func(co
 	}
 }
 
-func waitCommitStream(stream <-chan commitChunk, request int) tea.Cmd {
+func waitCommitStream(stream <-chan CommitChunk, request int) tea.Cmd {
 	return func() tea.Msg {
 		chunk, ok := <-stream
 		if !ok {
-			chunk = commitChunk{done: true, err: fmt.Errorf("commit stream ended unexpectedly")}
+			chunk = CommitChunk{Done: true, Err: fmt.Errorf("commit stream ended unexpectedly")}
 		}
 		return commitStreamLoaded{chunk: chunk, stream: stream, request: request}
 	}
@@ -249,12 +249,12 @@ func commitLoadingTimer(request int) tea.Cmd {
 
 // loadCommitSyntax highlights the changes that commitChangesFirstScreen left
 // plain.
-func loadCommitSyntax(repo repository, hash string, request int, changes []change) tea.Cmd {
-	changes = append([]change(nil), changes...)
+func loadCommitSyntax(repo Repo, hash string, request int, changes []Change) tea.Cmd {
+	changes = append([]Change(nil), changes...)
 	var indexes []int
-	var plain []change
+	var plain []Change
 	for i, c := range changes {
-		if c.syntaxDiff == "" && !c.syntaxSkipped && syntax.Lexable(c.path) {
+		if c.SyntaxDiff == "" && !c.SyntaxSkipped && syntax.Lexable(c.Path) {
 			indexes = append(indexes, i)
 			plain = append(plain, c)
 		}
@@ -263,7 +263,7 @@ func loadCommitSyntax(repo repository, hash string, request int, changes []chang
 		return nil
 	}
 	return func() tea.Msg {
-		repo.loadSyntaxDiffs(plain, contextKey{commit: hash})
+		repo.LoadSyntaxDiffs(plain, contextKey{commit: hash}.gitContext())
 		warmSyntax(plain)
 		for i, c := range plain {
 			changes[indexes[i]] = c
@@ -273,7 +273,7 @@ func loadCommitSyntax(repo repository, hash string, request int, changes []chang
 }
 
 type historyStatsLoaded struct {
-	commits []commitInfo
+	commits []CommitInfo
 	hashes  []string
 	err     error
 	request int
@@ -285,10 +285,10 @@ const (
 )
 
 func (m *model) cacheHistoryStats() {
-	cache := make(map[string]commitInfo)
+	cache := make(map[string]CommitInfo)
 	for _, c := range m.history.commits[:min(len(m.history.commits), historyStatsCacheSize)] {
-		if c.statsLoaded {
-			cache[c.hash] = c
+		if c.StatsLoaded {
+			cache[c.Hash] = c
 		}
 	}
 	m.history.statsCache = cache
@@ -309,7 +309,7 @@ func (m model) openHistory() (tea.Model, tea.Cmd) {
 }
 
 func (m model) reloadHistory() (model, tea.Cmd) {
-	m.history.stream.close()
+	m.history.stream.Close()
 	m.history.loading = true
 	m.history.stale = false
 	m.history.fetching = false
@@ -320,7 +320,7 @@ func (m model) reloadHistory() (model, tea.Cmd) {
 		m.history.stream = prefetch.stream
 		return m, prefetch.loadHistory(m.history.request)
 	}
-	m.history.stream = newHistoryStream(m.repo, m.history.path, m.history.since)
+	m.history.stream = NewHistoryStream(m.repo, m.history.path, m.history.since)
 	return m, m.fetchHistory(0, max(historyPage, len(m.history.commits)))
 }
 
@@ -334,24 +334,24 @@ func (m model) loadWorktreeHeads() tea.Cmd {
 	m.worktreeHeadRequest++
 	repo, request := m.repo, m.worktreeHeadRequest
 	return func() tea.Msg {
-		entries, err := repo.worktrees()
+		entries, err := repo.Worktrees()
 		if err != nil {
 			return worktreeHeadsLoaded{request: request}
 		}
 		heads := make(map[string]string, len(entries))
-		root := repo.root
+		root := repo.Root
 		if resolved, err := filepath.EvalSymlinks(root); err == nil {
 			root = resolved
 		}
 		for _, entry := range entries {
-			if entry.head == "" || entry.path == root {
+			if entry.Head == "" || entry.Path == root {
 				continue
 			}
-			name := entry.branch
+			name := entry.Branch
 			if name == "" {
-				name = shortHash(entry.head)
+				name = shortHash(entry.Head)
 			}
-			heads[entry.head] = name
+			heads[entry.Head] = name
 		}
 		return worktreeHeadsLoaded{heads: heads, request: request}
 	}
@@ -369,8 +369,8 @@ func (m model) loadHistoryStats() (model, tea.Cmd) {
 	}
 	var hashes []string
 	for _, c := range matches[start:min(len(matches), start+visible+historyStatsLookahead)] {
-		if !c.statsLoaded && c.hash != "" {
-			hashes = append(hashes, c.hash)
+		if !c.StatsLoaded && c.Hash != "" {
+			hashes = append(hashes, c.Hash)
 		}
 	}
 	if len(hashes) == 0 {
@@ -379,7 +379,7 @@ func (m model) loadHistoryStats() (model, tea.Cmd) {
 	m.history.statsFetching = true
 	repo, request := m.repo, m.history.request
 	return m, func() tea.Msg {
-		commits, err := repo.historyStats(hashes)
+		commits, err := repo.HistoryStats(hashes)
 		return historyStatsLoaded{commits: commits, hashes: hashes, err: err, request: request}
 	}
 }
@@ -403,10 +403,10 @@ func (m model) fetchHistory(skip, limit int) tea.Cmd {
 	return func() tea.Msg {
 		stream := requestStream
 		if stream == nil {
-			stream = newHistoryStream(repo, path)
-			defer stream.close()
+			stream = NewHistoryStream(repo, path)
+			defer stream.Close()
 			if skip > 0 {
-				if _, err := stream.nextPage(skip); err != nil {
+				if _, err := stream.NextPage(skip); err != nil {
 					return historyLoaded{err: err, request: request, skip: skip, limit: limit}
 				}
 			}
@@ -418,11 +418,11 @@ func (m model) fetchHistory(skip, limit int) tea.Cmd {
 
 // historyPageWithStashes reads the next page from stream with stored line
 // counts filled in, counting stashes alongside when stashes is set.
-func historyPageWithStashes(repo repository, stream *historyStream, limit int, stashes bool) ([]commitInfo, int, error) {
+func historyPageWithStashes(repo Repo, stream *HistoryStream, limit int, stashes bool) ([]CommitInfo, int, error) {
 	count := make(chan int, 1)
 	if stashes {
 		go func() {
-			entries, err := repo.stashes()
+			entries, err := repo.Stashes()
 			if err != nil {
 				count <- 0
 				return
@@ -432,8 +432,8 @@ func historyPageWithStashes(repo repository, stream *historyStream, limit int, s
 	} else {
 		count <- 0
 	}
-	commits, err := stream.nextPage(limit)
-	repo.stats.fill(commits)
+	commits, err := stream.NextPage(limit)
+	repo.Stats.Fill(commits)
 	return commits, <-count, err
 }
 
@@ -461,16 +461,16 @@ func (m model) historyQuery() string {
 	return m.history.filter
 }
 
-func (m model) filteredHistory() []commitInfo {
+func (m model) filteredHistory() []CommitInfo {
 	query := strings.ToLower(m.historyQuery())
 	if query == "" {
 		return m.history.commits
 	}
-	var matches []commitInfo
+	var matches []CommitInfo
 	for _, c := range m.history.commits {
-		search := c.search
+		search := c.Search
 		if search == "" {
-			search = strings.ToLower(c.hash + "\n" + c.author + "\n" + c.email + "\n" + c.message + "\n" + c.subject)
+			search = strings.ToLower(c.Hash + "\n" + c.Author + "\n" + c.Email + "\n" + c.Message + "\n" + c.Subject)
 		}
 		if strings.Contains(search, query) {
 			matches = append(matches, c)
@@ -565,7 +565,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.leaveFileHistory()
 		}
 		m.screen = ""
-		m.history.stream.close()
+		m.history.stream.Close()
 		m.history.stream = nil
 		m.history.request++
 		return m.refresh()
@@ -600,7 +600,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(matches) == 0 || m.history.loading {
 			break
 		}
-		return m.openBaseFrom(matches[min(m.history.selected, len(matches)-1)].hash)
+		return m.openBaseFrom(matches[min(m.history.selected, len(matches)-1)].Hash)
 	case "b":
 		if m.history.path != "" {
 			m.flash = "Return to history to browse branches"
@@ -613,23 +613,23 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(matches) == 0 || m.history.loading {
 			break
 		}
-		return m.promptNewBranch(matches[min(m.history.selected, len(matches)-1)].hash)
+		return m.promptNewBranch(matches[min(m.history.selected, len(matches)-1)].Hash)
 	case "/":
 		m.history.searching = true
 		m.history.draft = m.history.filter
 		m.history.draftCursor = len([]rune(m.history.draft))
 	case "y":
 		if len(matches) > 0 {
-			hash := matches[min(m.history.selected, len(matches)-1)].hash
+			hash := matches[min(m.history.selected, len(matches)-1)].Hash
 			return m, copyCmd(hash, shortHash(hash))
 		}
 	case "Y":
 		if len(matches) > 0 {
 			commit := matches[min(m.history.selected, len(matches)-1)]
-			if commit.filePath != "" {
-				return m, copyLocationCmd(m.repo, commit.hash, commit.filePath, 0)
+			if commit.FilePath != "" {
+				return m, copyLocationCmd(m.repo, commit.Hash, commit.FilePath, 0)
 			}
-			return m, copyCmd(commit.hash, shortHash(commit.hash))
+			return m, copyCmd(commit.Hash, shortHash(commit.Hash))
 		}
 	case "u":
 		if m.history.path != "" {
@@ -640,12 +640,12 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			break
 		}
 		selected := matches[min(m.history.selected, len(matches)-1)]
-		if selected.hash != m.history.commits[0].hash {
+		if selected.Hash != m.history.commits[0].Hash {
 			m.flash = "Only the latest commit message can be edited"
 			break
 		}
-		m.modal, m.amendHash, m.message, m.flash = "commit", selected.hash, "", ""
-		m.input, m.inputBody, _ = strings.Cut(strings.TrimRight(selected.message, "\n"), "\n")
+		m.modal, m.amendHash, m.message, m.flash = "commit", selected.Hash, "", ""
+		m.input, m.inputBody, _ = strings.Cut(strings.TrimRight(selected.Message, "\n"), "\n")
 		if m.inputBody != "" {
 			m.inputBody = "\n" + m.inputBody
 		}
@@ -690,7 +690,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			lo, hi = max(0, lo), min(hi, len(matches)-1)
 			m.history.visualActive = false
-			next, err := newSequenceModel(m.repo, append([]commitInfo(nil), matches[lo:hi+1]...))
+			next, err := newSequenceModel(m.repo, append([]CommitInfo(nil), matches[lo:hi+1]...))
 			if err != nil {
 				m.flash = err.Error()
 				break
@@ -709,11 +709,11 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // openCommit replaces the current view with a commit's read-only diff.
-func (m model) openCommit(commit commitInfo) (tea.Model, tea.Cmd) {
+func (m model) openCommit(commit CommitInfo) (tea.Model, tea.Cmd) {
 	m.saveCommitPosition()
 	m.history.current = commit
 	if m.history.fetching {
-		m.history.stream.close()
+		m.history.stream.Close()
 		m.history.stale = true
 	}
 	m.history.request++
@@ -727,21 +727,21 @@ func (m model) openCommit(commit commitInfo) (tea.Model, tea.Cmd) {
 	m.history.streamPaths, m.history.streamLoaded, m.history.streamGutter = nil, 0, 0
 	m.history.streamError = ""
 	m.history.streamEndPending = false
-	m.history.meta = commitInfo{}
+	m.history.meta = CommitInfo{}
 	m.history.moved = nil
-	if position, ok := m.history.positions[commit.hash]; ok && commit.filePath == "" {
+	if position, ok := m.history.positions[commit.Hash]; ok && commit.FilePath == "" {
 		m.history.pendingPosition = &position
 	} else {
 		m.history.pendingPosition = nil
 	}
-	m.picker.pendingPath = commit.filePath
+	m.picker.pendingPath = commit.FilePath
 	m.history.expandedDeleted = nil
 	m.history.jumps = nil
 	m.history.jumpIndex = 0
 	m.pickerReturn, m.pickerBackToHistory = false, false
 	m.history.pos, m.history.horizontal, m.history.viewTop = 0, 0, 0
 	m.screen = "commit"
-	hash, request := commit.hash, m.history.request
+	hash, request := commit.Hash, m.history.request
 	return m, tea.Batch(startCommitStream(repo, hash, request, m.height), commitLoadingTimer(request))
 }
 
@@ -823,9 +823,9 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.screen == "base" {
 			return m, copyCmd(m.base.hash, shortHash(m.base.hash))
 		}
-		return m, copyCmd(m.history.current.hash, shortHash(m.history.current.hash))
+		return m, copyCmd(m.history.current.Hash, shortHash(m.history.current.Hash))
 	case "Y":
-		hash := m.history.current.hash
+		hash := m.history.current.Hash
 		if m.screen == "base" || m.stash.viewing {
 			hash = ""
 		}
@@ -946,8 +946,8 @@ func (m model) commitModel() model {
 	view := m
 	view.screen = ""
 	view.relativeLines = true
-	view.contextCommit = m.history.current.hash
-	view.viewIdentity = "commit:" + m.history.current.hash
+	view.contextCommit = m.history.current.Hash
+	view.viewIdentity = "commit:" + m.history.current.Hash
 	view.gutterFloor = m.history.streamGutter
 	view.gutterWidth = m.history.gutterWidth
 	if m.screen == "base" {
@@ -955,11 +955,11 @@ func (m model) commitModel() model {
 		view.viewIdentity = "base:" + m.base.hash + ":" + m.base.revision
 	}
 	view.jumps, view.jumpIndex = m.history.jumps, m.history.jumpIndex
-	view.snapshot = snapshot{unstaged: m.history.changes}
+	view.snapshot = Snapshot{Unstaged: m.history.changes}
 	view.expandedDeleted = m.history.expandedDeleted
 	view.staged = false
 	view.rows, view.pos, view.horizontal, view.viewTop = m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop
-	view.viewTitle = m.accent() + shortHash(m.history.current.hash) + styleReset + "  " + clean(m.history.current.subject)
+	view.viewTitle = m.accent() + shortHash(m.history.current.Hash) + styleReset + "  " + clean(m.history.current.Subject)
 	if index, total := m.commitListPosition(); index > 0 && total > 1 {
 		view.viewTitle += styleDim + fmt.Sprintf("  %d/%d", index, total) + styleReset
 	}
@@ -1042,13 +1042,13 @@ func (m model) historyView() string {
 	now := time.Now()
 	for i := offset; i < len(matches); i++ {
 		c := matches[i]
-		subject := styleDim + "  " + fit(clean(c.subject), max(0, m.width-2)) + styleReset
+		subject := styleDim + "  " + fit(clean(c.Subject), max(0, m.width-2)) + styleReset
 		if i == selected {
-			subject = styleBold + m.accent() + "▸ " + styleReset + styleBold + fit(clean(c.subject), max(0, m.width-2)) + styleReset
+			subject = styleBold + m.accent() + "▸ " + styleReset + styleBold + fit(clean(c.Subject), max(0, m.width-2)) + styleReset
 		} else if i >= visualLo && i <= visualHi {
-			subject = styleBold + m.accent() + "│ " + styleReset + styleBold + fit(clean(c.subject), max(0, m.width-2)) + styleReset
+			subject = styleBold + m.accent() + "│ " + styleReset + styleBold + fit(clean(c.Subject), max(0, m.width-2)) + styleReset
 		}
-		date := historyCommitTime(c.date, now)
+		date := historyCommitTime(c.Date, now)
 		meta := historyMetadata(c, date, m.width, i == selected, m.accent(), m.worktreeHeads)
 		content = append(content, subject, meta, "")
 		if len(content) >= available {
@@ -1135,27 +1135,27 @@ func (m *model) revealHistorySelection() {
 	}
 }
 
-func historyMetadata(c commitInfo, date string, width int, selected bool, accent string, worktreeHeads map[string]string) string {
+func historyMetadata(c CommitInfo, date string, width int, selected bool, accent string, worktreeHeads map[string]string) string {
 	type segment struct{ text, style string }
 	green, red, cyan := "\x1b[32m", "\x1b[31m", accent
 	if !selected {
 		green, red, cyan = "\x1b[2;32m", "\x1b[2;31m", styleDim+accent
 	}
 	segments := []segment{{"  ", ""}}
-	if c.statsLoaded {
-		segments = append(segments, segment{fmt.Sprintf("+%d", c.added), green}, segment{fmt.Sprintf(" -%d", c.deleted), red})
+	if c.StatsLoaded {
+		segments = append(segments, segment{fmt.Sprintf("+%d", c.Added), green}, segment{fmt.Sprintf(" -%d", c.Deleted), red})
 	} else {
 		segments = append(segments, segment{"…", "\x1b[2m"})
 	}
-	if c.binary > 0 {
-		segments = append(segments, segment{fmt.Sprintf("  %d binary", c.binary), "\x1b[2m"})
+	if c.Binary > 0 {
+		segments = append(segments, segment{fmt.Sprintf("  %d binary", c.Binary), "\x1b[2m"})
 	}
 	segments = append(segments,
 		segment{"  " + clean(date), "\x1b[2m"},
-		segment{"  " + clean(c.author), "\x1b[2m"},
-		segment{"  " + shortHash(c.hash), cyan},
+		segment{"  " + clean(c.Author), "\x1b[2m"},
+		segment{"  " + shortHash(c.Hash), cyan},
 	)
-	if name := worktreeHeads[c.hash]; name != "" {
+	if name := worktreeHeads[c.Hash]; name != "" {
 		segments = append(segments, segment{"  ⌂ " + clean(name), "\x1b[2m"})
 	}
 	var b strings.Builder

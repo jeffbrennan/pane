@@ -11,13 +11,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type branchEntry struct {
-	ref, name, upstream, track, date, subject, worktree string
-	current, remote                                     bool
-}
-
 type branchState struct {
-	entries          []branchEntry
+	entries          []BranchEntry
 	selected, offset int
 	filter, draft    string
 	draftCursor      int
@@ -26,12 +21,12 @@ type branchState struct {
 	loading          bool
 	remote           bool
 	newFrom          string
-	confirm          branchEntry
+	confirm          BranchEntry
 	confirmForce     bool
 }
 
 type branchesLoaded struct {
-	entries []branchEntry
+	entries []BranchEntry
 	request int
 	err     error
 }
@@ -40,50 +35,6 @@ type branchActionDone struct {
 	message string
 	err     error
 	stay    bool
-}
-
-func (r repository) branches(includeRemotes bool) ([]branchEntry, error) {
-	format := "--format=%(refname)%00%(refname:short)%00%(upstream:short)%00%(upstream:track)%00%(committerdate:iso-strict)%00%(subject)%0a"
-	refs := []string{"refs/heads"}
-	if includeRemotes {
-		refs = append(refs, "refs/remotes")
-	}
-	args := append([]string{"for-each-ref", "--sort=-committerdate", format}, refs...)
-	out, err := r.commandStdout(args...)
-	if err != nil {
-		return nil, gitError(out, err)
-	}
-	current := ""
-	if head, err := r.command("symbolic-ref", "--short", "-q", "HEAD"); err == nil {
-		current = strings.TrimSpace(string(head))
-	}
-	worktrees := r.worktreeBranches()
-	var entries []branchEntry
-	for _, line := range strings.Split(strings.TrimSuffix(string(out), "\n"), "\n") {
-		if line == "" {
-			continue
-		}
-		fields := bytes.Split([]byte(line), []byte{0})
-		if len(fields) < 6 {
-			continue
-		}
-		entry := branchEntry{
-			ref: string(fields[0]), name: string(fields[1]), upstream: string(fields[2]),
-			track: strings.TrimSpace(string(fields[3])), date: string(fields[4]), subject: string(fields[5]),
-		}
-		entry.remote = strings.HasPrefix(entry.ref, "refs/remotes/")
-		if entry.remote && strings.HasSuffix(entry.name, "/HEAD") {
-			continue
-		}
-		entry.current = !entry.remote && entry.name == current
-		if entry.current {
-			entry.worktree = ""
-		} else if path, ok := worktrees[entry.name]; ok && !entry.remote {
-			entry.worktree = path
-		}
-		entries = append(entries, entry)
-	}
-	return entries, nil
 }
 
 func (m model) openBranches() (tea.Model, tea.Cmd) {
@@ -96,19 +47,19 @@ func (m model) openBranches() (tea.Model, tea.Cmd) {
 func (m model) loadBranches() tea.Cmd {
 	repo, request, remote := m.repo, m.branch.request, m.branch.remote
 	return func() tea.Msg {
-		entries, err := repo.branches(remote)
+		entries, err := repo.Branches(remote)
 		return branchesLoaded{entries: entries, request: request, err: err}
 	}
 }
 
-func (m model) filteredBranches() []branchEntry {
+func (m model) filteredBranches() []BranchEntry {
 	query := strings.ToLower(strings.TrimSpace(m.branch.filter))
 	if query == "" {
 		return m.branch.entries
 	}
-	var matches []branchEntry
+	var matches []BranchEntry
 	for _, entry := range m.branch.entries {
-		if matchesPicker(entry.name, query) {
+		if matchesPicker(entry.Name, query) {
 			matches = append(matches, entry)
 		}
 	}
@@ -163,15 +114,15 @@ func (m model) branchView() string {
 			marker = "▸ "
 		}
 		current := " "
-		if entry.current {
+		if entry.Current {
 			current = "*"
 		}
-		name := entry.name
-		meta := []string{branchTrack(entry.track)}
-		if entry.worktree != "" {
-			meta = append(meta, "⌂ "+filepath.Base(entry.worktree))
+		name := entry.Name
+		meta := []string{branchTrack(entry.Track)}
+		if entry.Worktree != "" {
+			meta = append(meta, "⌂ "+filepath.Base(entry.Worktree))
 		}
-		meta = append(meta, historyCommitTime(entry.date, now), clean(entry.subject))
+		meta = append(meta, historyCommitTime(entry.Date, now), clean(entry.Subject))
 		var parts []string
 		for _, part := range meta {
 			if part == "" {
@@ -266,7 +217,7 @@ func (m model) handleBranchKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.loadBranches()
 	case "y":
 		if len(matches) > 0 {
-			name := matches[min(m.branch.selected, len(matches)-1)].name
+			name := matches[min(m.branch.selected, len(matches)-1)].Name
 			return m, copyCmd(name, name)
 		}
 	case "enter":
@@ -276,12 +227,12 @@ func (m model) handleBranchKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "n":
 		if len(matches) > 0 {
 			entry := matches[min(m.branch.selected, len(matches)-1)]
-			return m.promptNewBranch(entry.ref)
+			return m.promptNewBranch(entry.Ref)
 		}
 	case "w":
 		if len(matches) > 0 {
 			entry := matches[min(m.branch.selected, len(matches)-1)]
-			return m.promptNewWorktree(entry.name, entry.ref, true)
+			return m.promptNewWorktree(entry.Name, entry.Ref, true)
 		}
 	case "d", "D":
 		if len(matches) > 0 {
@@ -298,17 +249,17 @@ func (m model) promptNewBranch(from string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) confirmDeleteBranch(entry branchEntry, force bool) (tea.Model, tea.Cmd) {
-	if entry.remote {
+func (m model) confirmDeleteBranch(entry BranchEntry, force bool) (tea.Model, tea.Cmd) {
+	if entry.Remote {
 		m.flash = "Remote branches cannot be deleted here"
 		return m, nil
 	}
-	if entry.current {
+	if entry.Current {
 		m.flash = "Cannot delete the checked out branch"
 		return m, nil
 	}
-	if entry.worktree != "" {
-		m.flash = "Checked out in " + entry.worktree
+	if entry.Worktree != "" {
+		m.flash = "Checked out in " + entry.Worktree
 		return m, nil
 	}
 	m.branch.confirm, m.branch.confirmForce = entry, force
@@ -316,7 +267,7 @@ func (m model) confirmDeleteBranch(entry branchEntry, force bool) (tea.Model, te
 	return m, nil
 }
 
-func (m model) runBranchAction(message string, stay bool, action func(repository) (string, error)) (tea.Model, tea.Cmd) {
+func (m model) runBranchAction(message string, stay bool, action func(Repo) (string, error)) (tea.Model, tea.Cmd) {
 	repo := m.repo
 	return m, func() tea.Msg {
 		out, err := action(repo)
@@ -327,27 +278,27 @@ func (m model) runBranchAction(message string, stay bool, action func(repository
 	}
 }
 
-func (m model) switchBranch(entry branchEntry) (tea.Model, tea.Cmd) {
-	if entry.worktree != "" {
-		m.flash = "Checked out in " + entry.worktree
+func (m model) switchBranch(entry BranchEntry) (tea.Model, tea.Cmd) {
+	if entry.Worktree != "" {
+		m.flash = "Checked out in " + entry.Worktree
 		return m, nil
 	}
-	return m.runBranchAction("Switched to "+entry.name, false, func(r repository) (string, error) {
+	return m.runBranchAction("Switched to "+entry.Name, false, func(r Repo) (string, error) {
 		args := []string{"switch"}
-		if entry.remote {
-			remote, local, ok := strings.Cut(entry.name, "/")
+		if entry.Remote {
+			remote, local, ok := strings.Cut(entry.Name, "/")
 			if !ok || local == "" {
-				return "", fmt.Errorf("cannot switch to %s", entry.name)
+				return "", fmt.Errorf("cannot switch to %s", entry.Name)
 			}
-			if out, err := r.command("rev-parse", "--verify", "--quiet", "refs/heads/"+local); err == nil && len(bytes.TrimSpace(out)) > 0 {
+			if out, err := r.Command("rev-parse", "--verify", "--quiet", "refs/heads/"+local); err == nil && len(bytes.TrimSpace(out)) > 0 {
 				args = append(args, local)
 			} else {
 				args = append(args, "--track", remote+"/"+local)
 			}
 		} else {
-			args = append(args, entry.name)
+			args = append(args, entry.Name)
 		}
-		return r.action(args...)
+		return r.Action(args...)
 	})
 }
 
@@ -357,18 +308,18 @@ func (m model) createBranch(name, from string) (tea.Model, tea.Cmd) {
 		m.flash = "Branch name must be a single word"
 		return m, nil
 	}
-	return m.runBranchAction("Created branch "+name, false, func(r repository) (string, error) {
-		return r.action("switch", "-c", name, from)
+	return m.runBranchAction("Created branch "+name, false, func(r Repo) (string, error) {
+		return r.Action("switch", "-c", name, from)
 	})
 }
 
-func (m model) deleteBranch(entry branchEntry, force bool) (tea.Model, tea.Cmd) {
+func (m model) deleteBranch(entry BranchEntry, force bool) (tea.Model, tea.Cmd) {
 	flag := "-d"
 	if force {
 		flag = "-D"
 	}
-	return m.runBranchAction("Deleted branch "+entry.name, true, func(r repository) (string, error) {
-		return r.action("branch", flag, entry.name)
+	return m.runBranchAction("Deleted branch "+entry.Name, true, func(r Repo) (string, error) {
+		return r.Action("branch", flag, entry.Name)
 	})
 }
 
@@ -379,10 +330,10 @@ func (m model) reloadBranches() (model, tea.Cmd) {
 }
 
 // branchNames presents branches in a stable order for tests.
-func branchNames(entries []branchEntry) []string {
+func branchNames(entries []BranchEntry) []string {
 	names := make([]string, len(entries))
 	for i, entry := range entries {
-		names[i] = entry.name
+		names[i] = entry.Name
 	}
 	sort.Strings(names)
 	return names

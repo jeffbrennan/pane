@@ -1,7 +1,8 @@
 package main
 
 import (
-	"regexp"
+	"github.com/jeffbrennan/pane/internal/git"
+
 	"runtime"
 	"strconv"
 	"strings"
@@ -9,38 +10,19 @@ import (
 	"sync/atomic"
 )
 
-var submoduleHeader = regexp.MustCompile(`^Submodule (.+) ([0-9a-f]+)\.\.\.?([0-9a-f]+)(?: \(([^)]*)\))?:?$`)
+func submoduleLine(line string) (string, string, bool) { return git.SubmoduleLine(line) }
 
-func submoduleLine(line string) (string, string, bool) {
-	if !strings.HasPrefix(line, "Submodule ") {
-		return "", "", false
-	}
-	if match := submoduleHeader.FindStringSubmatch(line); match != nil {
-		text := "Submodule " + match[2] + " → " + match[3]
-		if match[4] != "" {
-			text += " (" + match[4] + ")"
-		}
-		return match[1], text, true
-	}
-	for _, suffix := range []string{" contains modified content", " contains untracked content"} {
-		if path, ok := strings.CutSuffix(strings.TrimPrefix(line, "Submodule "), suffix); ok {
-			return path, "Submodule" + suffix, true
-		}
-	}
-	return "", "", false
-}
-
-func buildRows(changes []change, width int, wrap bool) []row {
+func buildRows(changes []Change, width int, wrap bool) []row {
 	return buildRowsExpanded(changes, width, wrap, nil)
 }
 
-func buildRowsExpanded(changes []change, width int, wrap bool, expanded map[string]bool) []row {
+func buildRowsExpanded(changes []Change, width int, wrap bool, expanded map[string]bool) []row {
 	return buildRowsNumbered(changes, width, wrap, expanded, 0)
 }
 
 // buildRowsNumbered builds rows whose line numbers are at least gutterWidth
 // wide, so rows rebuilt for one file line up with the rest of the diff.
-func buildRowsNumbered(changes []change, width int, wrap bool, expanded map[string]bool, gutterWidth int) []row {
+func buildRowsNumbered(changes []Change, width int, wrap bool, expanded map[string]bool, gutterWidth int) []row {
 	rows, _ := buildRowsDisplay(changes, width, wrap, expanded, gutterWidth, false)
 	return rows
 }
@@ -56,16 +38,16 @@ func displayPath(path string, shortened bool) string {
 	return "…/" + clean(strings.Join(parts[len(parts)-2:], "/"))
 }
 
-func buildRowsDisplay(changes []change, width int, wrap bool, expanded map[string]bool, gutterWidth int, shortPaths bool) ([]row, int) {
+func buildRowsDisplay(changes []Change, width int, wrap bool, expanded map[string]bool, gutterWidth int, shortPaths bool) ([]row, int) {
 	return buildRowsDisplayReuse(changes, width, wrap, expanded, gutterWidth, shortPaths, nil)
 }
 
-func buildRowsDisplayReuse(changes []change, width int, wrap bool, expanded map[string]bool, gutterWidth int, shortPaths bool, reuse []row) ([]row, int) {
+func buildRowsDisplayReuse(changes []Change, width int, wrap bool, expanded map[string]bool, gutterWidth int, shortPaths bool, reuse []row) ([]row, int) {
 	// Share one line number width across files so the number column stays
 	// put when moving between them.
 	widths := make([]int, len(changes))
 	parallelEach(len(changes), func(i int) {
-		widths[i] = lineNumberWidthText(changes[i].diff)
+		widths[i] = lineNumberWidthText(changes[i].Diff)
 	})
 	for _, width := range widths {
 		gutterWidth = max(gutterWidth, width)
@@ -73,7 +55,7 @@ func buildRowsDisplayReuse(changes []change, width int, wrap bool, expanded map[
 	// Files lay out independently, so large change sets build in parallel.
 	parts := make([][]row, len(changes))
 	parallelEach(len(changes), func(i int) {
-		parts[i] = changeRows(changes[i], i > 0, width, wrap, expanded[changes[i].path], gutterWidth, shortPaths)
+		parts[i] = changeRows(changes[i], i > 0, width, wrap, expanded[changes[i].Path], gutterWidth, shortPaths)
 	})
 	total := 0
 	for _, part := range parts {
@@ -118,41 +100,41 @@ func parallelEach(n int, f func(int)) {
 
 // changeRows lays out one file; separated adds the blank row that divides it
 // from the file before.
-func changeRows(c change, separated bool, width int, wrap bool, expanded bool, gutterWidth int, shortPaths bool) []row {
+func changeRows(c Change, separated bool, width int, wrap bool, expanded bool, gutterWidth int, shortPaths bool) []row {
 	// Most lines take one row; sizing for them avoids regrowing large files.
-	rows := make([]row, 0, strings.Count(c.diff, "\n")+3)
-	oldSyntax, newSyntax := syntaxLinesFor(c.path, c.syntaxDiff, c.diff)
+	rows := make([]row, 0, strings.Count(c.Diff, "\n")+3)
+	oldSyntax, newSyntax := syntaxLinesFor(c.Path, c.SyntaxDiff, c.Diff)
 	if separated {
-		rows = append(rows, row{path: c.path, lineIndex: -2, kind: 's'})
+		rows = append(rows, row{path: c.Path, lineIndex: -2, kind: 's'})
 	}
-	deletedFile := strings.Contains(c.diff, "\ndeleted file mode ") && !strings.Contains(c.diff, "\nnew file mode ")
+	deletedFile := strings.Contains(c.Diff, "\ndeleted file mode ") && !strings.Contains(c.Diff, "\nnew file mode ")
 	deletedLines := 0
 	if deletedFile {
-		deletedLines = countDeletedLines(c.diff)
+		deletedLines = countDeletedLines(c.Diff)
 	}
-	trimmed := strings.TrimSuffix(c.diff, "\n")
+	trimmed := strings.TrimSuffix(c.Diff, "\n")
 	lineCount := strings.Count(trimmed, "\n") + 1
-	name := displayPath(c.path, shortPaths)
-	if c.oldPath != "" {
-		name = displayPath(c.oldPath, shortPaths)
+	name := displayPath(c.Path, shortPaths)
+	if c.OldPath != "" {
+		name = displayPath(c.OldPath, shortPaths)
 	}
-	_, _, submodule := submoduleLine(strings.SplitN(c.diff, "\n", 2)[0])
-	header := row{path: c.path, oldPath: c.oldPath, lineIndex: -1, text: " " + name, kind: 'f', submodule: submodule, generated: c.generated}
-	if c.generated {
-		added, deleted := countGeneratedLines(c.diff)
+	_, _, submodule := submoduleLine(strings.SplitN(c.Diff, "\n", 2)[0])
+	header := row{path: c.Path, oldPath: c.OldPath, lineIndex: -1, text: " " + name, kind: 'f', submodule: submodule, generated: c.Generated}
+	if c.Generated {
+		added, deleted := countGeneratedLines(c.Diff)
 		header.setGeneratedCounts(added, deleted)
 	}
 	if deletedFile && !expanded {
 		header.deletedLines = deletedLines
 	}
-	if c.oldPath == "" {
+	if c.OldPath == "" {
 		rows = append(rows, header)
 	} else {
-		removed, added := renamePathSpans(c.oldPath, c.path, shortPaths)
+		removed, added := renamePathSpans(c.OldPath, c.Path, shortPaths)
 		parts := []struct {
 			prefix, path string
 			spans        []syntaxSpan
-		}{{"  ", displayPath(c.oldPath, shortPaths), removed}, {"→ ", displayPath(c.path, shortPaths), added}}
+		}{{"  ", displayPath(c.OldPath, shortPaths), removed}, {"→ ", displayPath(c.Path, shortPaths), added}}
 		offset := 0
 		for side, item := range parts {
 			text := item.prefix + item.path
@@ -188,7 +170,7 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 				label += " · e expand"
 			}
 		}
-		rows = append(rows, row{path: c.path, text: label, kind: '@'})
+		rows = append(rows, row{path: c.Path, text: label, kind: '@'})
 		if !expanded {
 			return rows
 		}
@@ -204,7 +186,7 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 			oldLine, _ = strconv.Atoi(match[1])
 			newLine, _ = strconv.Atoi(match[3])
 			if hunks > 0 {
-				rows = append(rows, (row{path: c.path, target: newLine, text: "  ···", kind: '@'}).withLineNumber(i))
+				rows = append(rows, (row{path: c.Path, target: newLine, text: "  ···", kind: '@'}).withLineNumber(i))
 			}
 			hunks++
 			inHunk = true
@@ -226,7 +208,7 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 				metadata = append(metadata, "New empty file")
 			case strings.HasPrefix(line, "deleted file mode "):
 				metadata = append(metadata, "Deleted empty file")
-			case !strings.HasPrefix(c.diff, "diff --git ") && line != "":
+			case !strings.HasPrefix(c.Diff, "diff --git ") && line != "":
 				metadata = append(metadata, clean(line))
 			}
 			continue
@@ -236,7 +218,7 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 		}
 		kind := line[0]
 		if kind == '\\' {
-			rows = append(rows, (row{path: c.path, target: max(1, newLine-1), text: "  " + clean(line[2:]), kind: '@'}).withLineNumber(i))
+			rows = append(rows, (row{path: c.Path, target: max(1, newLine-1), text: "  " + clean(line[2:]), kind: '@'}).withLineNumber(i))
 			continue
 		}
 		if kind != ' ' && kind != '+' && kind != '-' {
@@ -269,7 +251,7 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 			if syntaxMatches {
 				spans = clipSyntax(lineSyntax.Spans, 0, len(text))
 			}
-			rows = append(rows, (row{path: c.path, target: target, sourceLine: number, text: text, kind: kind, spans: newRowSpans(spans, nil, nil), syntaxPresent: spans != nil}).withLineNumber(i))
+			rows = append(rows, (row{path: c.Path, target: target, sourceLine: number, text: text, kind: kind, spans: newRowSpans(spans, nil, nil), syntaxPresent: spans != nil}).withLineNumber(i))
 		} else {
 			offset := 0
 			byteOffset := 0
@@ -278,7 +260,7 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 				if syntaxMatches {
 					spans = clipSyntax(lineSyntax.Spans, byteOffset, byteOffset+len(part))
 				}
-				rows = append(rows, (row{path: c.path, offset: offset, target: target, sourceLine: number, text: part, kind: kind, spans: newRowSpans(spans, nil, nil), syntaxPresent: spans != nil}).withLineNumber(i))
+				rows = append(rows, (row{path: c.Path, offset: offset, target: target, sourceLine: number, text: part, kind: kind, spans: newRowSpans(spans, nil, nil), syntaxPresent: spans != nil}).withLineNumber(i))
 				byteOffset += len(part)
 				offset += stringWidth(part)
 			}
@@ -286,7 +268,7 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 		hasContent = true
 	}
 	if !hasContent {
-		if c.oldPath != "" && strings.Contains(c.diff, "\nsimilarity index 100%\n") {
+		if c.OldPath != "" && strings.Contains(c.Diff, "\nsimilarity index 100%\n") {
 			metadata = append(metadata, "Renamed, no content changes")
 		}
 		for _, text := range metadata {
@@ -296,12 +278,12 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 			if (text == "New empty file" || text == "Deleted empty file") && containsBinary(metadata) {
 				continue
 			}
-			rows = append(rows, (row{path: c.path, text: "  " + text, kind: '@', submodule: submodule}).withLineNumber(lineCount))
+			rows = append(rows, (row{path: c.Path, text: "  " + text, kind: '@', submodule: submodule}).withLineNumber(lineCount))
 		}
 	} else {
 		for _, text := range metadata {
 			if strings.HasPrefix(text, "old mode ") || strings.HasPrefix(text, "new mode ") {
-				rows = append(rows, (row{path: c.path, text: "  " + text, kind: '@'}).withLineNumber(lineCount))
+				rows = append(rows, (row{path: c.Path, text: "  " + text, kind: '@'}).withLineNumber(lineCount))
 			}
 		}
 	}

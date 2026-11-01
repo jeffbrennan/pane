@@ -1,4 +1,4 @@
-package main
+package git
 
 import (
 	"bytes"
@@ -15,70 +15,70 @@ import (
 	"sync"
 )
 
-type change struct {
-	path       string
-	oldPath    string
-	diff       string
-	syntaxDiff string
-	// syntaxSkipped marks a file the syntax budget left plain; it is
+type Change struct {
+	Path       string
+	OldPath    string
+	Diff       string
+	SyntaxDiff string
+	// SyntaxSkipped marks a file the syntax budget left plain; it is
 	// highlighted once it scrolls into view. See syntaxDemand.
-	syntaxSkipped      bool
-	generated          bool
-	conflict           bool
-	untracked          bool
-	untrackedHash      [32]byte
-	untrackedHashValid bool
+	SyntaxSkipped      bool
+	Generated          bool
+	Conflict           bool
+	Untracked          bool
+	UntrackedHash      [32]byte
+	UntrackedHashValid bool
 }
 
-type snapshot struct {
-	unstaged []change
-	staged   []change
-	branch   branchStatus
+type Snapshot struct {
+	Unstaged []Change
+	Staged   []Change
+	Branch   BranchStatus
 }
 
-func (s snapshot) equal(other snapshot) bool {
-	return s.branch == other.branch && slices.Equal(s.unstaged, other.unstaged) && slices.Equal(s.staged, other.staged)
+func (s Snapshot) Equal(other Snapshot) bool {
+	return s.Branch == other.Branch && slices.Equal(s.Unstaged, other.Unstaged) && slices.Equal(s.Staged, other.Staged)
 }
 
-type repository struct {
-	root        string
-	commandHook func([]string)
-	context     context.Context
-	ignoreSpace bool
-	stats       *statsStore
-	// untrackedCache turns on Git's untracked cache for status, which
+type Repo struct {
+	Root        string
+	CommandHook func([]string)
+	Context     context.Context
+	IgnoreSpace bool
+	Stats       *StatsStore
+	// UntrackedCache turns on Git's untracked cache for status, which
 	// otherwise walks every directory for untracked files. It is set only
-	// when the repository leaves core.untrackedCache unset.
-	untrackedCache bool
-	// untrackedHidden is set when status.showUntrackedFiles hides untracked
+	// when the repository leaves core.UntrackedCache unset.
+	UntrackedCache bool
+	// UntrackedHidden is set when status.showUntrackedFiles hides untracked
 	// files; see statusOutput.
-	untrackedHidden bool
+	UntrackedHidden bool
 }
 
-func (r repository) diffOptions() []string {
+func (r Repo) diffOptions() []string {
 	args := []string{"--no-ext-diff", "--no-textconv", "--no-color", "--submodule=log", "-M"}
-	if r.ignoreSpace {
+	if r.IgnoreSpace {
 		args = append(args, "-w")
 	}
 	return args
 }
 
-func openRepository() (repository, error) {
+func OpenRepository() (Repo, error) {
 	// Status settings are read alongside the root, so they cost no extra
 	// wait.
-	settings := make(chan repository, 1)
+	settings := make(chan Repo, 1)
 	go func() {
 		out, _ := exec.Command("git", "config", "--get-regexp", `^(core\.untrackedcache|status\.showuntrackedfiles)$`).Output()
-		settings <- statusSettings(string(out))
+		settings <- StatusSettings(string(out))
 	}()
 	cmd := exec.Command("git", "rev-parse", "--show-toplevel", "--git-common-dir")
 	out, err := cmd.Output()
 	if err != nil {
-		return repository{}, fmt.Errorf("not inside a Git working tree")
+		return Repo{}, fmt.Errorf("not inside a Git working tree")
 	}
 	lines := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
 	if len(lines) < 2 {
-		return repository{}, fmt.Errorf("not inside a Git working tree")
+		return Repo{}, fmt.Errorf("not inside a Git working tree")
 	}
 	root := lines[0]
 	commonDir, err := filepath.Abs(lines[1])
@@ -88,55 +88,55 @@ func openRepository() (repository, error) {
 	r := <-settings
 	// Commit counts are the same in every worktree, so share the cache by the
 	// repository's common directory instead of the worktree root.
-	r.root, r.stats = root, newStatsStore(commonDir)
+	r.Root, r.Stats = root, newStatsStore(commonDir)
 	return r, nil
 }
 
-// statusSettings reads core.untrackedCache and status.showUntrackedFiles
+// statusSettings reads core.UntrackedCache and status.showUntrackedFiles
 // from git config --get-regexp output.
-func statusSettings(config string) repository {
-	r := repository{untrackedCache: true}
+func StatusSettings(config string) Repo {
+	r := Repo{UntrackedCache: true}
 	for _, line := range strings.Split(config, "\n") {
 		key, value, _ := strings.Cut(line, " ")
 		switch key {
 		case "core.untrackedcache":
-			r.untrackedCache = false
+			r.UntrackedCache = false
 		case "status.showuntrackedfiles":
 			switch strings.ToLower(value) {
 			case "no", "false", "off", "0":
-				r.untrackedHidden = true
+				r.UntrackedHidden = true
 			default:
-				r.untrackedHidden = false
+				r.UntrackedHidden = false
 			}
 		}
 	}
 	return r
 }
 
-func (r repository) command(args ...string) ([]byte, error) {
-	return r.commandInput(nil, args...)
+func (r Repo) Command(args ...string) ([]byte, error) {
+	return r.CommandInput(nil, args...)
 }
 
-func (r repository) commandStdout(args ...string) ([]byte, error) {
-	cmd := r.gitCommand(args...)
+func (r Repo) CommandStdout(args ...string) ([]byte, error) {
+	cmd := r.GitCommand(args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, gitError(stderr.Bytes(), err)
+		return nil, GitError(stderr.Bytes(), err)
 	}
 	return out, nil
 }
 
-func (r repository) commandInput(input io.Reader, args ...string) ([]byte, error) {
-	cmd := r.gitCommand(args...)
+func (r Repo) CommandInput(input io.Reader, args ...string) ([]byte, error) {
+	cmd := r.GitCommand(args...)
 	cmd.Stdin = input
 	return cmd.CombinedOutput()
 }
 
-func (r repository) gitCommand(args ...string) *exec.Cmd {
-	if r.commandHook != nil {
-		r.commandHook(args)
+func (r Repo) GitCommand(args ...string) *exec.Cmd {
+	if r.CommandHook != nil {
+		r.CommandHook(args)
 	}
 	if path := os.Getenv("PANE_PERF_GIT_LOG"); path != "" {
 		// Perf harnesses count Git work without sampling process tables.
@@ -145,12 +145,12 @@ func (r repository) gitCommand(args ...string) *exec.Cmd {
 			file.Close()
 		}
 	}
-	ctx := r.context
+	ctx := r.Context
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = r.root
+	cmd.Dir = r.Root
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_LITERAL_PATHSPECS=1", "GIT_PAGER=cat", "GIT_EDITOR=true")
 	if len(args) > 0 && args[0] == "stash" {
 		// Git stash uses its own magic pathspecs when saving untracked files.
@@ -162,22 +162,22 @@ func (r repository) gitCommand(args ...string) *exec.Cmd {
 	return cmd
 }
 
-func (r repository) applyPatch(patch string, args ...string) error {
+func (r Repo) ApplyPatch(patch string, args ...string) error {
 	args = append([]string{"apply"}, args...)
 	args = append(args, "--whitespace=nowarn", "-")
-	out, err := r.commandInput(strings.NewReader(patch), args...)
+	out, err := r.CommandInput(strings.NewReader(patch), args...)
 	if err != nil {
-		return gitError(out, err)
+		return GitError(out, err)
 	}
 	return nil
 }
 
-func (r repository) load() (snapshot, error) {
-	cache, _, err := r.loadCached(nil)
+func (r Repo) Load() (Snapshot, error) {
+	cache, _, err := r.LoadCached(nil)
 	if err != nil {
-		return snapshot{}, err
+		return Snapshot{}, err
 	}
-	return cache.snapshot, nil
+	return cache.Snapshot, nil
 }
 
 func untrackedDigest(path string) ([32]byte, bool) {
@@ -208,19 +208,19 @@ func untrackedDigest(path string) ([32]byte, bool) {
 
 // diffs loads every path's diff with a single git process, falling back to
 // per-file commands for paths whose patch header Git had to quote.
-func (r repository) diffs(paths []string, staged bool) ([]change, error) {
+func (r Repo) diffs(paths []string, staged bool) ([]Change, error) {
 	return r.diffsForChanges(changesForPaths(paths), staged)
 }
 
-func changesForPaths(paths []string) []change {
-	changes := make([]change, len(paths))
+func changesForPaths(paths []string) []Change {
+	changes := make([]Change, len(paths))
 	for i, path := range paths {
-		changes[i].path = path
+		changes[i].Path = path
 	}
 	return changes
 }
 
-func (r repository) diffsForChanges(input []change, staged bool) ([]change, error) {
+func (r Repo) diffsForChanges(input []Change, staged bool) ([]Change, error) {
 	if len(input) == 0 {
 		return nil, nil
 	}
@@ -231,36 +231,36 @@ func (r repository) diffsForChanges(input []change, staged bool) ([]change, erro
 	}
 	args = append(args, "--")
 	var paths []string
-	byPath := make(map[string]change, len(input))
+	byPath := make(map[string]Change, len(input))
 	for _, c := range input {
-		paths = append(paths, c.path)
-		byPath[c.path] = c
-		args = append(args, c.path)
-		if c.oldPath != "" {
-			args = append(args, c.oldPath)
+		paths = append(paths, c.Path)
+		byPath[c.Path] = c
+		args = append(args, c.Path)
+		if c.OldPath != "" {
+			args = append(args, c.OldPath)
 		}
 	}
-	out, err := r.command(args...)
+	out, err := r.Command(args...)
 	if err != nil {
-		return nil, gitError(out, err)
+		return nil, GitError(out, err)
 	}
-	patches := splitPatch(string(out))
+	patches := SplitPatch(string(out))
 	changes, err := parallelDiffs(paths, func(path string) (string, error) {
 		if diff, ok := patches[path]; ok {
 			return diff, nil
 		}
 		c := byPath[path]
-		return r.diffPaths(c.path, c.oldPath, staged)
+		return r.DiffPaths(c.Path, c.OldPath, staged)
 	})
 	for i := range changes {
-		changes[i].oldPath = input[i].oldPath
+		changes[i].OldPath = input[i].OldPath
 	}
 	return changes, err
 }
 
 // splitPatch divides a multi-file patch at its "diff" headers. Paths that Git
 // quoted, and combined conflict diffs, are omitted so callers can load them individually.
-func splitPatch(patch string) map[string]string {
+func SplitPatch(patch string) map[string]string {
 	patches := map[string]string{}
 	var path string
 	start := 0
@@ -283,7 +283,7 @@ func splitPatch(patch string) map[string]string {
 		if strings.HasPrefix(line, "diff ") {
 			flush(offset)
 			path = patchPath(line)
-		} else if submodulePath, _, ok := submoduleLine(line); ok {
+		} else if submodulePath, _, ok := SubmoduleLine(line); ok {
 			if path != submodulePath {
 				flush(offset)
 				path = submodulePath
@@ -330,8 +330,8 @@ func patchPath(header string) string {
 
 // parallelDiffs runs load for each path with bounded concurrency, keeping the
 // input order. Cheap lookups return immediately; only fallbacks spawn Git.
-func parallelDiffs(paths []string, load func(string) (string, error)) ([]change, error) {
-	changes := make([]change, len(paths))
+func parallelDiffs(paths []string, load func(string) (string, error)) ([]Change, error) {
+	changes := make([]Change, len(paths))
 	errs := make([]error, len(paths))
 	limit := make(chan struct{}, 8)
 	var wg sync.WaitGroup
@@ -341,7 +341,7 @@ func parallelDiffs(paths []string, load func(string) (string, error)) ([]change,
 		go func(i int, path string) {
 			defer func() { <-limit; wg.Done() }()
 			diff, err := load(path)
-			changes[i], errs[i] = change{path: path, diff: diff}, err
+			changes[i], errs[i] = Change{Path: path, Diff: diff}, err
 		}(i, path)
 	}
 	wg.Wait()
@@ -353,11 +353,11 @@ func parallelDiffs(paths []string, load func(string) (string, error)) ([]change,
 	return changes, nil
 }
 
-func (r repository) diff(path string, staged bool) (string, error) {
-	return r.diffPaths(path, "", staged)
+func (r Repo) Diff(path string, staged bool) (string, error) {
+	return r.DiffPaths(path, "", staged)
 }
 
-func (r repository) diffPaths(path, oldPath string, staged bool) (string, error) {
+func (r Repo) DiffPaths(path, oldPath string, staged bool) (string, error) {
 	args := append([]string{"diff"}, r.diffOptions()...)
 	args = append(args, "--src-prefix=a/", "--dst-prefix=b/")
 	if staged {
@@ -367,15 +367,15 @@ func (r repository) diffPaths(path, oldPath string, staged bool) (string, error)
 	if oldPath != "" {
 		args = append(args, oldPath)
 	}
-	out, err := r.command(args...)
+	out, err := r.Command(args...)
 	if err != nil {
-		return "", gitError(out, err)
+		return "", GitError(out, err)
 	}
 	if len(out) == 0 {
-		if r.ignoreSpace {
+		if r.IgnoreSpace {
 			original := r
-			original.ignoreSpace = false
-			unfiltered, err := original.diffPaths(path, oldPath, staged)
+			original.IgnoreSpace = false
+			unfiltered, err := original.DiffPaths(path, oldPath, staged)
 			if err != nil {
 				return "", err
 			}
@@ -389,87 +389,87 @@ func (r repository) diffPaths(path, oldPath string, staged bool) (string, error)
 	return string(out), nil
 }
 
-func (r repository) untrackedDiff(path string) (string, error) {
+func (r Repo) untrackedDiff(path string) (string, error) {
 	args := append([]string{"diff", "--no-index"}, r.diffOptions()...)
 	args = append(args, "--", os.DevNull, path)
-	out, err := r.command(args...)
+	out, err := r.Command(args...)
 	if err != nil {
 		if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 {
-			return "", gitError(out, err)
+			return "", GitError(out, err)
 		}
 	}
 	return string(out), nil
 }
 
-func (r repository) stage(path string, staged bool) error {
-	return r.stageChange(change{path: path}, staged)
+func (r Repo) Stage(path string, staged bool) error {
+	return r.StageChange(Change{Path: path}, staged)
 }
 
-func (r repository) stageChange(c change, staged bool) error {
-	paths := []string{c.path}
-	if c.oldPath != "" {
+func (r Repo) StageChange(c Change, staged bool) error {
+	paths := []string{c.Path}
+	if c.OldPath != "" {
 		if staged {
-			out, err := r.command("ls-files", "-z", "--", c.oldPath)
+			out, err := r.Command("ls-files", "-z", "--", c.OldPath)
 			if err != nil {
-				return gitError(out, err)
+				return GitError(out, err)
 			}
 			if len(out) > 0 {
 				return fmt.Errorf("rename source has separate staged changes; unstage it outside pane")
 			}
 		}
-		paths = append(paths, c.oldPath)
+		paths = append(paths, c.OldPath)
 	}
 	var out []byte
 	var err error
 	if !staged {
-		out, err = r.command(append([]string{"add", "-A", "--"}, paths...)...)
-	} else if _, headErr := r.command("rev-parse", "--verify", "HEAD"); headErr != nil {
-		out, err = r.command(append([]string{"rm", "--cached", "-r", "--ignore-unmatch", "--"}, paths...)...)
+		out, err = r.Command(append([]string{"add", "-A", "--"}, paths...)...)
+	} else if _, headErr := r.Command("rev-parse", "--verify", "HEAD"); headErr != nil {
+		out, err = r.Command(append([]string{"rm", "--cached", "-r", "--ignore-unmatch", "--"}, paths...)...)
 	} else {
-		out, err = r.command(append([]string{"restore", "--staged", "--"}, paths...)...)
+		out, err = r.Command(append([]string{"restore", "--staged", "--"}, paths...)...)
 	}
 	if err != nil {
-		return gitError(out, err)
+		return GitError(out, err)
 	}
 	return nil
 }
 
-func (r repository) action(args ...string) (string, error) {
-	out, err := r.command(args...)
+func (r Repo) Action(args ...string) (string, error) {
+	out, err := r.Command(args...)
 	if err != nil {
-		return "", gitError(out, err)
+		return "", GitError(out, err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
 
-func (r repository) commit(message string) (string, error) {
-	out, err := r.command("diff", "--cached", "--quiet", "--exit-code")
+func (r Repo) Commit(message string) (string, error) {
+	out, err := r.Command("diff", "--cached", "--quiet", "--exit-code")
 	if err != nil {
 		exit, ok := err.(*exec.ExitError)
 		if !ok || exit.ExitCode() != 1 {
-			return "", gitError(out, err)
+			return "", GitError(out, err)
 		}
 	} else {
-		conflicts, conflictErr := r.command("diff", "--name-only", "--diff-filter=U", "-z")
+		conflicts, conflictErr := r.Command("diff", "--name-only", "--diff-filter=U", "-z")
 		if conflictErr != nil {
-			return "", gitError(conflicts, conflictErr)
+			return "", GitError(conflicts, conflictErr)
 		}
 		if len(conflicts) > 0 {
 			return "", fmt.Errorf("resolve merge conflicts outside pane before committing")
 		}
-		out, err = r.command("add", "--all")
+		out, err = r.Command("add", "--all")
 		if err != nil {
-			return "", gitError(out, err)
+			return "", GitError(out, err)
 		}
 	}
-	out, err = r.commandInput(strings.NewReader(message), "commit", "--file=-")
+	out, err = r.CommandInput(strings.NewReader(message), "commit", "--file=-")
 	if err != nil {
-		return "", gitError(out, err)
+		return "", GitError(out, err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
 
-func gitError(out []byte, err error) error {
+func GitError(out []byte, err error) error {
 	if msg := strings.TrimSpace(string(out)); msg != "" {
 		return fmt.Errorf("%s", msg)
 	}

@@ -12,12 +12,12 @@ import (
 func TestStashPushInspectAndPop(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "tracked", "before\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "tracked", "after\n")
 	writeFile(t, r, "untracked", "new content\n")
-	snapshot, err := r.load()
+	snapshot, err := r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,8 +30,8 @@ func TestStashPushInspectAndPop(t *testing.T) {
 	if result.err != nil || result.message != "Stashed 2 files" {
 		t.Fatalf("stash push: %#v", result)
 	}
-	status, err := r.load()
-	if err != nil || len(status.staged)+len(status.unstaged) != 0 {
+	status, err := r.Load()
+	if err != nil || len(status.Staged)+len(status.Unstaged) != 0 {
 		t.Fatalf("worktree not clean: %#v %v", status, err)
 	}
 	updated, _ = updated.(model).Update(result)
@@ -63,11 +63,11 @@ func TestStashPushInspectAndPop(t *testing.T) {
 	if result.err != nil {
 		t.Fatal(result.err)
 	}
-	content, err := os.ReadFile(filepath.Join(r.root, "untracked"))
+	content, err := os.ReadFile(filepath.Join(r.Root, "untracked"))
 	if err != nil || string(content) != "new content\n" {
 		t.Fatalf("untracked not restored: %q %v", content, err)
 	}
-	entries, err := r.stashes()
+	entries, err := r.Stashes()
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("stash not popped: %#v %v", entries, err)
 	}
@@ -76,14 +76,14 @@ func TestStashPushInspectAndPop(t *testing.T) {
 func TestStashDropConfirmationAndStaleSelection(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "tracked", "before\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "tracked", "first\n")
-	if _, err := r.stashPush(); err != nil {
+	if _, err := r.StashPush(); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := r.stashes()
+	entries, err := r.Stashes()
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("stashes: %#v %v", entries, err)
 	}
@@ -93,7 +93,7 @@ func TestStashDropConfirmationAndStaleSelection(t *testing.T) {
 		t.Fatal("drop did not request confirmation")
 	}
 	writeFile(t, r, "tracked", "second\n")
-	if _, err := r.stashPush(); err != nil {
+	if _, err := r.StashPush(); err != nil {
 		t.Fatal(err)
 	}
 	updated, cmd = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
@@ -101,7 +101,7 @@ func TestStashDropConfirmationAndStaleSelection(t *testing.T) {
 	if result.err == nil || !strings.Contains(result.err.Error(), "stash list changed") {
 		t.Fatalf("stale stash not rejected: %#v", result)
 	}
-	entries, err = r.stashes()
+	entries, err = r.Stashes()
 	if err != nil || len(entries) != 2 {
 		t.Fatalf("stale action changed stashes: %#v %v", entries, err)
 	}
@@ -110,14 +110,14 @@ func TestStashDropConfirmationAndStaleSelection(t *testing.T) {
 func TestStashDropAndHistoryCount(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file", "base\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "file", "changed\n")
-	if _, err := r.stashPush(); err != nil {
+	if _, err := r.StashPush(); err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := r.load()
+	snapshot, err := r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestStashDropAndHistoryCount(t *testing.T) {
 	if cmd != nil || updated.(model).modal != "" {
 		t.Fatal("drop cancellation failed")
 	}
-	entries, err := r.stashes()
+	entries, err := r.Stashes()
 	if err != nil || len(entries) != 1 {
 		t.Fatal("cancelling removed the stash")
 	}
@@ -143,7 +143,7 @@ func TestStashDropAndHistoryCount(t *testing.T) {
 	if result := cmd().(completed); result.err != nil {
 		t.Fatal(result.err)
 	}
-	entries, err = r.stashes()
+	entries, err = r.Stashes()
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("drop failed: %#v %v", entries, err)
 	}
@@ -152,26 +152,26 @@ func TestStashDropAndHistoryCount(t *testing.T) {
 func TestStashPopConflictKeepsStash(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file", "base\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "file", "stashed\n")
-	if _, err := r.stashPush(); err != nil {
+	if _, err := r.StashPush(); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := r.stashes()
+	entries, err := r.Stashes()
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "file", "local\n")
-	if _, err := r.stashAction("pop", entries[0]); err == nil {
+	if _, err := r.StashAction("pop", entries[0]); err == nil {
 		t.Fatal("expected conflicting pop to fail")
 	}
-	entries, err = r.stashes()
+	entries, err = r.Stashes()
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("conflicting pop removed stash: %#v %v", entries, err)
 	}
-	content, err := os.ReadFile(filepath.Join(r.root, "file"))
+	content, err := os.ReadFile(filepath.Join(r.Root, "file"))
 	if err != nil || string(content) != "local\n" {
 		t.Fatalf("conflicting pop overwrote local changes: %q %v", content, err)
 	}
@@ -180,29 +180,29 @@ func TestStashPopConflictKeepsStash(t *testing.T) {
 func TestStashPopMergeConflictKeepsStash(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file", "base\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "file", "stashed\n")
-	if _, err := r.stashPush(); err != nil {
+	if _, err := r.StashPush(); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := r.stashes()
+	entries, err := r.Stashes()
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "file", "committed\n")
-	if _, err := r.commit("diverged"); err != nil {
+	if _, err := r.Commit("diverged"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.stashAction("pop", entries[0]); err == nil {
+	if _, err := r.StashAction("pop", entries[0]); err == nil {
 		t.Fatal("expected merge conflict")
 	}
-	entries, err = r.stashes()
+	entries, err = r.Stashes()
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("merge conflict removed stash: %#v %v", entries, err)
 	}
-	content, err := os.ReadFile(filepath.Join(r.root, "file"))
+	content, err := os.ReadFile(filepath.Join(r.Root, "file"))
 	if err != nil || !strings.Contains(string(content), "<<<<<<<") {
 		t.Fatalf("expected conflict markers: %q %v", content, err)
 	}

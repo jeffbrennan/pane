@@ -28,10 +28,10 @@ func TestBarAlignsAndDropsRightSide(t *testing.T) {
 }
 
 func TestEveryScreenSharesTitleAndStatusBars(t *testing.T) {
-	diff := model{width: 60, height: 10, snapshot: snapshot{unstaged: []change{{path: "a.go", diff: "@@ -1 +1 @@\n-a\n+b\n"}}}}
+	diff := model{width: 60, height: 10, snapshot: Snapshot{Unstaged: []Change{{Path: "a.go", Diff: "@@ -1 +1 @@\n-a\n+b\n"}}}}
 	diff.rebuild()
 	history := model{width: 60, height: 10, screen: "history"}
-	commit := model{width: 60, height: 10, screen: "commit", history: historyState{current: commitInfo{hash: "123456789", subject: "subject"}}}
+	commit := model{width: 60, height: 10, screen: "commit", history: historyState{current: CommitInfo{Hash: "123456789", Subject: "subject"}}}
 	for name, tt := range map[string]struct {
 		m            model
 		title, hints string
@@ -57,7 +57,7 @@ func TestBusyActionShowsInTitleBar(t *testing.T) {
 }
 
 func TestEmptyDiffPointsToOtherView(t *testing.T) {
-	m := model{width: 60, height: 10, snapshot: snapshot{staged: []change{{path: "a.go", diff: "@@ -1 +1 @@\n-a\n+b\n"}}}}
+	m := model{width: 60, height: 10, snapshot: Snapshot{Staged: []Change{{Path: "a.go", Diff: "@@ -1 +1 @@\n-a\n+b\n"}}}}
 	m.rebuild()
 	if !strings.Contains(m.View(), "No unstaged changes · tab shows 1 staged") {
 		t.Fatalf("missing empty state hint: %q", m.View())
@@ -69,7 +69,7 @@ func TestEmptyDiffPointsToOtherView(t *testing.T) {
 }
 
 func TestDiscardAndErrorUseDialogs(t *testing.T) {
-	m := model{width: 60, height: 12, modal: "discard", discard: discardRequest{change: change{path: "a.go"}}}
+	m := model{width: 60, height: 12, modal: "discard", discard: DiscardRequest{Change: Change{Path: "a.go"}}}
 	view := plain(m.View())
 	if !strings.Contains(view, "┌") || !strings.Contains(view, "Discard hunk?") || !strings.Contains(view, "y discard  n/esc cancel") || !strings.HasPrefix(view, " unstaged 0") {
 		t.Fatalf("discard is not a dialog: %q", view)
@@ -89,11 +89,11 @@ func TestDiscardAndErrorUseDialogs(t *testing.T) {
 }
 
 func TestCommitDialogShowsScope(t *testing.T) {
-	m := model{width: 60, height: 20, modal: "commit", snapshot: snapshot{unstaged: []change{{path: "a"}, {path: "b"}}}}
+	m := model{width: 60, height: 20, modal: "commit", snapshot: Snapshot{Unstaged: []Change{{Path: "a"}, {Path: "b"}}}}
 	if !strings.Contains(plain(m.View()), "all 2 files") {
 		t.Fatalf("missing stage-all scope: %q", m.View())
 	}
-	m.snapshot.staged = []change{{path: "a"}}
+	m.snapshot.Staged = []Change{{Path: "a"}}
 	if !strings.Contains(plain(m.View()), "1 file staged") {
 		t.Fatalf("missing staged scope: %q", m.View())
 	}
@@ -115,7 +115,7 @@ func TestFilePickerKeepsSizeWhileFiltering(t *testing.T) {
 }
 
 func TestHeaderNumberAlignsWithLineNumbers(t *testing.T) {
-	changes := []change{{path: "a.go", diff: "@@ -1000,2 +1000,2 @@\n x\n y\n"}}
+	changes := []Change{{Path: "a.go", Diff: "@@ -1000,2 +1000,2 @@\n x\n y\n"}}
 	m := model{width: 40, height: 10, wrap: true, screen: "commit", history: historyState{changes: changes}}
 	m.rebuildCommit()
 	m.history.pos = 2
@@ -126,9 +126,9 @@ func TestHeaderNumberAlignsWithLineNumbers(t *testing.T) {
 }
 
 func TestNumberColumnSharedAcrossFiles(t *testing.T) {
-	changes := []change{
-		{path: "small.go", diff: "@@ -1,1 +1,1 @@\n x\n"},
-		{path: "large.go", diff: "@@ -1000,1 +1000,1 @@\n y\n"},
+	changes := []Change{
+		{Path: "small.go", Diff: "@@ -1,1 +1,1 @@\n x\n"},
+		{Path: "large.go", Diff: "@@ -1000,1 +1000,1 @@\n y\n"},
 	}
 	m := model{width: 40, height: 10, wrap: true, screen: "commit", history: historyState{changes: changes}}
 	m.rebuildCommit()

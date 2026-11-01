@@ -20,40 +20,40 @@ func headerText(rows []row) string {
 func TestCommitDetailAndMergeParents(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "base.txt", "base\n")
-	if _, err := r.commit("base commit"); err != nil {
+	if _, err := r.Commit("base commit"); err != nil {
 		t.Fatal(err)
 	}
-	branch, err := r.command("rev-parse", "--abbrev-ref", "HEAD")
+	branch, err := r.Command("rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.command("checkout", "-b", "side"); err != nil {
+	if _, err := r.Command("checkout", "-b", "side"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "side.txt", "side\n")
-	if _, err := r.commit("side commit"); err != nil {
+	if _, err := r.Commit("side commit"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.command("checkout", strings.TrimSpace(string(branch))); err != nil {
+	if _, err := r.Command("checkout", strings.TrimSpace(string(branch))); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "main.txt", "main\n")
-	if _, err := r.commit("main commit"); err != nil {
+	if _, err := r.Commit("main commit"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.command("merge", "--no-ff", "side", "-m", "merge side\n\n* merged side\n\nCo-authored-by: Other <other@example.com>"); err != nil {
+	if _, err := r.Command("merge", "--no-ff", "side", "-m", "merge side\n\n* merged side\n\nCo-authored-by: Other <other@example.com>"); err != nil {
 		t.Fatal(err)
 	}
-	commit, err := r.resolveCommit("HEAD")
+	commit, err := r.ResolveCommit("HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(commit.parents) != 2 || commit.author != "Test" || commit.committer != "Test" {
+	if len(commit.Parents) != 2 || commit.Author != "Test" || commit.Committer != "Test" {
 		t.Fatalf("detail: %#v", commit)
 	}
 	rows := commitHeaderBlock(commit, 80, false, time.Now())
 	text := headerText(rows)
-	if !strings.Contains(text, "merge") || !strings.Contains(text, shortHash(commit.parents[0])) || !strings.Contains(text, shortHash(commit.parents[1])) {
+	if !strings.Contains(text, "merge") || !strings.Contains(text, shortHash(commit.Parents[0])) || !strings.Contains(text, shortHash(commit.Parents[1])) {
 		t.Fatalf("missing merge parents: %s", text)
 	}
 	if !strings.Contains(text, "merged side") || !strings.Contains(text, "Co-authored-by") {
@@ -65,8 +65,8 @@ func TestCommitDetailAndMergeParents(t *testing.T) {
 }
 
 func TestCommitHeaderSearchAndJumpToFirstFile(t *testing.T) {
-	commit := commitInfo{hash: "abcdef1234567890", author: "Alice", email: "alice@example.com", date: time.Now().Add(-2 * time.Hour).Format(time.RFC3339), subject: "subject line", message: "subject line\n\nthe reason is in the body\n\nFixes: #12"}
-	m := model{width: 100, height: 30, wrap: true, screen: "commit", history: historyState{current: commit, meta: commit, changes: []change{{path: "file.go", diff: "@@ -0,0 +1 @@\n+line\n"}}}}
+	commit := CommitInfo{Hash: "abcdef1234567890", Author: "Alice", Email: "alice@example.com", Date: time.Now().Add(-2 * time.Hour).Format(time.RFC3339), Subject: "subject line", Message: "subject line\n\nthe reason is in the body\n\nFixes: #12"}
+	m := model{width: 100, height: 30, wrap: true, screen: "commit", history: historyState{current: commit, meta: commit, changes: []Change{{Path: "file.go", Diff: "@@ -0,0 +1 @@\n+line\n"}}}}
 	m.rebuildCommit()
 	if !strings.Contains(headerText(m.history.rows), "the reason is in the body") || !strings.Contains(headerText(m.history.rows), "2h ago") {
 		t.Fatalf("header block missing: %s", headerText(m.history.rows))
@@ -83,8 +83,8 @@ func TestCommitHeaderSearchAndJumpToFirstFile(t *testing.T) {
 }
 
 func TestCommitHeaderCollapsesWithHL(t *testing.T) {
-	commit := commitInfo{hash: "abcdef1234567890", author: "Alice", email: "alice@example.com", date: time.Now().Format(time.RFC3339), subject: "subject", message: "subject\n\nbody"}
-	m := model{width: 100, height: 30, wrap: true, screen: "commit", history: historyState{current: commit, meta: commit, changes: []change{{path: "file.go", diff: "@@ -0,0 +1 @@\n+line\n"}}}}
+	commit := CommitInfo{Hash: "abcdef1234567890", Author: "Alice", Email: "alice@example.com", Date: time.Now().Format(time.RFC3339), Subject: "subject", Message: "subject\n\nbody"}
+	m := model{width: 100, height: 30, wrap: true, screen: "commit", history: historyState{current: commit, meta: commit, changes: []Change{{Path: "file.go", Diff: "@@ -0,0 +1 @@\n+line\n"}}}}
 	m.rebuildCommit()
 	expanded := len(m.history.rows)
 	updated, _ := m.handleCommitKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
@@ -102,17 +102,17 @@ func TestCommitHeaderCollapsesWithHL(t *testing.T) {
 func TestStreamCommitAttachesMetadata(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file.txt", "one\n")
-	if _, err := r.commit("first commit\n\nbody text"); err != nil {
+	if _, err := r.Commit("first commit\n\nbody text"); err != nil {
 		t.Fatal(err)
 	}
-	hash, err := r.command("rev-parse", "HEAD")
+	hash, err := r.Command("rev-parse", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
-	stream := r.streamCommit(context.Background(), strings.TrimSpace(string(hash)), startupSyntaxLines)
+	stream := r.StreamCommit(context.Background(), strings.TrimSpace(string(hash)), startupSyntaxLines)
 	first := <-stream
-	if first.meta.hash != strings.TrimSpace(string(hash)) || first.meta.author != "Test" || !strings.Contains(first.meta.message, "body text") {
-		t.Fatalf("first chunk metadata: %#v", first.meta)
+	if first.Meta.Hash != strings.TrimSpace(string(hash)) || first.Meta.Author != "Test" || !strings.Contains(first.Meta.Message, "body text") {
+		t.Fatalf("first chunk metadata: %#v", first.Meta)
 	}
 	for range stream {
 	}

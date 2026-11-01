@@ -3,9 +3,9 @@ package main
 import tea "github.com/charmbracelet/bubbletea"
 
 func (m model) toggleWhitespace() (tea.Model, tea.Cmd) {
-	m.repo.ignoreSpace = !m.repo.ignoreSpace
+	m.repo.IgnoreSpace = !m.repo.IgnoreSpace
 	m.flash = ""
-	if !m.repo.ignoreSpace {
+	if !m.repo.IgnoreSpace {
 		m.flash = "Showing whitespace"
 	}
 	m.generation++
@@ -33,10 +33,10 @@ func (m model) toggleWhitespace() (tea.Model, tea.Cmd) {
 		m.history.streamEndPending = false
 		m.history.loading = true
 		m.history.commitLoadingVisible = false
-		hash, request := m.history.current.hash, m.history.request
+		hash, request := m.history.current.Hash, m.history.request
 		if m.stash.viewing {
 			commands = append(commands, func() tea.Msg {
-				changes, err := repo.stashChanges(hash)
+				changes, err := repo.StashChanges(hash)
 				return stashDiffLoaded{changes: changes, request: request, err: err}
 			})
 			break
@@ -48,7 +48,7 @@ func (m model) toggleWhitespace() (tea.Model, tea.Cmd) {
 		m.resetSequenceStream()
 		m.sequence.request++
 		m.sequence.rowCache = nil
-		m.sequence.changes = make([][]change, len(m.sequence.commits))
+		m.sequence.changes = make([][]Change, len(m.sequence.commits))
 		m.sequence.states = make([]sequenceLoadState, len(m.sequence.commits))
 		m.sequence.errors = make([]string, len(m.sequence.commits))
 		m.sequence.loading = len(m.sequence.commits) > 0

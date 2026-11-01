@@ -45,8 +45,8 @@ func TestRenameHighlightMarksHiddenDifferences(t *testing.T) {
 }
 
 func TestRenameHighlightWrapAndRendering(t *testing.T) {
-	c := change{oldPath: "prefix/old-name/файл.go", path: "prefix/new-name/файл.go", diff: "similarity index 100%\n"}
-	m := model{width: 16, height: 20, wrap: true, snapshot: snapshot{unstaged: []change{c}}}
+	c := Change{OldPath: "prefix/old-name/файл.go", Path: "prefix/new-name/файл.go", Diff: "similarity index 100%\n"}
+	m := model{width: 16, height: 20, wrap: true, snapshot: Snapshot{Unstaged: []Change{c}}}
 	m.rebuild()
 	var removed, added strings.Builder
 	newPath := false

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/jeffbrennan/pane/internal/git"
+
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,9 +21,9 @@ func evalPath(t *testing.T, path string) string {
 	return resolved
 }
 
-func branchByName(entries []branchEntry, name string) *branchEntry {
+func branchByName(entries []BranchEntry, name string) *BranchEntry {
 	for i := range entries {
-		if entries[i].name == name {
+		if entries[i].Name == name {
 			return &entries[i]
 		}
 	}
@@ -31,26 +33,26 @@ func branchByName(entries []branchEntry, name string) *branchEntry {
 func TestBranchesListMarksCurrentAndWorktrees(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file.txt", "one\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.command("branch", "side"); err != nil {
+	if _, err := r.Command("branch", "side"); err != nil {
 		t.Fatal(err)
 	}
 	worktree := filepath.Join(t.TempDir(), "wt")
-	if _, err := r.command("worktree", "add", worktree, "side"); err != nil {
+	if _, err := r.Command("worktree", "add", worktree, "side"); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := r.branches(false)
+	entries, err := r.Branches(false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	main := branchByName(entries, "main")
 	side := branchByName(entries, "side")
-	if main == nil || !main.current || main.worktree != "" {
+	if main == nil || !main.Current || main.Worktree != "" {
 		t.Fatalf("main entry: %#v", main)
 	}
-	if side == nil || side.current || evalPath(t, side.worktree) != evalPath(t, worktree) {
+	if side == nil || side.Current || evalPath(t, side.Worktree) != evalPath(t, worktree) {
 		t.Fatalf("side entry: %#v", side)
 	}
 }
@@ -58,13 +60,13 @@ func TestBranchesListMarksCurrentAndWorktrees(t *testing.T) {
 func TestSwitchBranch(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file.txt", "one\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.command("branch", "other"); err != nil {
+	if _, err := r.Command("branch", "other"); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := r.branches(false)
+	entries, err := r.Branches(false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +79,7 @@ func TestSwitchBranch(t *testing.T) {
 	if msg, ok := cmd().(branchActionDone); !ok || msg.err != nil {
 		t.Fatalf("switch failed: %#v", msg)
 	}
-	head, err := r.command("symbolic-ref", "--short", "HEAD")
+	head, err := r.Command("symbolic-ref", "--short", "HEAD")
 	if err != nil || strings.TrimSpace(string(head)) != "other" {
 		t.Fatalf("HEAD after switch: %q %v", head, err)
 	}
@@ -86,17 +88,17 @@ func TestSwitchBranch(t *testing.T) {
 func TestSwitchRefusesCheckedOutElsewhere(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file.txt", "one\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.command("branch", "side"); err != nil {
+	if _, err := r.Command("branch", "side"); err != nil {
 		t.Fatal(err)
 	}
 	worktree := filepath.Join(t.TempDir(), "wt")
-	if _, err := r.command("worktree", "add", worktree, "side"); err != nil {
+	if _, err := r.Command("worktree", "add", worktree, "side"); err != nil {
 		t.Fatal(err)
 	}
-	entries, _ := r.branches(false)
+	entries, _ := r.Branches(false)
 	m := model{screen: "branches", repo: r, branch: branchState{entries: entries}}
 	updated, cmd := m.switchBranch(*branchByName(entries, "side"))
 	m = updated.(model)
@@ -108,7 +110,7 @@ func TestSwitchRefusesCheckedOutElsewhere(t *testing.T) {
 func TestCreateAndDeleteBranches(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file.txt", "one\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
 	m := model{screen: "branches", repo: r}
@@ -119,14 +121,14 @@ func TestCreateAndDeleteBranches(t *testing.T) {
 	if msg := cmd().(branchActionDone); msg.err != nil {
 		t.Fatalf("create: %v", msg.err)
 	}
-	if out, err := r.command("symbolic-ref", "--short", "HEAD"); err != nil || strings.TrimSpace(string(out)) != "feature/x" {
+	if out, err := r.Command("symbolic-ref", "--short", "HEAD"); err != nil || strings.TrimSpace(string(out)) != "feature/x" {
 		t.Fatalf("HEAD %q %v", out, err)
 	}
-	if _, err := r.command("switch", "main"); err != nil {
+	if _, err := r.Command("switch", "main"); err != nil {
 		t.Fatal(err)
 	}
 
-	entries, _ := r.branches(false)
+	entries, _ := r.Branches(false)
 	merged := *branchByName(entries, "feature/x")
 	_ = updated
 	updated, cmd = m.deleteBranch(merged, false)
@@ -136,7 +138,7 @@ func TestCreateAndDeleteBranches(t *testing.T) {
 	if msg := cmd().(branchActionDone); msg.err != nil {
 		t.Fatalf("delete merged: %v", msg.err)
 	}
-	if out, _ := r.command("rev-parse", "--verify", "--quiet", "refs/heads/feature/x"); len(out) != 0 {
+	if out, _ := r.Command("rev-parse", "--verify", "--quiet", "refs/heads/feature/x"); len(out) != 0 {
 		t.Fatal("branch still exists")
 	}
 }
@@ -144,20 +146,20 @@ func TestCreateAndDeleteBranches(t *testing.T) {
 func TestDeleteUnmergedRequiresForce(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file.txt", "one\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.command("switch", "-c", "unmerged"); err != nil {
+	if _, err := r.Command("switch", "-c", "unmerged"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "other.txt", "two\n")
-	if _, err := r.commit("diverged"); err != nil {
+	if _, err := r.Commit("diverged"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.command("switch", "main"); err != nil {
+	if _, err := r.Command("switch", "main"); err != nil {
 		t.Fatal(err)
 	}
-	entries, _ := r.branches(false)
+	entries, _ := r.Branches(false)
 	entry := *branchByName(entries, "unmerged")
 	m := model{screen: "branches", repo: r}
 	_, cmd := m.deleteBranch(entry, false)
@@ -173,23 +175,23 @@ func TestDeleteUnmergedRequiresForce(t *testing.T) {
 func TestDeleteRefusesCurrentAndWorktreeBranches(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file.txt", "one\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.command("branch", "side"); err != nil {
+	if _, err := r.Command("branch", "side"); err != nil {
 		t.Fatal(err)
 	}
 	worktree := filepath.Join(t.TempDir(), "wt")
-	if _, err := r.command("worktree", "add", worktree, "side"); err != nil {
+	if _, err := r.Command("worktree", "add", worktree, "side"); err != nil {
 		t.Fatal(err)
 	}
 	m := model{screen: "branches", repo: r}
-	updated, cmd := m.confirmDeleteBranch(branchEntry{name: "main", current: true}, false)
+	updated, cmd := m.confirmDeleteBranch(BranchEntry{Name: "main", Current: true}, false)
 	m = updated.(model)
 	if cmd != nil || m.modal != "" || !strings.Contains(m.flash, "checked out") {
 		t.Fatalf("current branch: %q %q", m.flash, m.modal)
 	}
-	updated, cmd = m.confirmDeleteBranch(branchEntry{name: "side", worktree: worktree}, false)
+	updated, cmd = m.confirmDeleteBranch(BranchEntry{Name: "side", Worktree: worktree}, false)
 	m = updated.(model)
 	if cmd != nil || m.modal != "" || !strings.Contains(m.flash, "Checked out") {
 		t.Fatalf("worktree branch: %q %q", m.flash, m.modal)
@@ -199,36 +201,36 @@ func TestDeleteRefusesCurrentAndWorktreeBranches(t *testing.T) {
 func TestWorktreePorcelainAndPathConvention(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file.txt", "one\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
 	parent := t.TempDir()
 	first := filepath.Join(parent, "one")
 	second := filepath.Join(parent, "two")
-	if _, err := r.command("worktree", "add", "-b", "one", first); err != nil {
+	if _, err := r.Command("worktree", "add", "-b", "one", first); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.command("worktree", "add", "-b", "two", second); err != nil {
+	if _, err := r.Command("worktree", "add", "-b", "two", second); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := r.worktrees()
+	entries, err := r.Worktrees()
 	if err != nil || len(entries) != 3 {
 		t.Fatalf("worktrees: %#v %v", entries, err)
 	}
 	common := evalPath(t, filepath.Dir(parent))
-	if got := commonWorktreeDir(entries); got != common {
+	if got := git.CommonWorktreeDir(entries); got != common {
 		t.Fatalf("common dir %q, want %q", got, common)
 	}
-	if got := worktreePathFor(entries, r.root, "feature/x"); got != filepath.Join(common, "feature-x") {
+	if got := git.WorktreePathFor(entries, r.Root, "feature/x"); got != filepath.Join(common, "feature-x") {
 		t.Fatalf("path convention %q", got)
 	}
-	if got := worktreeDisplayPath(entries, evalPath(t, first)); !strings.HasSuffix(got, string(filepath.Separator)+"one") && got != "one" {
+	if got := git.WorktreeDisplayPath(entries, evalPath(t, first)); !strings.HasSuffix(got, string(filepath.Separator)+"one") && got != "one" {
 		t.Fatalf("display path %q", got)
 	}
-	if _, err := r.command("worktree", "remove", first); err != nil {
+	if _, err := r.Command("worktree", "remove", first); err != nil {
 		t.Fatal(err)
 	}
-	entries, _ = r.worktrees()
+	entries, _ = r.Worktrees()
 	if len(entries) != 2 {
 		t.Fatalf("remove left %d worktrees", len(entries))
 	}
@@ -237,7 +239,7 @@ func TestWorktreePorcelainAndPathConvention(t *testing.T) {
 func TestWorktreeAddRemoveRefusals(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file.txt", "one\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(t.TempDir(), "wt")
@@ -253,7 +255,7 @@ func TestWorktreeAddRemoveRefusals(t *testing.T) {
 	if msg := cmd().(worktreeActionDone); msg.err != nil {
 		t.Fatalf("create worktree: %v", msg.err)
 	}
-	entries, _ := r.worktrees()
+	entries, _ := r.Worktrees()
 	entry := *worktreeEntryFor(entries, evalPath(t, path))
 	_, cmd = m.removeWorktree(entry, false)
 	if msg := cmd().(worktreeActionDone); msg.err != nil {
@@ -262,13 +264,13 @@ func TestWorktreeAddRemoveRefusals(t *testing.T) {
 
 	// A dirty worktree is refused without force.
 	dirty := filepath.Join(t.TempDir(), "dirty")
-	if _, err := r.command("worktree", "add", "-b", "dirty", dirty); err != nil {
+	if _, err := r.Command("worktree", "add", "-b", "dirty", dirty); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dirty, "file.txt"), []byte("changed\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	entries, _ = r.worktrees()
+	entries, _ = r.Worktrees()
 	dirtyEntry := *worktreeEntryFor(entries, evalPath(t, dirty))
 	_, cmd = m.removeWorktree(dirtyEntry, false)
 	if msg := cmd().(worktreeActionDone); msg.err == nil {
@@ -283,22 +285,22 @@ func TestWorktreeAddRemoveRefusals(t *testing.T) {
 func TestSwitchWorktreeKeepsSessionToggles(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file.txt", "one\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
 	worktree := filepath.Join(t.TempDir(), "wt")
-	if _, err := r.command("worktree", "add", "-b", "side", worktree); err != nil {
+	if _, err := r.Command("worktree", "add", "-b", "side", worktree); err != nil {
 		t.Fatal(err)
 	}
 	rootDir, _ := os.Getwd()
-	if err := os.Chdir(r.root); err != nil {
+	if err := os.Chdir(r.Root); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chdir(rootDir) })
 	m := model{width: 100, height: 30, wrap: false, lightTheme: true, themeAuto: false, screen: "worktrees", repo: r}
 	updated, cmd := m.switchWorktree(worktree)
 	next := updated.(model)
-	if evalPath(t, next.repo.root) != evalPath(t, worktree) || next.wrap || !next.lightTheme || next.themeAuto || next.screen != "" {
+	if evalPath(t, next.repo.Root) != evalPath(t, worktree) || next.wrap || !next.lightTheme || next.themeAuto || next.screen != "" {
 		t.Fatalf("session state: %#v", next)
 	}
 	if cmd == nil || !next.loading {
@@ -309,16 +311,16 @@ func TestSwitchWorktreeKeepsSessionToggles(t *testing.T) {
 func TestWorktreeStatusCountsDirtyFiles(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file.txt", "one\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
-	dirty, _, err := r.statusCount(r.root)
+	dirty, _, err := r.StatusCount(r.Root)
 	if err != nil || dirty != 0 {
 		t.Fatalf("clean: %d %v", dirty, err)
 	}
 	writeFile(t, r, "file.txt", "two\n")
 	writeFile(t, r, "new.txt", "new\n")
-	dirty, activity, err := r.statusCount(r.root)
+	dirty, activity, err := r.StatusCount(r.Root)
 	if err != nil || dirty != 2 {
 		t.Fatalf("dirty: %d %v", dirty, err)
 	}
@@ -326,10 +328,10 @@ func TestWorktreeStatusCountsDirtyFiles(t *testing.T) {
 		t.Fatal("no activity time")
 	}
 	future := time.Now().Add(2 * time.Hour).Truncate(time.Second)
-	if err := os.Chtimes(filepath.Join(r.root, "new.txt"), future, future); err != nil {
+	if err := os.Chtimes(filepath.Join(r.Root, "new.txt"), future, future); err != nil {
 		t.Fatal(err)
 	}
-	_, activity, err = r.statusCount(r.root)
+	_, activity, err = r.StatusCount(r.Root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,17 +343,17 @@ func TestWorktreeStatusCountsDirtyFiles(t *testing.T) {
 func TestHistoryDecoratesOtherWorktreeHeads(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file.txt", "one\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.command("worktree", "add", "-b", "side", filepath.Join(t.TempDir(), "wt")); err != nil {
+	if _, err := r.Command("worktree", "add", "-b", "side", filepath.Join(t.TempDir(), "wt")); err != nil {
 		t.Fatal(err)
 	}
-	commits, err := r.history(0, historyPage)
+	commits, err := r.History(0, historyPage)
 	if err != nil {
 		t.Fatal(err)
 	}
-	heads := map[string]string{commits[0].hash: "side"}
+	heads := map[string]string{commits[0].Hash: "side"}
 	m := model{width: 160, height: 20, screen: "history", repo: r,
 		history: historyState{commits: commits}, worktreeHeads: heads}
 	if view := m.View(); !strings.Contains(view, "⌂ side") {
@@ -362,14 +364,14 @@ func TestHistoryDecoratesOtherWorktreeHeads(t *testing.T) {
 func TestBranchAndWorktreeScreensRender(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file.txt", "one\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.command("branch", "side"); err != nil {
+	if _, err := r.Command("branch", "side"); err != nil {
 		t.Fatal(err)
 	}
 	worktree := filepath.Join(t.TempDir(), "wt")
-	if _, err := r.command("worktree", "add", worktree, "side"); err != nil {
+	if _, err := r.Command("worktree", "add", worktree, "side"); err != nil {
 		t.Fatal(err)
 	}
 	m := model{width: 120, height: 20, repo: r}
@@ -392,13 +394,13 @@ func TestBranchAndWorktreeScreensRender(t *testing.T) {
 func TestStatusCountTreatsRenamesAsOneChange(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "old.txt", "one\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.command("mv", "old.txt", "new.txt"); err != nil {
+	if _, err := r.Command("mv", "old.txt", "new.txt"); err != nil {
 		t.Fatal(err)
 	}
-	dirty, activity, err := r.statusCount(r.root)
+	dirty, activity, err := r.StatusCount(r.Root)
 	if err != nil || dirty != 1 {
 		t.Fatalf("rename: %d %v", dirty, err)
 	}
@@ -410,7 +412,7 @@ func TestStatusCountTreatsRenamesAsOneChange(t *testing.T) {
 func TestWorktreeForceDialogNamesDirtyCount(t *testing.T) {
 	m := model{width: 100, height: 30, modal: "worktree-delete",
 		worktrees: worktreeState{
-			confirm:      worktreeEntry{path: "/tmp/wt"},
+			confirm:      WorktreeEntry{Path: "/tmp/wt"},
 			confirmForce: true,
 			status:       map[string]worktreeStatus{"/tmp/wt": {dirty: 7, loaded: true}},
 		}}
@@ -421,27 +423,27 @@ func TestWorktreeForceDialogNamesDirtyCount(t *testing.T) {
 }
 
 func TestBranchAndWorktreeFiltersUsePickerMatcher(t *testing.T) {
-	branches := model{branch: branchState{entries: []branchEntry{{name: "feature/x"}, {name: "main"}}, filter: "fx"}}
+	branches := model{branch: branchState{entries: []BranchEntry{{Name: "feature/x"}, {Name: "main"}}, filter: "fx"}}
 	matches := branches.filteredBranches()
-	if len(matches) != 1 || matches[0].name != "feature/x" {
+	if len(matches) != 1 || matches[0].Name != "feature/x" {
 		t.Fatalf("branch subsequence filter: %#v", matches)
 	}
 	worktrees := model{worktrees: worktreeState{
-		entries: []worktreeEntry{{path: "/tmp/pane-feature", branch: "feature"}, {path: "/tmp/other", branch: "main"}},
+		entries: []WorktreeEntry{{Path: "/tmp/pane-feature", Branch: "feature"}, {Path: "/tmp/other", Branch: "main"}},
 		filter:  "pfe",
 	}}
 	sorted := worktrees.sortedWorktrees()
-	if len(sorted) != 1 || sorted[0].branch != "feature" {
+	if len(sorted) != 1 || sorted[0].Branch != "feature" {
 		t.Fatalf("worktree subsequence filter: %#v", sorted)
 	}
 }
 
 func TestPruneHintOnlyWhenPrunable(t *testing.T) {
-	m := model{width: 120, height: 20, worktrees: worktreeState{entries: []worktreeEntry{{path: "/tmp/one", branch: "main"}}}}
+	m := model{width: 120, height: 20, worktrees: worktreeState{entries: []WorktreeEntry{{Path: "/tmp/one", Branch: "main"}}}}
 	if view := m.worktreeView(); strings.Contains(view, "prune") {
 		t.Fatalf("prune hint shown without a prunable worktree: %q", view)
 	}
-	m.worktrees.entries = append(m.worktrees.entries, worktreeEntry{path: "/tmp/gone", prunable: true})
+	m.worktrees.entries = append(m.worktrees.entries, WorktreeEntry{Path: "/tmp/gone", Prunable: true})
 	if view := m.worktreeView(); !strings.Contains(view, "prune") {
 		t.Fatalf("prune hint missing: %q", view)
 	}

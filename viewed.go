@@ -41,8 +41,8 @@ func (m model) toggleViewedCommit() (tea.Model, tea.Cmd) {
 	}
 	blob := ""
 	for _, c := range m.history.changes {
-		if c.path == path {
-			blob = diffBlob(c.diff)
+		if c.Path == path {
+			blob = diffBlob(c.Diff)
 			break
 		}
 	}
@@ -94,8 +94,8 @@ func (m model) toggleViewedSequence() (tea.Model, tea.Cmd) {
 	}
 	blob := ""
 	for _, c := range m.sequence.changes[index] {
-		if c.path == path {
-			blob = diffBlob(c.diff)
+		if c.Path == path {
+			blob = diffBlob(c.Diff)
 			break
 		}
 	}
@@ -104,7 +104,7 @@ func (m model) toggleViewedSequence() (tea.Model, tea.Cmd) {
 	}
 	marked := !m.viewed.marked(identity, path, blob)
 	m.viewed.set(identity, path, blob, marked)
-	fileKey := contextKey{path: path, commit: m.sequence.commits[index].hash}
+	fileKey := contextKey{path: path, commit: m.sequence.commits[index].Hash}
 	if m.generatedHandled == nil {
 		m.generatedHandled = make(map[contextKey]bool)
 	}

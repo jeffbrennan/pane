@@ -5,12 +5,12 @@ import (
 	"testing"
 )
 
-func sequenceStreamModel(commits []commitInfo) model {
+func sequenceStreamModel(commits []CommitInfo) model {
 	return model{
 		width: 100, height: 20, wrap: true, screen: "sequence",
 		sequence: sequenceState{
 			commits: commits,
-			changes: make([][]change, len(commits)),
+			changes: make([][]Change, len(commits)),
 			states:  make([]sequenceLoadState, len(commits)),
 			errors:  make([]string, len(commits)),
 			loading: true, request: 1,
@@ -19,26 +19,26 @@ func sequenceStreamModel(commits []commitInfo) model {
 }
 
 func TestSequenceStreamsCommitChunks(t *testing.T) {
-	m := sequenceStreamModel([]commitInfo{{hash: "abcdef"}})
+	m := sequenceStreamModel([]CommitInfo{{Hash: "abcdef"}})
 	m.sequence.states[0] = sequenceLoading
-	first := commitChunk{
-		paths:   []string{"one.go", "two.go"},
-		changes: []change{{path: "one.go", diff: "@@ -0,0 +1 @@\n+one\n"}},
-		loaded:  1,
-		meta:    commitInfo{hash: "abcdef", author: "Alice", subject: "subject", message: "subject\n\nbody"},
+	first := CommitChunk{
+		Paths:   []string{"one.go", "two.go"},
+		Changes: []Change{{Path: "one.go", Diff: "@@ -0,0 +1 @@\n+one\n"}},
+		Loaded:  1,
+		Meta:    CommitInfo{Hash: "abcdef", Author: "Alice", Subject: "subject", Message: "subject\n\nbody"},
 	}
 	updated, cmd := m.Update(sequenceChunkLoaded{index: 0, request: 1, chunk: first})
 	m = updated.(model)
 	if cmd == nil {
 		t.Fatal("first chunk did not re-arm the stream")
 	}
-	if m.sequence.commits[0].author != "Alice" || len(m.sequence.changes[0]) != 1 || len(m.rows) == 0 {
+	if m.sequence.commits[0].Author != "Alice" || len(m.sequence.changes[0]) != 1 || len(m.rows) == 0 {
 		t.Fatalf("first chunk state: %#v rows=%d", m.sequence.commits[0], len(m.rows))
 	}
-	done := commitChunk{
-		paths:   []string{"one.go", "two.go"},
-		changes: []change{{path: "two.go", diff: "@@ -0,0 +1 @@\n+two\n"}},
-		loaded:  2, done: true,
+	done := CommitChunk{
+		Paths:   []string{"one.go", "two.go"},
+		Changes: []Change{{Path: "two.go", Diff: "@@ -0,0 +1 @@\n+two\n"}},
+		Loaded:  2, Done: true,
 	}
 	updated, cmd = m.Update(sequenceChunkLoaded{index: 0, request: 1, chunk: done})
 	m = updated.(model)
@@ -60,9 +60,9 @@ func TestSequenceStreamsCommitChunks(t *testing.T) {
 }
 
 func TestSequenceStreamMarksErrorsAndContinues(t *testing.T) {
-	m := sequenceStreamModel([]commitInfo{{hash: "aaaa"}, {hash: "bbbb"}})
+	m := sequenceStreamModel([]CommitInfo{{Hash: "aaaa"}, {Hash: "bbbb"}})
 	m.sequence.states[0], m.sequence.states[1] = sequenceLoading, sequencePending
-	updated, _ := m.Update(sequenceChunkLoaded{index: 0, request: 1, chunk: commitChunk{done: true, err: context.Canceled}})
+	updated, _ := m.Update(sequenceChunkLoaded{index: 0, request: 1, chunk: CommitChunk{Done: true, Err: context.Canceled}})
 	m = updated.(model)
 	if m.sequence.states[0] != sequenceFailed || m.sequence.errors[0] == "" {
 		t.Fatalf("failed state: %#v", m.sequence)
@@ -70,9 +70,9 @@ func TestSequenceStreamMarksErrorsAndContinues(t *testing.T) {
 }
 
 func TestSequenceStreamStaleChunksIgnored(t *testing.T) {
-	m := sequenceStreamModel([]commitInfo{{hash: "aaaa"}})
+	m := sequenceStreamModel([]CommitInfo{{Hash: "aaaa"}})
 	m.sequence.states[0] = sequenceLoading
-	updated, _ := m.Update(sequenceChunkLoaded{index: 0, request: 0, chunk: commitChunk{changes: []change{{path: "x", diff: "+x"}}, loaded: 1}})
+	updated, _ := m.Update(sequenceChunkLoaded{index: 0, request: 0, chunk: CommitChunk{Changes: []Change{{Path: "x", Diff: "+x"}}, Loaded: 1}})
 	m = updated.(model)
 	if len(m.sequence.changes[0]) != 0 {
 		t.Fatal("stale chunk was applied")
@@ -82,14 +82,14 @@ func TestSequenceStreamStaleChunksIgnored(t *testing.T) {
 func TestSequenceStreamLoadsRealCommit(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "one.txt", "one\n")
-	if _, err := r.commit("first"); err != nil {
+	if _, err := r.Commit("first"); err != nil {
 		t.Fatal(err)
 	}
-	commit, err := r.resolveCommit("HEAD")
+	commit, err := r.ResolveCommit("HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := sequenceStreamModel([]commitInfo{{hash: commit.hash}})
+	m := sequenceStreamModel([]CommitInfo{{Hash: commit.Hash}})
 	m.repo = r
 	m.sequence.states[0] = sequenceLoading
 	cmd := m.startSequenceStream(0)
@@ -97,7 +97,7 @@ func TestSequenceStreamLoadsRealCommit(t *testing.T) {
 		t.Fatal("no stream command")
 	}
 	msg := cmd().(sequenceChunkLoaded)
-	if msg.chunk.err != nil || len(msg.chunk.changes) == 0 || msg.chunk.meta.hash != commit.hash {
+	if msg.chunk.Err != nil || len(msg.chunk.Changes) == 0 || msg.chunk.Meta.Hash != commit.Hash {
 		t.Fatalf("first chunk: %#v", msg.chunk)
 	}
 	m.resetSequenceStream()

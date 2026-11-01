@@ -43,9 +43,9 @@ func (m *model) rebuildRows(previous func(path string) ([]row, bool)) {
 	if len(m.rows) > 0 && m.pos < len(m.rows) {
 		anchor = m.rows[m.pos]
 	}
-	changes := m.snapshot.unstaged
+	changes := m.snapshot.Unstaged
 	if m.staged {
-		changes = m.snapshot.staged
+		changes = m.snapshot.Staged
 	}
 	changes = m.applySyntaxDemand(contextKey{commit: m.contextCommit, staged: m.staged, base: m.contextBase}, changes)
 	m.collapseGenerated(changes)
@@ -116,9 +116,9 @@ func (m *model) reflowRows(oldContentWidth int) {
 	if len(m.rows) > 0 && m.pos < len(m.rows) {
 		anchor = m.rows[m.pos]
 	}
-	changes := m.snapshot.unstaged
+	changes := m.snapshot.Unstaged
 	if m.staged {
-		changes = m.snapshot.staged
+		changes = m.snapshot.Staged
 	}
 	changes = m.applySyntaxDemand(contextKey{commit: m.contextCommit, staged: m.staged, base: m.contextBase}, changes)
 	byPath := make(map[string][]row, len(changes))
@@ -141,7 +141,7 @@ func (m *model) reflowRows(oldContentWidth int) {
 	width := m.diffContentWidth()
 	plans := make([]filePlan, len(changes))
 	parallelEach(len(changes), func(i int) {
-		part, ok := byPath[changes[i].path]
+		part, ok := byPath[changes[i].Path]
 		if oldContentWidth > 0 && ok && !fileNeedsReflow(part, width, m.gutterWidth, m.wrap) {
 			plans[i].part = part
 			return
@@ -156,7 +156,7 @@ func (m *model) reflowRows(oldContentWidth int) {
 	})
 	type rebuild struct {
 		index  int
-		change change
+		change Change
 	}
 	var rebuilds []rebuild
 	for i := range changes {
@@ -166,7 +166,7 @@ func (m *model) reflowRows(oldContentWidth int) {
 	}
 	parallelEach(len(rebuilds), func(i int) {
 		r := rebuilds[i]
-		plans[r.index].part = changeRows(r.change, r.index > 0, width, m.wrap, m.expandedDeleted[r.change.path], m.gutterWidth, m.shortPaths)
+		plans[r.index].part = changeRows(r.change, r.index > 0, width, m.wrap, m.expandedDeleted[r.change.Path], m.gutterWidth, m.shortPaths)
 	})
 	rows := assembleRowPlans(plans, m.rows)
 	if len(rows) > 0 && rows[0].kind == 's' {
@@ -253,10 +253,10 @@ func fileRows(rows []row, path string) ([]row, bool) {
 	return nil, false
 }
 
-func (m model) displayGutterWidth(changes []change) int {
+func (m model) displayGutterWidth(changes []Change) int {
 	widths := make([]int, len(changes))
 	parallelEach(len(changes), func(i int) {
-		widths[i] = lineNumberWidth(strings.Split(changes[i].diff, "\n"))
+		widths[i] = lineNumberWidth(strings.Split(changes[i].Diff, "\n"))
 	})
 	width := m.gutterFloor
 	for _, candidate := range widths {
@@ -268,38 +268,38 @@ func (m model) displayGutterWidth(changes []change) int {
 // spliceRows builds rows only for files whose diff changed and keeps the
 // previous rows for the rest. Context and collapse are view state, not change
 // state, so those views retain rows when their display diff is unchanged.
-func spliceRows(changes []change, m model, previous func(path string) ([]row, bool), gutterWidth int) []row {
+func spliceRows(changes []Change, m model, previous func(path string) ([]row, bool), gutterWidth int) []row {
 	view := m
 	if m.screen == "commit" || m.screen == "base" {
 		view = m.commitModel()
 	}
 	oldChanges := view.previousChanges
 	keep := func(i int) bool {
-		if oldChanges == nil || i >= len(oldChanges) || changes[i].oldPath != oldChanges[i].oldPath || changes[i].path != oldChanges[i].path {
+		if oldChanges == nil || i >= len(oldChanges) || changes[i].OldPath != oldChanges[i].OldPath || changes[i].Path != oldChanges[i].Path {
 			return false
 		}
-		fileKey := contextKey{path: changes[i].path, commit: view.contextCommit, staged: view.staged, base: view.contextBase}
+		fileKey := contextKey{path: changes[i].Path, commit: view.contextCommit, staged: view.staged, base: view.contextBase}
 		if view.collapsedFiles[fileKey] {
 			return false
 		}
-		if current, ok := view.contextFiles[fileKey]; ok && current.base == changes[i].diff && current.diff != "" && len(current.ranges) > 0 {
+		if current, ok := view.contextFiles[fileKey]; ok && current.base == changes[i].Diff && current.diff != "" && len(current.ranges) > 0 {
 			return false
 		}
-		return changes[i].diff == oldChanges[i].diff
+		return changes[i].Diff == oldChanges[i].Diff
 	}
 	parts := make([][]row, len(changes))
 	type build struct{ index int }
 	var builds []build
 	for i := range changes {
 		if keep(i) {
-			parts[i], _ = previous(changes[i].path)
+			parts[i], _ = previous(changes[i].Path)
 		} else {
 			builds = append(builds, build{i})
 		}
 	}
 	parallelEach(len(builds), func(i int) {
 		index := builds[i].index
-		parts[index] = changeRows(changes[index], index > 0, view.diffContentWidth(), view.wrap, view.expandedDeleted[changes[index].path], gutterWidth, view.shortPaths)
+		parts[index] = changeRows(changes[index], index > 0, view.diffContentWidth(), view.wrap, view.expandedDeleted[changes[index].Path], gutterWidth, view.shortPaths)
 	})
 	total := 0
 	for _, part := range parts {
@@ -321,12 +321,12 @@ func (m *model) toggleDeletedFile() {
 		return
 	}
 	path := m.rows[m.pos].path
-	changes := m.snapshot.unstaged
+	changes := m.snapshot.Unstaged
 	if m.staged {
-		changes = m.snapshot.staged
+		changes = m.snapshot.Staged
 	}
 	for _, c := range changes {
-		if c.path != path || !strings.Contains(c.diff, "\ndeleted file mode ") || strings.Contains(c.diff, "\nnew file mode ") {
+		if c.Path != path || !strings.Contains(c.Diff, "\ndeleted file mode ") || strings.Contains(c.Diff, "\nnew file mode ") {
 			continue
 		}
 		if m.expandedDeleted == nil {

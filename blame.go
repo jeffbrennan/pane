@@ -12,7 +12,7 @@ type blameLoaded struct {
 	hash      string
 	path      string
 	line      int
-	commit    commitInfo
+	commit    CommitInfo
 	jumps     []jumpLocation
 	jumpIndex int
 	before    jumpLocation
@@ -35,8 +35,8 @@ func (m model) startBlame() (tea.Model, tea.Cmd) {
 	}
 	oldPath := r.path
 	for _, c := range m.history.changes {
-		if c.path == r.path && c.oldPath != "" {
-			oldPath = c.oldPath
+		if c.Path == r.path && c.OldPath != "" {
+			oldPath = c.OldPath
 			break
 		}
 	}
@@ -62,15 +62,15 @@ func (m model) startBlame() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	repo := m.commitRepository()
-	hash := m.history.current.hash
+	hash := m.history.current.Hash
 	before := view.location()
 	jumps := append([]jumpLocation(nil), view.jumps...)
 	jumpIndex := view.jumpIndex
 	return m, func() tea.Msg {
-		out, err := repo.command("blame", "-L", fmt.Sprintf("%d,%d", line, line), "--porcelain", hash+"^", "--", oldPath)
+		out, err := repo.Command("blame", "-L", fmt.Sprintf("%d,%d", line, line), "--porcelain", hash+"^", "--", oldPath)
 		if err != nil {
 			// A root commit has no parent to blame.
-			out, err = repo.command("blame", "-L", fmt.Sprintf("%d,%d", line, line), "--porcelain", hash, "--", oldPath)
+			out, err = repo.Command("blame", "-L", fmt.Sprintf("%d,%d", line, line), "--porcelain", hash, "--", oldPath)
 		}
 		if err != nil {
 			return blameLoaded{err: gitError(out, err)}
@@ -84,7 +84,7 @@ func (m model) startBlame() (tea.Model, tea.Cmd) {
 		if err != nil {
 			final = line
 		}
-		commit, err := repo.resolveCommit(blamed)
+		commit, err := repo.ResolveCommit(blamed)
 		if err != nil {
 			return blameLoaded{err: err}
 		}

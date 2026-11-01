@@ -22,7 +22,7 @@ func (m model) noteView() string {
 	case "sequence":
 		return m.sequenceIdentity()
 	case "commit":
-		return "commit:" + m.history.current.hash
+		return "commit:" + m.history.current.Hash
 	case "base":
 		return "base:" + m.base.hash + ":" + m.base.revision
 	}
@@ -37,10 +37,10 @@ func (m model) noteCommit(hash string, row row) string {
 		return hash
 	}
 	if m.screen == "sequence" && int(row.commitIndex) < len(m.sequence.commits) {
-		return m.sequence.commits[row.commitIndex].hash
+		return m.sequence.commits[row.commitIndex].Hash
 	}
 	if m.screen == "commit" {
-		return m.history.current.hash
+		return m.history.current.Hash
 	}
 	return ""
 }
@@ -130,7 +130,7 @@ func (m model) insertNoteRows(rows []row) []row {
 		}
 		commit := ""
 		if m.screen == "sequence" && int(r.commitIndex) < len(m.sequence.commits) {
-			commit = m.sequence.commits[r.commitIndex].hash
+			commit = m.sequence.commits[r.commitIndex].Hash
 		}
 		texts := byLine[fmt.Sprintf("%s\x00%d\x00%s", r.path, line, commit)]
 		if len(texts) == 0 {
@@ -197,7 +197,7 @@ func (m model) notesMarkdown() (string, int) {
 			return remote
 		}
 		remote := ""
-		if out, err := m.repo.command("config", "--get", "remote.origin.url"); err == nil {
+		if out, err := m.repo.Command("config", "--get", "remote.origin.url"); err == nil {
 			remote = strings.TrimSpace(string(out))
 		}
 		remotes[commit] = remote
@@ -236,7 +236,7 @@ func (m model) quoteNoteLine(ref noteRef) string {
 		if line != ref.line {
 			continue
 		}
-		if m.screen == "sequence" && int(r.commitIndex) < len(m.sequence.commits) && m.sequence.commits[r.commitIndex].hash != ref.commit {
+		if m.screen == "sequence" && int(r.commitIndex) < len(m.sequence.commits) && m.sequence.commits[r.commitIndex].Hash != ref.commit {
 			continue
 		}
 		text := strings.TrimSpace(r.text)

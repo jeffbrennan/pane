@@ -1,4 +1,4 @@
-package main
+package git
 
 import (
 	"bytes"
@@ -9,26 +9,26 @@ import (
 	"time"
 )
 
-type worktreeEntry struct {
-	path, head, branch string
-	detached           bool
-	bare               bool
-	locked             bool
-	prunable           bool
+type WorktreeEntry struct {
+	Path, Head, Branch string
+	Detached           bool
+	Bare               bool
+	Locked             bool
+	Prunable           bool
 }
 
-func (r repository) worktrees() ([]worktreeEntry, error) {
-	out, err := r.commandStdout("worktree", "list", "--porcelain", "-z")
+func (r Repo) Worktrees() ([]WorktreeEntry, error) {
+	out, err := r.CommandStdout("worktree", "list", "--porcelain", "-z")
 	if err != nil {
-		return nil, gitError(out, err)
+		return nil, GitError(out, err)
 	}
-	var entries []worktreeEntry
-	var current worktreeEntry
+	var entries []WorktreeEntry
+	var current WorktreeEntry
 	flush := func() {
-		if current.path != "" {
+		if current.Path != "" {
 			entries = append(entries, current)
 		}
-		current = worktreeEntry{}
+		current = WorktreeEntry{}
 	}
 	for _, field := range bytes.Split(out, []byte{0}) {
 		line := string(field)
@@ -39,19 +39,19 @@ func (r repository) worktrees() ([]worktreeEntry, error) {
 		key, value, _ := strings.Cut(line, " ")
 		switch key {
 		case "worktree":
-			current.path = value
+			current.Path = value
 		case "HEAD":
-			current.head = value
+			current.Head = value
 		case "branch":
-			current.branch = strings.TrimPrefix(value, "refs/heads/")
+			current.Branch = strings.TrimPrefix(value, "refs/heads/")
 		case "detached":
-			current.detached = true
+			current.Detached = true
 		case "bare":
-			current.bare = true
+			current.Bare = true
 		case "locked":
-			current.locked = true
+			current.Locked = true
 		case "prunable":
-			current.prunable = true
+			current.Prunable = true
 		}
 	}
 	flush()
@@ -59,15 +59,15 @@ func (r repository) worktrees() ([]worktreeEntry, error) {
 }
 
 // worktreeBranches maps a branch name to the worktree that has it checked out.
-func (r repository) worktreeBranches() map[string]string {
-	entries, err := r.worktrees()
+func (r Repo) worktreeBranches() map[string]string {
+	entries, err := r.Worktrees()
 	if err != nil {
 		return nil
 	}
 	branches := make(map[string]string, len(entries))
 	for _, entry := range entries {
-		if entry.branch != "" {
-			branches[entry.branch] = entry.path
+		if entry.Branch != "" {
+			branches[entry.Branch] = entry.Path
 		}
 	}
 	return branches
@@ -75,7 +75,7 @@ func (r repository) worktreeBranches() map[string]string {
 
 // worktreeGitDir resolves a worktree's git directory, following the .git file
 // that links a secondary worktree to the common repository.
-func worktreeGitDir(path string) string {
+func WorktreeGitDir(path string) string {
 	dotGit := filepath.Join(path, ".git")
 	info, err := os.Stat(dotGit)
 	if err == nil && info.IsDir() {
@@ -96,10 +96,10 @@ func worktreeGitDir(path string) string {
 	return dir
 }
 
-// statusCount reads another worktree's dirty-file count and last activity
+// StatusCount reads another worktree's dirty-file count and last activity
 // without changing this pane's repository. Activity is the later of the index
 // and the newest changed path.
-func (r repository) statusCount(path string) (int, time.Time, error) {
+func (r Repo) StatusCount(path string) (int, time.Time, error) {
 	cmd := exec.Command("git", "-C", path, "status", "--porcelain", "-z", "--untracked-files=normal")
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_LITERAL_PATHSPECS=1", "GIT_PAGER=cat")
 	out, err := cmd.Output()
@@ -107,7 +107,7 @@ func (r repository) statusCount(path string) (int, time.Time, error) {
 		return 0, time.Time{}, err
 	}
 	var activity time.Time
-	if gitDir := worktreeGitDir(path); gitDir != "" {
+	if gitDir := WorktreeGitDir(path); gitDir != "" {
 		if info, err := os.Stat(filepath.Join(gitDir, "index")); err == nil {
 			activity = info.ModTime()
 		}
@@ -138,13 +138,13 @@ func (r repository) statusCount(path string) (int, time.Time, error) {
 	return count, activity, nil
 }
 
-func commonWorktreeDir(entries []worktreeEntry) string {
+func CommonWorktreeDir(entries []WorktreeEntry) string {
 	if len(entries) < 2 {
 		return ""
 	}
 	dirs := make([]string, len(entries))
 	for i, entry := range entries {
-		dirs[i] = filepath.Dir(entry.path)
+		dirs[i] = filepath.Dir(entry.Path)
 	}
 	common := dirs[0]
 	for _, dir := range dirs[1:] {
@@ -155,16 +155,16 @@ func commonWorktreeDir(entries []worktreeEntry) string {
 	return common
 }
 
-func worktreeDisplayPath(entries []worktreeEntry, path string) string {
-	if common := commonWorktreeDir(entries); common != "" && strings.HasPrefix(path, common+string(filepath.Separator)) {
+func WorktreeDisplayPath(entries []WorktreeEntry, path string) string {
+	if common := CommonWorktreeDir(entries); common != "" && strings.HasPrefix(path, common+string(filepath.Separator)) {
 		return strings.TrimPrefix(path, common+string(filepath.Separator))
 	}
 	return path
 }
 
-func worktreePathFor(entries []worktreeEntry, root, branch string) string {
+func WorktreePathFor(entries []WorktreeEntry, root, branch string) string {
 	slug := strings.ReplaceAll(branch, "/", "-")
-	if common := commonWorktreeDir(entries); common != "" {
+	if common := CommonWorktreeDir(entries); common != "" {
 		return filepath.Join(common, slug)
 	}
 	return filepath.Join(filepath.Dir(root), filepath.Base(root)+"-"+slug)

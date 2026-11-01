@@ -11,18 +11,18 @@ import (
 func TestPipedCommitReview(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "shared.txt", strings.Repeat("first\n", 20))
-	if _, err := r.commit("first commit"); err != nil {
+	if _, err := r.Commit("first commit"); err != nil {
 		t.Fatal(err)
 	}
-	first, err := r.action("rev-parse", "HEAD")
+	first, err := r.Action("rev-parse", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "shared.txt", "second\n")
-	if _, err := r.commit("second commit"); err != nil {
+	if _, err := r.Commit("second commit"); err != nil {
 		t.Fatal(err)
 	}
-	second, err := r.action("rev-parse", "HEAD")
+	second, err := r.Action("rev-parse", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,12 +31,12 @@ func TestPipedCommitReview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.screen != "sequence" || len(m.sequence.commits) != 2 || m.sequence.commits[0].hash != second[:8] || m.sequence.commits[1].hash != first[:8] {
+	if m.screen != "sequence" || len(m.sequence.commits) != 2 || m.sequence.commits[0].Hash != second[:8] || m.sequence.commits[1].Hash != first[:8] {
 		t.Fatalf("incorrect commit input: %#v", m.sequence.commits)
 	}
 	batch := m.Init()().(tea.BatchMsg)
 	result := batch[2]().(sequenceChunkLoaded)
-	if result.chunk.err != nil || result.index != 0 || len(result.chunk.changes) != 1 {
+	if result.chunk.Err != nil || result.index != 0 || len(result.chunk.Changes) != 1 {
 		t.Fatalf("could not load commits: %#v", result)
 	}
 	m.width, m.height = 60, 8
@@ -79,7 +79,7 @@ func TestPipedCommitReview(t *testing.T) {
 func TestPipedCommitInputValidation(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file", "text\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
 	for _, input := range []string{"", "\n ", "not-a-hash subject\n", "--help\n", strings.Repeat("x", 70000)} {
@@ -93,7 +93,7 @@ func TestPipedCommitInputValidation(t *testing.T) {
 	}
 	batch := m.Init()().(tea.BatchMsg)
 	result := batch[2]().(sequenceChunkLoaded)
-	if result.chunk.err == nil {
+	if result.chunk.Err == nil {
 		t.Fatal("invalid hash was not reported")
 	}
 	updated, _ := m.Update(result)
@@ -105,26 +105,26 @@ func TestPipedCommitInputValidation(t *testing.T) {
 
 func TestSequenceCommitIndexCapacity(t *testing.T) {
 	input := strings.Repeat("deadbeef\n", maxSequenceCommits)
-	m, err := initialSequence(repository{}, strings.NewReader(input))
+	m, err := initialSequence(Repo{}, strings.NewReader(input))
 	if err != nil {
 		t.Fatal(err)
 	}
 	m.width, m.height = 80, 12
 	m.sequence.states[maxSequenceCommits-1] = sequenceReady
-	m.sequence.changes[maxSequenceCommits-1] = []change{{path: "last", diff: "@@ -0,0 +1 @@\n+last\n"}}
+	m.sequence.changes[maxSequenceCommits-1] = []Change{{Path: "last", Diff: "@@ -0,0 +1 @@\n+last\n"}}
 	m.rebuildSequence()
 	if len(m.rows) != maxSequenceCommits+1 || int(m.rows[len(m.rows)-1].commitIndex) != maxSequenceCommits-1 || m.rows[len(m.rows)-1].path != "last" {
 		t.Fatal("largest supported sequence index was not preserved")
 	}
-	if _, err := initialSequence(repository{}, strings.NewReader(input+"deadbeef\n")); err == nil || !strings.Contains(err.Error(), fmt.Sprintf("exceeds %d commits", maxSequenceCommits)) {
+	if _, err := initialSequence(Repo{}, strings.NewReader(input+"deadbeef\n")); err == nil || !strings.Contains(err.Error(), fmt.Sprintf("exceeds %d commits", maxSequenceCommits)) {
 		t.Fatalf("sequence over the supported limit: %v", err)
 	}
 }
 
 func TestSequenceHeadersAndResizeKeepCommitIdentity(t *testing.T) {
 	m := model{width: 30, height: 8, wrap: true, screen: "sequence", sequence: sequenceState{
-		commits: []commitInfo{{hash: "11111111", subject: "first"}, {hash: "22222222", subject: "second"}},
-		changes: [][]change{{longFile("same.go")}, {longFile("same.go")}},
+		commits: []CommitInfo{{Hash: "11111111", Subject: "first"}, {Hash: "22222222", Subject: "second"}},
+		changes: [][]Change{{longFile("same.go")}, {longFile("same.go")}},
 	}}
 	m.rebuildSequence()
 	for i, row := range m.rows {
@@ -147,10 +147,10 @@ func TestSequenceHeadersAndResizeKeepCommitIdentity(t *testing.T) {
 
 func TestSequenceKeepsGutterWidthPerCommit(t *testing.T) {
 	m := model{width: 50, height: 10, wrap: true, screen: "sequence", sequence: sequenceState{
-		commits: []commitInfo{{hash: "one"}, {hash: "two"}},
-		changes: [][]change{
-			{{path: "one", diff: "@@ -0,0 +1 @@\n+first\n"}},
-			{{path: "two", diff: "@@ -0,0 +10000 @@\n+second\n"}},
+		commits: []CommitInfo{{Hash: "one"}, {Hash: "two"}},
+		changes: [][]Change{
+			{{Path: "one", Diff: "@@ -0,0 +1 @@\n+first\n"}},
+			{{Path: "two", Diff: "@@ -0,0 +10000 @@\n+second\n"}},
 		},
 	}}
 	for iteration := 0; iteration < 2; iteration++ {
@@ -185,8 +185,8 @@ func TestSequenceKeepsGutterWidthPerCommit(t *testing.T) {
 func TestSequenceDeletedFilesAreVisible(t *testing.T) {
 	diff := "diff --git a/file b/file\ndeleted file mode 100644\n--- a/file\n+++ /dev/null\n@@ -1 +0,0 @@\n-removed\n"
 	m := model{width: 40, height: 8, wrap: true, screen: "sequence", sequence: sequenceState{
-		commits: []commitInfo{{hash: "11111111", subject: "deletion"}},
-		changes: [][]change{{{path: "file", diff: diff}}},
+		commits: []CommitInfo{{Hash: "11111111", Subject: "deletion"}},
+		changes: [][]Change{{{Path: "file", Diff: diff}}},
 	}}
 	m.rebuildSequence()
 	if !strings.Contains(m.View(), "removed") {
@@ -196,8 +196,8 @@ func TestSequenceDeletedFilesAreVisible(t *testing.T) {
 
 func TestEmptyCommitDoesNotPinPreviousFile(t *testing.T) {
 	m := model{width: 40, height: 6, wrap: true, screen: "sequence", sequence: sequenceState{
-		commits: []commitInfo{{hash: "11111111", subject: "first"}, {hash: "22222222", subject: "empty"}},
-		changes: [][]change{{longFile("file.go")}, nil},
+		commits: []CommitInfo{{Hash: "11111111", Subject: "first"}, {Hash: "22222222", Subject: "empty"}},
+		changes: [][]Change{{longFile("file.go")}, nil},
 	}}
 	m.rebuildSequence()
 	last := len(m.rows) - 1
@@ -210,8 +210,8 @@ func TestSequencePickerUsesHoveredCommit(t *testing.T) {
 	for _, back := range []string{"esc", "q"} {
 		t.Run(back, func(t *testing.T) {
 			m := model{width: 80, height: 12, wrap: true, screen: "sequence", sequence: sequenceState{
-				commits: []commitInfo{{hash: "11111111", subject: "first"}, {hash: "22222222", subject: "second"}},
-				changes: [][]change{
+				commits: []CommitInfo{{Hash: "11111111", Subject: "first"}, {Hash: "22222222", Subject: "second"}},
+				changes: [][]Change{
 					{longFile("shared.go"), longFile("only-first.go")},
 					{longFile("shared.go"), longFile("only-second.go")},
 				},
@@ -250,8 +250,8 @@ func TestSequencePickerUsesHoveredCommit(t *testing.T) {
 
 func TestSequencePickerEmptyCommit(t *testing.T) {
 	m := model{width: 60, height: 10, screen: "sequence", sequence: sequenceState{
-		commits: []commitInfo{{hash: "11111111", subject: "first"}, {hash: "22222222", subject: "empty"}},
-		changes: [][]change{{longFile("first.go")}, nil},
+		commits: []CommitInfo{{Hash: "11111111", Subject: "first"}, {Hash: "22222222", Subject: "empty"}},
+		changes: [][]Change{{longFile("first.go")}, nil},
 	}}
 	m.rebuildSequence()
 	m.pos = len(m.rows) - 1
@@ -266,7 +266,7 @@ func TestSequencePickerEmptyCommit(t *testing.T) {
 }
 
 func TestSequenceLoadsFirstAndLastBeforeMiddle(t *testing.T) {
-	m, err := initialSequence(repository{}, strings.NewReader("aaaa first\nbbbb second\ncccc third\ndddd last\n"))
+	m, err := initialSequence(Repo{}, strings.NewReader("aaaa first\nbbbb second\ncccc third\ndddd last\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,23 +280,23 @@ func TestSequenceLoadsFirstAndLastBeforeMiddle(t *testing.T) {
 	if !m.sequence.endPending || m.rows[m.pos].commitIndex != 3 {
 		t.Fatal("G did not select the last loading commit")
 	}
-	updated, next := m.Update(sequenceLoaded{request: 1, index: 3, commit: commitInfo{hash: "dddd", subject: "last"}, changes: []change{longFile("last.go")}})
+	updated, next := m.Update(sequenceLoaded{request: 1, index: 3, commit: CommitInfo{Hash: "dddd", Subject: "last"}, changes: []Change{longFile("last.go")}})
 	m = updated.(model)
 	if next == nil || m.sequence.states[1] != sequenceLoading || m.rows[m.pos].commitIndex != 3 || m.rows[m.pos].sourceLine != 20 || m.sequence.endPending {
 		t.Fatalf("last commit did not load at the end or schedule the next: %#v row=%#v", m.sequence.states, m.rows[m.pos])
 	}
 	oldOffset := m.pos - m.viewTop
-	updated, next = m.Update(sequenceLoaded{request: 1, index: 0, commit: commitInfo{hash: "aaaa", subject: "first"}, changes: []change{longFile("first.go")}})
+	updated, next = m.Update(sequenceLoaded{request: 1, index: 0, commit: CommitInfo{Hash: "aaaa", Subject: "first"}, changes: []Change{longFile("first.go")}})
 	m = updated.(model)
 	if next == nil || m.sequence.states[2] != sequenceLoading || m.rows[m.pos].commitIndex != 3 || m.rows[m.pos].sourceLine != 20 || m.pos-m.viewTop != oldOffset {
 		t.Fatalf("first commit load moved the selected last line: pos=%d top=%d row=%#v", m.pos, m.viewTop, m.rows[m.pos])
 	}
-	updated, _ = m.Update(sequenceLoaded{request: 1, index: 1, commit: commitInfo{hash: "bbbb"}, changes: []change{longFile("middle.go")}})
+	updated, _ = m.Update(sequenceLoaded{request: 1, index: 1, commit: CommitInfo{Hash: "bbbb"}, changes: []Change{longFile("middle.go")}})
 	m = updated.(model)
 	if m.rows[m.pos].commitIndex != 3 || m.rows[m.pos].sourceLine != 20 {
 		t.Fatal("loading another commit lost the selection")
 	}
-	updated, _ = m.Update(sequenceLoaded{request: 1, index: 2, commit: commitInfo{hash: "cccc"}})
+	updated, _ = m.Update(sequenceLoaded{request: 1, index: 2, commit: CommitInfo{Hash: "cccc"}})
 	m = updated.(model)
 	if m.sequence.loading || m.sequence.states[2] != sequenceReady {
 		t.Fatal("sequence remained loading after all commits completed")
@@ -304,7 +304,7 @@ func TestSequenceLoadsFirstAndLastBeforeMiddle(t *testing.T) {
 }
 
 func TestSequenceSingleCommitStartsOneLoad(t *testing.T) {
-	m, err := initialSequence(repository{}, strings.NewReader("aaaa\n"))
+	m, err := initialSequence(Repo{}, strings.NewReader("aaaa\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,15 +316,15 @@ func TestSequenceSingleCommitStartsOneLoad(t *testing.T) {
 
 func TestSequenceSearchProgressAndNewMatches(t *testing.T) {
 	m := model{screen: "sequence", width: 100, height: 12, search: searchState{query: "needle", direction: 1}, sequence: sequenceState{
-		commits: []commitInfo{{hash: "one"}, {hash: "two"}},
-		changes: [][]change{{{path: "first", diff: "@@ -1 +1 @@\n-old\n+other\n"}}, nil},
+		commits: []CommitInfo{{Hash: "one"}, {Hash: "two"}},
+		changes: [][]Change{{{Path: "first", Diff: "@@ -1 +1 @@\n-old\n+other\n"}}, nil},
 		states:  []sequenceLoadState{sequenceReady, sequenceLoading}, errors: make([]string, 2), loading: true, request: 1,
 	}}
 	m.rebuildSequence()
 	if view := plain(m.View()); !strings.Contains(view, "searching 1/2 loaded") {
 		t.Fatalf("missing search progress: %q", view)
 	}
-	updated, _ := m.Update(sequenceLoaded{index: 1, request: 1, commit: commitInfo{hash: "two"}, changes: []change{{path: "second", diff: "@@ -1 +1 @@\n-old\n+needle\n"}}})
+	updated, _ := m.Update(sequenceLoaded{index: 1, request: 1, commit: CommitInfo{Hash: "two"}, changes: []Change{{Path: "second", Diff: "@@ -1 +1 @@\n-old\n+needle\n"}}})
 	m = updated.(model)
 	if !rowMatches(m.rows[m.pos], "needle") || strings.Contains(plain(m.View()), "searching 2/2 loaded") {
 		t.Fatalf("new match not selected or loading did not end: %#v", m.rows[m.pos])
@@ -333,11 +333,11 @@ func TestSequenceSearchProgressAndNewMatches(t *testing.T) {
 
 func TestSequenceDraftFindsMatchesAsTheyLoad(t *testing.T) {
 	m := model{screen: "sequence", width: 100, height: 12, modal: "search", search: searchState{draft: "needle", draftDirection: 1}, sequence: sequenceState{
-		commits: []commitInfo{{hash: "one"}, {hash: "two"}},
-		changes: make([][]change, 2), states: []sequenceLoadState{sequenceLoading, sequenceLoading}, errors: make([]string, 2), loading: true, request: 1,
+		commits: []CommitInfo{{Hash: "one"}, {Hash: "two"}},
+		changes: make([][]Change, 2), states: []sequenceLoadState{sequenceLoading, sequenceLoading}, errors: make([]string, 2), loading: true, request: 1,
 	}}
 	m.rebuildSequence()
-	updated, _ := m.Update(sequenceLoaded{index: 0, request: 1, commit: commitInfo{hash: "one"}, changes: []change{{path: "first", diff: "@@ -1 +1 @@\n-old\n+needle\n"}}})
+	updated, _ := m.Update(sequenceLoaded{index: 0, request: 1, commit: CommitInfo{Hash: "one"}, changes: []Change{{Path: "first", Diff: "@@ -1 +1 @@\n-old\n+needle\n"}}})
 	m = updated.(model)
 	if !rowMatches(m.rows[m.pos], "needle") || !strings.Contains(plain(m.View()), "searching 1/2 loaded") {
 		t.Fatalf("draft search not updated: row=%#v view=%q", m.rows[m.pos], plain(m.View()))

@@ -1,4 +1,4 @@
-package main
+package git
 
 import (
 	"bytes"
@@ -9,40 +9,40 @@ import (
 	"time"
 )
 
-type fileFingerprint struct {
-	size      int64
-	mode      os.FileMode
-	modified  time.Time
-	missing   bool
-	statError bool
+type FileFingerprint struct {
+	Size      int64
+	Mode      os.FileMode
+	Modified  time.Time
+	Missing   bool
+	StatError bool
 }
 
-type statusEntry struct {
-	path, oldPath, record                            string
-	staged, unstaged, untracked, conflict, submodule bool
-	fingerprint                                      fileFingerprint
+type StatusEntry struct {
+	Path, OldPath, Record                            string
+	Staged, Unstaged, Untracked, Conflict, Submodule bool
+	Fingerprint                                      FileFingerprint
 }
 
-type changeKey struct {
-	path   string
-	staged bool
+type ChangeKey struct {
+	Path   string
+	Staged bool
 }
 
-type cachedChange struct {
-	entry    statusEntry
-	change   change
-	loadedAt time.Time
-	// plain marks a change loaded without highlighting; the next load
+type CachedChange struct {
+	Entry    StatusEntry
+	Change   Change
+	LoadedAt time.Time
+	// Plain marks a change loaded without highlighting; the next load
 	// reloads it with highlighting.
-	plain bool
+	Plain bool
 }
 
-type refreshCache struct {
-	branch      branchStatus
-	ignoreSpace bool
-	changes     map[changeKey]cachedChange
-	snapshot    snapshot
-	plain       bool
+type RefreshCache struct {
+	Branch      BranchStatus
+	IgnoreSpace bool
+	Changes     map[ChangeKey]CachedChange
+	Snapshot    Snapshot
+	Plain       bool
 }
 
 // startupSyntaxLines is how many diff lines of each view are highlighted
@@ -53,72 +53,72 @@ const startupSyntaxLines = 120
 
 // deferOffscreenSyntax drops highlighting from changes past the first
 // startupSyntaxLines lines of each view, in display order.
-func deferOffscreenSyntax(cache *refreshCache, entries []statusEntry) {
+func deferOffscreenSyntax(cache *RefreshCache, entries []StatusEntry) {
 	for _, staged := range []bool{false, true} {
 		shown := 0
 		for _, entry := range entries {
-			if (staged && !entry.staged) || (!staged && !entry.unstaged) {
+			if (staged && !entry.Staged) || (!staged && !entry.Unstaged) {
 				continue
 			}
-			key := changeKey{entry.path, staged}
-			cached := cache.changes[key]
-			if shown >= startupSyntaxLines && cached.change.syntaxDiff != "" {
-				cached.change.syntaxDiff, cached.plain = "", true
-				cache.changes[key] = cached
-				cache.plain = true
+			key := ChangeKey{entry.Path, staged}
+			cached := cache.Changes[key]
+			if shown >= startupSyntaxLines && cached.Change.SyntaxDiff != "" {
+				cached.Change.SyntaxDiff, cached.Plain = "", true
+				cache.Changes[key] = cached
+				cache.Plain = true
 			}
-			shown += strings.Count(cached.change.diff, "\n")
+			shown += strings.Count(cached.Change.Diff, "\n")
 		}
 	}
 }
 
-func (r repository) status() (branchStatus, []statusEntry, error) {
-	out, err := r.statusOutput()
+func (r Repo) Status() (BranchStatus, []StatusEntry, error) {
+	out, err := r.StatusOutput()
 	if err != nil {
-		return branchStatus{}, nil, gitError(out, err)
+		return BranchStatus{}, nil, GitError(out, err)
 	}
-	var entries []statusEntry
+	var entries []StatusEntry
 	records := bytes.Split(out, []byte{0})
 	for i := 0; i < len(records); i++ {
 		record := string(records[i])
-		var entry statusEntry
+		var entry StatusEntry
 		switch {
 		case strings.HasPrefix(record, "1 "):
 			fields := strings.SplitN(record, " ", 9)
 			if len(fields) != 9 || len(fields[1]) != 2 {
 				continue
 			}
-			entry = statusEntry{path: fields[8], record: record, staged: fields[1][0] != '.', unstaged: fields[1][1] != '.', submodule: fields[2] != "N..."}
+			entry = StatusEntry{Path: fields[8], Record: record, Staged: fields[1][0] != '.', Unstaged: fields[1][1] != '.', Submodule: fields[2] != "N..."}
 		case strings.HasPrefix(record, "2 "):
 			fields := strings.SplitN(record, " ", 10)
 			if len(fields) != 10 || len(fields[1]) != 2 || i+1 >= len(records) {
 				continue
 			}
 			i++
-			entry = statusEntry{path: fields[9], oldPath: string(records[i]), record: record, staged: fields[1][0] != '.', unstaged: fields[1][1] != '.', submodule: fields[2] != "N..."}
+			entry = StatusEntry{Path: fields[9], OldPath: string(records[i]), Record: record, Staged: fields[1][0] != '.', Unstaged: fields[1][1] != '.', Submodule: fields[2] != "N..."}
 		case strings.HasPrefix(record, "u "):
 			fields := strings.SplitN(record, " ", 11)
 			if len(fields) != 11 {
 				continue
 			}
-			entry = statusEntry{path: fields[10], record: record, unstaged: true, conflict: true}
+			entry = StatusEntry{Path: fields[10], Record: record, Unstaged: true, Conflict: true}
 		case strings.HasPrefix(record, "? "):
-			entry = statusEntry{path: record[2:], record: record, unstaged: true, untracked: true}
+			entry = StatusEntry{Path: record[2:], Record: record, Unstaged: true, Untracked: true}
 		default:
 			continue
 		}
-		if entry.unstaged && !entry.conflict {
-			info, err := os.Lstat(filepath.Join(r.root, entry.path))
+		if entry.Unstaged && !entry.Conflict {
+			info, err := os.Lstat(filepath.Join(r.Root, entry.Path))
 			if err != nil {
-				entry.fingerprint.missing = os.IsNotExist(err)
-				entry.fingerprint.statError = !entry.fingerprint.missing
+				entry.Fingerprint.Missing = os.IsNotExist(err)
+				entry.Fingerprint.StatError = !entry.Fingerprint.Missing
 			} else {
-				entry.fingerprint = fileFingerprint{size: info.Size(), mode: info.Mode(), modified: info.ModTime()}
+				entry.Fingerprint = FileFingerprint{Size: info.Size(), Mode: info.Mode(), Modified: info.ModTime()}
 			}
 		}
 		entries = append(entries, entry)
 	}
-	return parseBranchStatus(out), entries, nil
+	return ParseBranchStatus(out), entries, nil
 }
 
 // statusOutput runs status with untracked files listed one by one.
@@ -131,15 +131,15 @@ func (r repository) status() (branchStatus, []statusEntry, error) {
 // directories are expanded by walking only them. When untracked files are
 // hidden, status lists every file itself, which bypasses the cache without
 // discarding it.
-func (r repository) statusOutput() ([]byte, error) {
+func (r Repo) StatusOutput() ([]byte, error) {
 	args := []string{"status", "--porcelain=v2", "-z", "--branch", "--renames", "--ahead-behind"}
-	if r.untrackedCache {
-		args = append([]string{"-c", "core.untrackedCache=true"}, args...)
+	if r.UntrackedCache {
+		args = append([]string{"-c", "core.UntrackedCache=true"}, args...)
 	}
-	if r.untrackedHidden {
-		return r.command(append(args, "--untracked-files=all")...)
+	if r.UntrackedHidden {
+		return r.Command(append(args, "--untracked-files=all")...)
 	}
-	out, err := r.command(args...)
+	out, err := r.Command(args...)
 	if err != nil {
 		return out, err
 	}
@@ -149,7 +149,7 @@ func (r repository) statusOutput() ([]byte, error) {
 // expandUntrackedDirectories replaces each untracked directory in status
 // output with the untracked files inside it, as --untracked-files=all lists
 // them.
-func (r repository) expandUntrackedDirectories(out []byte) ([]byte, error) {
+func (r Repo) expandUntrackedDirectories(out []byte) ([]byte, error) {
 	records := bytes.Split(out, []byte{0})
 	var directories []string
 	for i := 0; i < len(records); i++ {
@@ -163,9 +163,9 @@ func (r repository) expandUntrackedDirectories(out []byte) ([]byte, error) {
 	if len(directories) == 0 {
 		return out, nil
 	}
-	listed, err := r.command(append([]string{"ls-files", "--others", "--exclude-standard", "-z", "--"}, directories...)...)
+	listed, err := r.Command(append([]string{"ls-files", "--others", "--exclude-standard", "-z", "--"}, directories...)...)
 	if err != nil {
-		return nil, gitError(listed, err)
+		return nil, GitError(listed, err)
 	}
 	files := make(map[string][][]byte)
 	for _, file := range bytes.Split(listed, []byte{0}) {
@@ -193,54 +193,54 @@ func (r repository) expandUntrackedDirectories(out []byte) ([]byte, error) {
 	return bytes.Join(expanded, []byte{0}), nil
 }
 
-func (r repository) loadCached(previous *refreshCache) (*refreshCache, bool, error) {
-	return r.loadChanges(previous, false)
+func (r Repo) LoadCached(previous *RefreshCache) (*RefreshCache, bool, error) {
+	return r.LoadChanges(previous, false)
 }
 
-// loadChanges loads the working tree status and diffs, reusing unchanged
+// LoadChanges loads the working tree status and diffs, reusing unchanged
 // entries from previous. deferOffscreen is for the first screen at startup;
 // see startupSyntaxLines.
-func (r repository) loadChanges(previous *refreshCache, deferOffscreen bool) (*refreshCache, bool, error) {
+func (r Repo) LoadChanges(previous *RefreshCache, deferOffscreen bool) (*RefreshCache, bool, error) {
 	started := time.Now()
-	branch, entries, err := r.status()
+	branch, entries, err := r.Status()
 	if err != nil {
 		return nil, false, err
 	}
-	if previous != nil && (previous.branch.head != branch.head || previous.ignoreSpace != r.ignoreSpace) {
+	if previous != nil && (previous.Branch.Head != branch.Head || previous.IgnoreSpace != r.IgnoreSpace) {
 		previous = nil
 	}
-	next := &refreshCache{branch: branch, ignoreSpace: r.ignoreSpace, changes: make(map[changeKey]cachedChange), snapshot: snapshot{branch: branch}}
-	var staged []change
+	next := &RefreshCache{Branch: branch, IgnoreSpace: r.IgnoreSpace, Changes: make(map[ChangeKey]CachedChange), Snapshot: Snapshot{Branch: branch}}
+	var staged []Change
 	var unstaged, untracked []string
 	for _, entry := range entries {
 		for _, isStaged := range []bool{false, true} {
-			if (isStaged && !entry.staged) || (!isStaged && !entry.unstaged) {
+			if (isStaged && !entry.Staged) || (!isStaged && !entry.Unstaged) {
 				continue
 			}
-			key := changeKey{entry.path, isStaged}
+			key := ChangeKey{entry.Path, isStaged}
 			if previous != nil {
-				if cached, ok := previous.changes[key]; ok && cached.entry == entry && !cached.plain && !entry.submodule && !entry.fingerprint.statError && (isStaged || entry.conflict || entry.fingerprint.missing || entry.fingerprint.modified.Before(cached.loadedAt.Add(-time.Second))) {
-					next.changes[key] = cached
+				if cached, ok := previous.Changes[key]; ok && cached.Entry == entry && !cached.Plain && !entry.Submodule && !entry.Fingerprint.StatError && (isStaged || entry.Conflict || entry.Fingerprint.Missing || entry.Fingerprint.Modified.Before(cached.LoadedAt.Add(-time.Second))) {
+					next.Changes[key] = cached
 					continue
 				}
 			}
-			next.changes[key] = cachedChange{entry: entry, loadedAt: started}
+			next.Changes[key] = CachedChange{Entry: entry, LoadedAt: started}
 			switch {
-			case entry.conflict:
-				next.changes[key] = cachedChange{entry: entry, loadedAt: started, change: change{path: entry.path, diff: "Merge conflict: resolve outside pane.", conflict: true}}
+			case entry.Conflict:
+				next.Changes[key] = CachedChange{Entry: entry, LoadedAt: started, Change: Change{Path: entry.Path, Diff: "Merge conflict: resolve outside pane.", Conflict: true}}
 			case isStaged:
-				staged = append(staged, change{path: entry.path, oldPath: entry.oldPath})
-			case entry.untracked:
-				untracked = append(untracked, entry.path)
+				staged = append(staged, Change{Path: entry.Path, OldPath: entry.OldPath})
+			case entry.Untracked:
+				untracked = append(untracked, entry.Path)
 			default:
-				unstaged = append(unstaged, entry.path)
+				unstaged = append(unstaged, entry.Path)
 			}
 		}
 	}
 	groups := []struct {
-		paths             []change
+		paths             []Change
 		staged, untracked bool
-		changes           []change
+		changes           []Change
 		err               error
 	}{{paths: staged, staged: true}, {paths: changesForPaths(unstaged)}, {paths: changesForPaths(untracked), untracked: true}}
 	// The groups are independent, so their Git commands and tokenizing overlap.
@@ -253,34 +253,34 @@ func (r repository) loadChanges(previous *refreshCache, deferOffscreen bool) (*r
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			var changes []change
-			syntaxKey := contextKey{staged: group.staged}
+			var changes []Change
+			syntaxKey := Context{Staged: group.staged}
 			if group.untracked {
 				changes, group.err = parallelDiffs(untracked, r.untrackedDiff)
 				if group.err != nil {
 					return
 				}
-				r.loadSyntaxDiffs(changes, syntaxKey)
+				r.LoadSyntaxDiffs(changes, syntaxKey)
 			} else {
 				// Full-context diffs for highlighting need only paths, so
 				// they load alongside the display diffs.
 				syntaxDiffs := make(chan []string, 1)
-				go func() { syntaxDiffs <- r.syntaxDiffs(group.paths, syntaxKey) }()
+				go func() { syntaxDiffs <- r.SyntaxDiffs(group.paths, syntaxKey) }()
 				changes, group.err = r.diffsForChanges(group.paths, group.staged)
 				diffs := <-syntaxDiffs
 				if group.err != nil {
 					return
 				}
 				for i := range changes {
-					changes[i].syntaxDiff = diffs[i]
+					changes[i].SyntaxDiff = diffs[i]
 				}
 				markSyntaxSkipped(changes, syntaxBudgetEnd(group.paths))
 			}
 			for i := range changes {
 				if group.untracked {
-					changes[i].untracked = true
-					if strings.Contains(changes[i].diff, "Binary files ") {
-						changes[i].untrackedHash, changes[i].untrackedHashValid = untrackedDigest(filepath.Join(r.root, changes[i].path))
+					changes[i].Untracked = true
+					if strings.Contains(changes[i].Diff, "Binary files ") {
+						changes[i].UntrackedHash, changes[i].UntrackedHashValid = untrackedDigest(filepath.Join(r.Root, changes[i].Path))
 					}
 				}
 			}
@@ -293,32 +293,32 @@ func (r repository) loadChanges(previous *refreshCache, deferOffscreen bool) (*r
 			return nil, false, group.err
 		}
 		for _, c := range group.changes {
-			key := changeKey{c.path, group.staged}
-			cached := next.changes[key]
-			c.generated = generatedByPath(c.path)
-			cached.change = c
-			next.changes[key] = cached
+			key := ChangeKey{c.Path, group.staged}
+			cached := next.Changes[key]
+			c.Generated = generatedByPath(c.Path)
+			cached.Change = c
+			next.Changes[key] = cached
 		}
 	}
 	if deferOffscreen {
 		deferOffscreenSyntax(next, entries)
 	}
-	var highlight []change
+	var highlight []Change
 	for _, group := range groups {
 		for _, c := range group.changes {
-			if cached := next.changes[changeKey{c.path, group.staged}]; !cached.plain {
-				highlight = append(highlight, cached.change)
+			if cached := next.Changes[ChangeKey{c.Path, group.staged}]; !cached.Plain {
+				highlight = append(highlight, cached.Change)
 			}
 		}
 	}
-	warmSyntax(highlight)
+	WarmSyntax(highlight)
 	for _, entry := range entries {
-		if entry.unstaged {
-			next.snapshot.unstaged = append(next.snapshot.unstaged, next.changes[changeKey{entry.path, false}].change)
+		if entry.Unstaged {
+			next.Snapshot.Unstaged = append(next.Snapshot.Unstaged, next.Changes[ChangeKey{entry.Path, false}].Change)
 		}
-		if entry.staged {
-			next.snapshot.staged = append(next.snapshot.staged, next.changes[changeKey{entry.path, true}].change)
+		if entry.Staged {
+			next.Snapshot.Staged = append(next.Snapshot.Staged, next.Changes[ChangeKey{entry.Path, true}].Change)
 		}
 	}
-	return next, previous != nil && previous.snapshot.equal(next.snapshot), nil
+	return next, previous != nil && previous.Snapshot.Equal(next.Snapshot), nil
 }

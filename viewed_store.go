@@ -123,13 +123,13 @@ func diffBlob(diff string) string {
 }
 
 // applyViewed marks file headers and collapses files already marked viewed.
-func (m *model) applyViewed(rows []row, changes []change) {
+func (m *model) applyViewed(rows []row, changes []Change) {
 	if m.viewed == nil || m.viewIdentity == "" {
 		return
 	}
 	blobs := make(map[string]string, len(changes))
 	for _, c := range changes {
-		blobs[c.path] = diffBlob(c.diff)
+		blobs[c.Path] = diffBlob(c.Diff)
 	}
 	for i := range rows {
 		if rows[i].kind != 'f' {
@@ -161,13 +161,13 @@ func (m *model) collapseViewed(path string) {
 
 // seedViewedCollapse collapses newly seen viewed files before rows are built,
 // so streaming chunks do not append their contents first.
-func (m *model) seedViewedCollapse(changes []change) {
+func (m *model) seedViewedCollapse(changes []Change) {
 	if m.viewed == nil || m.viewIdentity == "" {
 		return
 	}
 	for _, c := range changes {
-		if m.viewed.marked(m.viewIdentity, c.path, diffBlob(c.diff)) {
-			m.collapseViewed(c.path)
+		if m.viewed.marked(m.viewIdentity, c.Path, diffBlob(c.Diff)) {
+			m.collapseViewed(c.Path)
 		}
 	}
 }

@@ -9,7 +9,7 @@ import (
 )
 
 func TestNavigationAndRefreshAnchor(t *testing.T) {
-	m := model{width: 20, height: 10, wrap: true, snapshot: snapshot{unstaged: []change{{path: "one", diff: "@@ -0,0 +1,2 @@\n+first\n+second\n"}, {path: "two", diff: "@@ -0,0 +1 @@\n+other\n"}}}}
+	m := model{width: 20, height: 10, wrap: true, snapshot: Snapshot{Unstaged: []Change{{Path: "one", Diff: "@@ -0,0 +1,2 @@\n+first\n+second\n"}, {Path: "two", Diff: "@@ -0,0 +1 @@\n+other\n"}}}}
 	m.rebuild()
 	m.jump(1)
 	if m.rows[m.pos].path != "two" {
@@ -27,9 +27,9 @@ func TestNavigationAndRefreshAnchor(t *testing.T) {
 }
 
 func TestFileHeadersSeparateChangesAndFileJumps(t *testing.T) {
-	m := model{width: 24, height: 12, wrap: true, snapshot: snapshot{unstaged: []change{
-		{path: "first.go", diff: "@@ -0,0 +1 @@\n+first\n"},
-		{path: "second.go", diff: "@@ -0,0 +1 @@\n+second\n"},
+	m := model{width: 24, height: 12, wrap: true, snapshot: Snapshot{Unstaged: []Change{
+		{Path: "first.go", Diff: "@@ -0,0 +1 @@\n+first\n"},
+		{Path: "second.go", Diff: "@@ -0,0 +1 @@\n+second\n"},
 	}}}
 	m.rebuild()
 	m.jump(1)
@@ -63,7 +63,7 @@ func TestActiveLineShowsContext(t *testing.T) {
 }
 
 func TestWrappedActiveLineSurvivesRefreshAndResize(t *testing.T) {
-	s := snapshot{unstaged: []change{{path: "long", diff: "@@ -0,0 +1 @@\n+abcdefghijklmnopqrstuvwxyz0123456789\n"}}}
+	s := Snapshot{Unstaged: []Change{{Path: "long", Diff: "@@ -0,0 +1 @@\n+abcdefghijklmnopqrstuvwxyz0123456789\n"}}}
 	m := model{width: 16, height: 10, wrap: true, snapshot: s}
 	m.rebuild()
 	if len(m.rows) < 4 {
@@ -85,7 +85,7 @@ func TestWrappedActiveLineSurvivesRefreshAndResize(t *testing.T) {
 }
 
 func TestCommitWrappedLineSurvivesResize(t *testing.T) {
-	m := model{width: 16, height: 10, wrap: true, screen: "commit", history: historyState{changes: []change{{path: "long", diff: "@@ -0,0 +1 @@\n+abcdefghijklmnopqrstuvwxyz0123456789\n"}}}}
+	m := model{width: 16, height: 10, wrap: true, screen: "commit", history: historyState{changes: []Change{{Path: "long", Diff: "@@ -0,0 +1 @@\n+abcdefghijklmnopqrstuvwxyz0123456789\n"}}}}
 	m.rebuildCommit()
 	m.history.pos = 3
 	original := m.history.rows[m.history.pos]
@@ -119,7 +119,7 @@ func TestHeightOnlyResizeKeepsRows(t *testing.T) {
 
 func TestLargeWidthResizeCoalesces(t *testing.T) {
 	rows := make([]row, 50000)
-	m := model{width: 80, height: 20, rows: rows, wrap: true, snapshot: snapshot{unstaged: []change{{path: "file", diff: "@@ -0,0 +1 @@\n+abcdef\n"}}}}
+	m := model{width: 80, height: 20, rows: rows, wrap: true, snapshot: Snapshot{Unstaged: []Change{{Path: "file", Diff: "@@ -0,0 +1 @@\n+abcdef\n"}}}}
 	for _, width := range []int{70, 60, 50} {
 		updated, cmd := m.Update(tea.WindowSizeMsg{Width: width, Height: 20})
 		m = updated.(model)
@@ -142,12 +142,12 @@ func TestLargeWidthResizeCoalesces(t *testing.T) {
 func TestStartupViewSelection(t *testing.T) {
 	tests := []struct {
 		name     string
-		snapshot snapshot
+		snapshot Snapshot
 		want     string
 	}{
 		{name: "clean", want: "history"},
-		{name: "unstaged", snapshot: snapshot{unstaged: []change{{path: "file", diff: "changed"}}}},
-		{name: "staged", snapshot: snapshot{staged: []change{{path: "file", diff: "changed"}}}},
+		{name: "unstaged", snapshot: Snapshot{Unstaged: []Change{{Path: "file", Diff: "changed"}}}},
+		{name: "staged", snapshot: Snapshot{Staged: []Change{{Path: "file", Diff: "changed"}}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -181,7 +181,7 @@ func TestStagingUsesActiveLine(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "first", "first\n")
 	writeFile(t, r, "second", "second\n")
-	s, err := r.load()
+	s, err := r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,11 +199,11 @@ func TestStagingUsesActiveLine(t *testing.T) {
 	if !ok || result.err != nil {
 		t.Fatalf("stage failed: %#v", result)
 	}
-	s, err = r.load()
+	s, err = r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.staged) != 1 || s.staged[0].path != "second" || len(s.unstaged) != 1 || s.unstaged[0].path != "first" {
+	if len(s.Staged) != 1 || s.Staged[0].Path != "second" || len(s.Unstaged) != 1 || s.Unstaged[0].Path != "first" {
 		t.Fatalf("staged wrong file: %#v", s)
 	}
 }
@@ -246,8 +246,8 @@ func TestParagraphDiffJumps(t *testing.T) {
 
 func TestFileJumpPlacesHeaderAtTop(t *testing.T) {
 	long := "@@ -0,0 +1,30 @@\n" + strings.Repeat("+line\n", 30)
-	m := model{width: 40, height: 12, wrap: true, snapshot: snapshot{unstaged: []change{
-		{path: "one", diff: long}, {path: "two", diff: long}, {path: "three", diff: long},
+	m := model{width: 40, height: 12, wrap: true, snapshot: Snapshot{Unstaged: []Change{
+		{Path: "one", Diff: long}, {Path: "two", Diff: long}, {Path: "three", Diff: long},
 	}}}
 	m.rebuild()
 	m.jump(1)

@@ -5,12 +5,12 @@ import (
 	"testing"
 )
 
-func longFile(path string) change {
-	return change{path: path, diff: "@@ -0,0 +1,20 @@\n" + strings.Repeat("+content\n", 20)}
+func longFile(path string) Change {
+	return Change{Path: path, Diff: "@@ -0,0 +1,20 @@\n" + strings.Repeat("+content\n", 20)}
 }
 
 func TestFileHeaderPinsWithoutMovingActiveLine(t *testing.T) {
-	m := model{width: 40, height: 8, wrap: true, snapshot: snapshot{unstaged: []change{longFile("first.go")}}}
+	m := model{width: 40, height: 8, wrap: true, snapshot: Snapshot{Unstaged: []Change{longFile("first.go")}}}
 	m.rebuild()
 	m.pos, m.viewTop = 10, 8
 	start, visible, pinned := m.diffViewport(6)
@@ -32,7 +32,7 @@ func TestFileHeaderPinsWithoutMovingActiveLine(t *testing.T) {
 }
 
 func TestPinnedHeaderChangesBetweenFiles(t *testing.T) {
-	m := model{width: 40, height: 8, wrap: true, snapshot: snapshot{unstaged: []change{longFile("first.go"), longFile("second.go")}}}
+	m := model{width: 40, height: 8, wrap: true, snapshot: Snapshot{Unstaged: []Change{longFile("first.go"), longFile("second.go")}}}
 	m.rebuild()
 	second := 0
 	for i, row := range m.rows {
@@ -57,7 +57,7 @@ func TestPinnedHeaderChangesBetweenFiles(t *testing.T) {
 }
 
 func TestPinnedHeaderRemainsUntilNextHeaderArrives(t *testing.T) {
-	m := model{width: 40, height: 8, wrap: true, snapshot: snapshot{unstaged: []change{longFile("first.go"), longFile("second.go")}}}
+	m := model{width: 40, height: 8, wrap: true, snapshot: Snapshot{Unstaged: []Change{longFile("first.go"), longFile("second.go")}}}
 	m.rebuild()
 	second := 0
 	for i, row := range m.rows {
@@ -83,7 +83,7 @@ func TestPinnedHeaderRemainsUntilNextHeaderArrives(t *testing.T) {
 }
 
 func TestFileBoundaryScrollsOneScreenRowAtATime(t *testing.T) {
-	m := model{width: 40, height: 8, wrap: true, snapshot: snapshot{unstaged: []change{longFile("first.go"), longFile("second.go")}}}
+	m := model{width: 40, height: 8, wrap: true, snapshot: Snapshot{Unstaged: []Change{longFile("first.go"), longFile("second.go")}}}
 	m.rebuild()
 	second := 0
 	for i, r := range m.rows {
@@ -122,7 +122,7 @@ func TestFileBoundaryScrollsOneScreenRowAtATime(t *testing.T) {
 }
 
 func TestRepeatedMovementAcrossFileBoundary(t *testing.T) {
-	m := model{width: 40, height: 8, wrap: true, snapshot: snapshot{unstaged: []change{longFile("first.go"), longFile("second.go")}}}
+	m := model{width: 40, height: 8, wrap: true, snapshot: Snapshot{Unstaged: []Change{longFile("first.go"), longFile("second.go")}}}
 	m.rebuild()
 	for _, direction := range []int{1, -1} {
 		previous := -1
@@ -148,7 +148,7 @@ func TestRepeatedMovementAcrossFileBoundary(t *testing.T) {
 }
 
 func TestPinnedHeaderInCommitViewAndSmallPane(t *testing.T) {
-	m := model{width: 40, height: 8, wrap: true, screen: "commit", history: historyState{changes: []change{longFile("commit.go")}}}
+	m := model{width: 40, height: 8, wrap: true, screen: "commit", history: historyState{changes: []Change{longFile("commit.go")}}}
 	m.rebuildCommit()
 	m.history.pos, m.history.viewTop = 10, 8
 	if !strings.Contains(strings.Split(m.View(), "\n")[1], "commit.go") {
@@ -163,7 +163,7 @@ func TestPinnedHeaderInCommitViewAndSmallPane(t *testing.T) {
 }
 
 func TestVimPositioningAccountsForPinnedHeader(t *testing.T) {
-	m := model{width: 40, height: 8, wrap: true, snapshot: snapshot{unstaged: []change{longFile("file.go")}}}
+	m := model{width: 40, height: 8, wrap: true, snapshot: Snapshot{Unstaged: []Change{longFile("file.go")}}}
 	m.rebuild()
 	m.pos = 15
 	for _, test := range []struct {
@@ -181,13 +181,13 @@ func TestVimPositioningAccountsForPinnedHeader(t *testing.T) {
 func TestPickerJumpDoesNotScrollBackwardOnNextLine(t *testing.T) {
 	for _, screen := range []string{"", "commit"} {
 		t.Run(screen, func(t *testing.T) {
-			changes := []change{longFile("first.go"), longFile("second.go"), longFile("third.go")}
+			changes := []Change{longFile("first.go"), longFile("second.go"), longFile("third.go")}
 			m := model{width: 60, height: 10, wrap: true, screen: screen}
 			if screen == "commit" {
 				m.history.changes = changes
 				m.rebuildCommit()
 			} else {
-				m.snapshot.unstaged = changes
+				m.snapshot.Unstaged = changes
 				m.rebuild()
 			}
 			m = keys(t, m, "f", "/", "s", "e", "c", "o", "n", "d", "enter")
@@ -205,7 +205,7 @@ func TestPickerJumpDoesNotScrollBackwardOnNextLine(t *testing.T) {
 }
 
 func TestMovementKeepsExplicitViewportAlignment(t *testing.T) {
-	m := model{width: 40, height: 10, wrap: true, snapshot: snapshot{unstaged: []change{longFile("file.go"), longFile("next.go")}}}
+	m := model{width: 40, height: 10, wrap: true, snapshot: Snapshot{Unstaged: []Change{longFile("file.go"), longFile("next.go")}}}
 	m.rebuild()
 	m.pos = 10
 	m.positionViewport("b")
@@ -229,7 +229,7 @@ func TestMovementKeepsExplicitViewportAlignment(t *testing.T) {
 }
 
 func TestStepsScrollOneRowAcrossPinnedHeaders(t *testing.T) {
-	m := model{width: 40, height: 12, wrap: true, snapshot: snapshot{unstaged: []change{longFile("first.go"), longFile("second.go"), longFile("third.go")}}}
+	m := model{width: 40, height: 12, wrap: true, snapshot: Snapshot{Unstaged: []Change{longFile("first.go"), longFile("second.go"), longFile("third.go")}}}
 	m.rebuild()
 	for _, key := range []string{"j", "k"} {
 		for range m.rows {
@@ -244,7 +244,7 @@ func TestStepsScrollOneRowAcrossPinnedHeaders(t *testing.T) {
 
 func TestJKMoveByWrappedLine(t *testing.T) {
 	long := strings.Repeat("x", 50)
-	changes := []change{{path: "a.go", diff: "@@ -1,3 +1,3 @@\n " + long + "\n short\n " + long + "\n"}}
+	changes := []Change{{Path: "a.go", Diff: "@@ -1,3 +1,3 @@\n " + long + "\n short\n " + long + "\n"}}
 	m := model{width: 40, height: 12, wrap: true, screen: "commit", history: historyState{changes: changes}}
 	m.rebuildCommit()
 	// Rows: 0 header, 1-2 first long line, 3 short, 4-5 last long line.

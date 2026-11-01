@@ -34,7 +34,7 @@ func newMovedIndex() *movedIndex {
 	}
 }
 
-func (idx *movedIndex) addChanges(changes []change) {
+func (idx *movedIndex) addChanges(changes []Change) {
 	if idx == nil || !movedDetectionEnabled {
 		return
 	}
@@ -43,13 +43,13 @@ func (idx *movedIndex) addChanges(changes []change) {
 	}
 }
 
-func (idx *movedIndex) addChange(c change) {
+func (idx *movedIndex) addChange(c Change) {
 	if idx == nil || !movedDetectionEnabled {
 		return
 	}
-	removedPath := c.path
-	if c.oldPath != "" {
-		removedPath = c.oldPath
+	removedPath := c.Path
+	if c.OldPath != "" {
+		removedPath = c.OldPath
 	}
 	oldLine, newLine := 0, 0
 	inHunk := false
@@ -61,10 +61,10 @@ func (idx *movedIndex) addChange(c change) {
 			hash := movedHash(texts)
 			block := movedRange{start: start, end: start + len(texts) - 1, hash: hash, path: path}
 			if kind == '+' {
-				idx.added[c.path] = append(idx.added[c.path], block)
+				idx.added[c.Path] = append(idx.added[c.Path], block)
 				idx.addedHashes[hash] = true
 			} else {
-				idx.removed[c.path] = append(idx.removed[c.path], block)
+				idx.removed[c.Path] = append(idx.removed[c.Path], block)
 				if _, ok := idx.removedOne[hash]; !ok {
 					idx.removedOne[hash] = block
 				}
@@ -73,7 +73,7 @@ func (idx *movedIndex) addChange(c change) {
 		texts = nil
 		kind = 0
 	}
-	for _, line := range strings.Split(c.diff, "\n") {
+	for _, line := range strings.Split(c.Diff, "\n") {
 		if match := matchHunkHeader(line); match != nil {
 			flush()
 			oldLine, _ = atoiHeader(match[1])
@@ -99,7 +99,7 @@ func (idx *movedIndex) addChange(c change) {
 		if lineKind != kind {
 			flush()
 			kind = lineKind
-			path = c.path
+			path = c.Path
 			if kind == '-' {
 				start = oldLine
 				path = removedPath

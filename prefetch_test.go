@@ -12,11 +12,11 @@ import (
 	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
-func commitFile(t *testing.T, r repository, path, content, message string) {
+func commitFile(t *testing.T, r Repo, path, content, message string) {
 	t.Helper()
 	writeFile(t, r, path, content)
 	for _, args := range [][]string{{"add", "--all"}, {"commit", "-m", message}} {
-		if out, err := r.command(args...); err != nil {
+		if out, err := r.Command(args...); err != nil {
 			t.Fatalf("git %v: %s: %v", args, out, err)
 		}
 	}
@@ -25,17 +25,17 @@ func commitFile(t *testing.T, r repository, path, content, message string) {
 func TestStatsStorePersistsAcrossLaunches(t *testing.T) {
 	r := testRepo(t)
 	commitFile(t, r, "a.txt", "one\ntwo\n", "first")
-	r.stats = &statsStore{path: filepath.Join(t.TempDir(), "pane", "stats")}
-	if _, err := r.historyStats([]string{"HEAD"}); err != nil {
+	r.Stats = &StatsStore{Path: filepath.Join(t.TempDir(), "pane", "stats")}
+	if _, err := r.HistoryStats([]string{"HEAD"}); err != nil {
 		t.Fatal(err)
 	}
-	commits, err := r.history(0, 1)
+	commits, err := r.History(0, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	relaunched := &statsStore{path: r.stats.path}
-	relaunched.fill(commits)
-	if !commits[0].statsLoaded || commits[0].added != 2 || commits[0].deleted != 0 {
+	relaunched := &StatsStore{Path: r.Stats.Path}
+	relaunched.Fill(commits)
+	if !commits[0].StatsLoaded || commits[0].Added != 2 || commits[0].Deleted != 0 {
 		t.Fatalf("stored stats not restored: %+v", commits[0])
 	}
 }
@@ -45,9 +45,9 @@ func TestStatsStoreIgnoresCorruptLines(t *testing.T) {
 	if err := os.WriteFile(path, []byte("garbage\nabc 1 2 0\npartial 3\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	commits := []commitInfo{{hash: "abc"}, {hash: "partial"}}
-	(&statsStore{path: path}).fill(commits)
-	if !commits[0].statsLoaded || commits[0].added != 1 || commits[0].deleted != 2 || commits[1].statsLoaded {
+	commits := []CommitInfo{{Hash: "abc"}, {Hash: "partial"}}
+	(&StatsStore{Path: path}).Fill(commits)
+	if !commits[0].StatsLoaded || commits[0].Added != 1 || commits[0].Deleted != 2 || commits[1].StatsLoaded {
 		t.Fatalf("unexpected fill: %+v", commits)
 	}
 }
@@ -70,10 +70,10 @@ func TestCleanStartupOpensPrefetchedHistoryWithStats(t *testing.T) {
 	m, cmd = applyBatch(t, m, cmd)
 	m, _ = applyBatch(t, m, cmd)
 	defer m.closeHistoryStreams()
-	if len(m.history.commits) != 2 || m.history.commits[0].subject != "second" {
+	if len(m.history.commits) != 2 || m.history.commits[0].Subject != "second" {
 		t.Fatalf("unexpected history: %+v", m.history.commits)
 	}
-	if c := m.history.commits[0]; !c.statsLoaded || c.added != 2 {
+	if c := m.history.commits[0]; !c.StatsLoaded || c.Added != 2 {
 		t.Fatalf("newest commit should arrive with stats: %+v", c)
 	}
 }
@@ -90,7 +90,7 @@ func TestDirtyStartupDiscardsPrefetchedHistory(t *testing.T) {
 	m.prefetch = startPrefetch(r)
 	updated, _ := m.Update(m.prefetch.loadStatus()())
 	m = updated.(model)
-	if m.screen != "" || m.prefetch != nil || len(m.snapshot.unstaged) != 1 {
+	if m.screen != "" || m.prefetch != nil || len(m.snapshot.Unstaged) != 1 {
 		t.Fatalf("dirty startup should show the diff and drop the prefetch; screen %q", m.screen)
 	}
 }
@@ -108,7 +108,7 @@ func TestDirtyStartupFirstScreenIsHighlighted(t *testing.T) {
 	updated, _ := m.Update(m.prefetch.loadStatus()())
 	m = updated.(model)
 	defer m.closeHistoryStreams()
-	if len(m.snapshot.unstaged) != 1 || m.snapshot.unstaged[0].syntaxDiff == "" {
+	if len(m.snapshot.Unstaged) != 1 || m.snapshot.Unstaged[0].SyntaxDiff == "" {
 		t.Fatal("first load should include highlighting")
 	}
 	view := m.View()
@@ -124,27 +124,27 @@ func TestStartupDefersOffscreenHighlighting(t *testing.T) {
 	}
 	commitFile(t, r, "a.go", body("a"), "first")
 	writeFile(t, r, "b.go", body("b"))
-	if out, err := r.command("add", "b.go"); err != nil {
+	if out, err := r.Command("add", "b.go"); err != nil {
 		t.Fatalf("%s: %v", out, err)
 	}
-	if out, err := r.command("commit", "-m", "second"); err != nil {
+	if out, err := r.Command("commit", "-m", "second"); err != nil {
 		t.Fatalf("%s: %v", out, err)
 	}
 	writeFile(t, r, "a.go", body("x"))
 	writeFile(t, r, "b.go", body("y"))
-	first, _, err := r.loadChanges(nil, true)
+	first, _, err := r.LoadChanges(nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	unstaged := first.snapshot.unstaged
-	if !first.plain || unstaged[0].syntaxDiff == "" || unstaged[1].syntaxDiff != "" {
+	unstaged := first.Snapshot.Unstaged
+	if !first.Plain || unstaged[0].SyntaxDiff == "" || unstaged[1].SyntaxDiff != "" {
 		t.Fatal("only the first screen's file should be highlighted at startup")
 	}
-	next, unchanged, err := r.loadCached(first)
+	next, unchanged, err := r.LoadCached(first)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if unchanged || next.plain || next.snapshot.unstaged[1].syntaxDiff == "" {
+	if unchanged || next.Plain || next.Snapshot.Unstaged[1].SyntaxDiff == "" {
 		t.Fatal("follow-up load should highlight the deferred file")
 	}
 }

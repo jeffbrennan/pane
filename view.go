@@ -136,7 +136,7 @@ func (m model) View() string {
 	if m.flash != "" {
 		status = clean(strings.ReplaceAll(m.flash, "\n", " | "))
 	}
-	if m.repo.ignoreSpace && m.modal == "" {
+	if m.repo.IgnoreSpace && m.modal == "" {
 		badge := styleDim + "ignoring whitespace" + styleReset
 		if status != "" {
 			status += "  "
@@ -205,13 +205,13 @@ func (m model) confirmationView() string {
 		return m.discardView()
 	}
 	if m.modal == "stash-confirm" && small {
-		return strings.Join([]string{fit(" "+strings.ToUpper(m.stash.operation)+" "+m.stash.target.ref+"?", m.width), fit(" y confirm  n/esc cancel", m.width)}, "\n")
+		return strings.Join([]string{fit(" "+strings.ToUpper(m.stash.operation)+" "+m.stash.target.Ref+"?", m.width), fit(" y confirm  n/esc cancel", m.width)}, "\n")
 	}
 	if m.modal == "branch-delete" && small {
-		return strings.Join([]string{fit(" Delete branch "+m.branch.confirm.name+"?", m.width), fit(" y confirm  n/esc cancel", m.width)}, "\n")
+		return strings.Join([]string{fit(" Delete branch "+m.branch.confirm.Name+"?", m.width), fit(" y confirm  n/esc cancel", m.width)}, "\n")
 	}
 	if m.modal == "worktree-delete" && small {
-		return strings.Join([]string{fit(" Remove worktree "+m.worktrees.confirm.path+"?", m.width), fit(" y confirm  n/esc cancel", m.width)}, "\n")
+		return strings.Join([]string{fit(" Remove worktree "+m.worktrees.confirm.Path+"?", m.width), fit(" y confirm  n/esc cancel", m.width)}, "\n")
 	}
 	if m.modal == "error" && small {
 		content := m.errorLines(m.width)
@@ -252,7 +252,7 @@ func (m model) stageTabs() string {
 		}
 		return styleDim + name + " " + fmt.Sprint(count) + styleReset
 	}
-	return tab("unstaged", len(m.snapshot.unstaged), !m.staged) + styleDim + " · " + styleReset + tab("staged", len(m.snapshot.staged), m.staged)
+	return tab("unstaged", len(m.snapshot.Unstaged), !m.staged) + styleDim + " · " + styleReset + tab("staged", len(m.snapshot.Staged), m.staged)
 }
 
 func (m model) emptyText() string {
@@ -269,12 +269,12 @@ func (m model) emptyText() string {
 		return ""
 	}
 	if m.staged {
-		if n := len(m.snapshot.unstaged); n > 0 {
+		if n := len(m.snapshot.Unstaged); n > 0 {
 			return fmt.Sprintf(" No staged changes · tab shows %d unstaged", n)
 		}
 		return " No staged changes"
 	}
-	if n := len(m.snapshot.staged); n > 0 {
+	if n := len(m.snapshot.Staged); n > 0 {
 		return fmt.Sprintf(" No unstaged changes · tab shows %d staged", n)
 	}
 	return " No changes · H opens history"

@@ -7,30 +7,30 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func baseFixture(t *testing.T) (repository, string) {
+func baseFixture(t *testing.T) (Repo, string) {
 	t.Helper()
 	r := testRepo(t)
 	writeFile(t, r, "file", "base\n")
-	if _, err := r.commit("base"); err != nil {
+	if _, err := r.Commit("base"); err != nil {
 		t.Fatal(err)
 	}
-	base, err := r.action("rev-parse", "HEAD")
+	base, err := r.Action("rev-parse", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.action("branch", "review-base"); err != nil {
+	if _, err := r.Action("branch", "review-base"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "committed", "commit change\n")
-	if _, err := r.commit("feature"); err != nil {
+	if _, err := r.Commit("feature"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "second", "second commit\n")
-	if _, err := r.commit("second feature"); err != nil {
+	if _, err := r.Commit("second feature"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "staged", "staged change\n")
-	if err := r.stage("staged", false); err != nil {
+	if err := r.Stage("staged", false); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "file", "working change\n")
@@ -101,10 +101,10 @@ func TestBaseReviewTracksMovingBase(t *testing.T) {
 	if m.base.hash != base {
 		t.Fatal("incorrect initial merge base")
 	}
-	if _, err := r.action("branch", "-f", "review-base", "HEAD"); err != nil {
+	if _, err := r.Action("branch", "-f", "review-base", "HEAD"); err != nil {
 		t.Fatal(err)
 	}
-	head, err := r.action("rev-parse", "HEAD")
+	head, err := r.Action("rev-parse", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestBaseReviewContextAndRefresh(t *testing.T) {
 	m.width, m.height = 80, 20
 	updated, cmd := m.Update(load(r, m.generation, nil)())
 	m = drainBase(t, updated.(model), cmd)
-	context, err := r.fullContext(contextKey{path: "file", commit: base, base: true}, "", "")
+	context, err := r.FullContext(contextKey{path: "file", commit: base, base: true}.gitContext(), "", "")
 	if err != nil || !strings.Contains(context, "-base") || !strings.Contains(context, "+working change") {
 		t.Fatalf("base context: %q %v", context, err)
 	}

@@ -14,7 +14,7 @@ import (
 func TestCommitEditorMessageAndSubmission(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file", "contents\n")
-	m := model{repo: r, modal: "commit", input: "draft", snapshot: snapshot{unstaged: []change{{path: "file"}}}}
+	m := model{repo: r, modal: "commit", input: "draft", snapshot: Snapshot{Unstaged: []Change{{Path: "file"}}}}
 	path, err := m.prepareCommitEditor()
 	if err != nil {
 		t.Fatal(err)
@@ -42,7 +42,7 @@ func TestCommitEditorMessageAndSubmission(t *testing.T) {
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("temporary message not removed: %v", err)
 	}
-	message, err := r.command("log", "-1", "--format=%B")
+	message, err := r.Command("log", "-1", "--format=%B")
 	if err != nil || strings.TrimSpace(string(message)) != "subject\n\nbody" {
 		t.Fatalf("commit message %q: %v", message, err)
 	}

@@ -1,11 +1,11 @@
-package main
+package git
 
 import (
 	"fmt"
 	"time"
 )
 
-func relativeCommitTime(date string, now time.Time) string {
+func RelativeCommitTime(date string, now time.Time) string {
 	when, err := time.Parse(time.RFC3339, date)
 	if err != nil {
 		return "unknown age"
@@ -22,10 +22,10 @@ func relativeCommitTime(date string, now time.Time) string {
 	return "0s ago"
 }
 
-func historyCommitTime(date string, now time.Time) string {
+func HistoryCommitTime(date string, now time.Time) string {
 	when, err := time.Parse(time.RFC3339, date)
 	if err == nil && !when.After(now) && now.Sub(when) < 24*time.Hour {
-		return relativeCommitTime(date, now)
+		return RelativeCommitTime(date, now)
 	}
 	if len(date) >= 10 {
 		return date[:10]

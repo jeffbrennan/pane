@@ -11,11 +11,11 @@ func TestCommitLoadCancellation(t *testing.T) {
 	m := model{}
 	first := m.startCommitLoad()
 	second := m.startCommitLoad()
-	if first.context.Err() != context.Canceled || second.context.Err() != nil {
+	if first.Context.Err() != context.Canceled || second.Context.Err() != nil {
 		t.Fatal("starting a new load must cancel the previous one")
 	}
 	_, _ = m.returnToHistory()
-	if second.context.Err() != context.Canceled {
+	if second.Context.Err() != context.Canceled {
 		t.Fatal("leaving the commit must cancel its load")
 	}
 }
@@ -30,7 +30,7 @@ func TestGitCommandStopsWhenCommitIsCancelled(t *testing.T) {
 	}
 	defer reader.Close()
 	defer writer.Close()
-	cmd := repo.gitCommand("cat-file", "--batch")
+	cmd := repo.GitCommand("cat-file", "--batch")
 	cmd.Stdin = reader
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)

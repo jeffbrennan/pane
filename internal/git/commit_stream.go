@@ -1,4 +1,4 @@
-package main
+package git
 
 import (
 	"bufio"
@@ -16,36 +16,36 @@ type patchReader struct {
 	err     error
 }
 
-type commitChunk struct {
-	paths   []string
-	changes []change
-	meta    commitInfo
-	loaded  int
-	done    bool
-	err     error
+type CommitChunk struct {
+	Paths   []string
+	Changes []Change
+	Meta    CommitInfo
+	Loaded  int
+	Done    bool
+	Err     error
 }
 
-// streamCommit sends complete file sections as soon as a screenful is ready.
+// StreamCommit sends complete file sections as soon as a screenful is ready.
 // The caller must cancel ctx when it stops receiving.
-func (r repository) streamCommit(ctx context.Context, hash string, firstLines int) <-chan commitChunk {
+func (r Repo) StreamCommit(ctx context.Context, hash string, firstLines int) <-chan CommitChunk {
 	patch := append([]string{"show", "--first-parent", "--format="}, r.diffOptions()...)
 	patch = append(patch, "--src-prefix=a/", "--dst-prefix=b/", hash, "--")
 	status := []string{"show", "--first-parent", "--format=", "--name-status", "-M", "-z", hash, "--"}
 	source := r.streamPatch(ctx, status, patch, firstLines, func(path, oldPath, diff string, ok bool) (string, error) {
-		return r.commitFileDiff(hash, path, oldPath, diff, ok)
+		return r.CommitFileDiff(hash, path, oldPath, diff, ok)
 	})
-	out := make(chan commitChunk, 1)
+	out := make(chan CommitChunk, 1)
 	go func() {
 		defer close(out)
-		meta := make(chan commitInfo, 1)
+		meta := make(chan CommitInfo, 1)
 		go func() {
-			commit, err := r.commitDetail(hash)
+			commit, err := r.CommitDetail(hash)
 			if err != nil {
-				commit = commitInfo{}
+				commit = CommitInfo{}
 			}
 			meta <- commit
 		}()
-		var detail commitInfo
+		var detail CommitInfo
 		metaReady := false
 		for chunk := range source {
 			if !metaReady {
@@ -56,7 +56,7 @@ func (r repository) streamCommit(ctx context.Context, hash string, firstLines in
 					return
 				}
 			}
-			chunk.meta = detail
+			chunk.Meta = detail
 			select {
 			case out <- chunk:
 			case <-ctx.Done():
@@ -67,21 +67,21 @@ func (r repository) streamCommit(ctx context.Context, hash string, firstLines in
 	return out
 }
 
-// streamBase is streamCommit for a merge base, which diffs the working tree
+// StreamBase is streamCommit for a merge base, which diffs the working tree
 // against the base instead of showing a commit. Untracked files are not part of
 // that diff, so they join the final chunk.
-func (r repository) streamBase(ctx context.Context, hash string, firstLines int) <-chan commitChunk {
+func (r Repo) StreamBase(ctx context.Context, hash string, firstLines int) <-chan CommitChunk {
 	patch := append([]string{"diff"}, r.diffOptions()...)
 	patch = append(patch, "--src-prefix=a/", "--dst-prefix=b/", hash, "--")
 	status := []string{"diff", "--name-status", "-M", "-z", hash, "--"}
 	source := r.streamPatch(ctx, status, patch, firstLines, func(path, oldPath, diff string, ok bool) (string, error) {
-		return r.baseFileDiff(hash, path, oldPath, diff, ok)
+		return r.BaseFileDiff(hash, path, oldPath, diff, ok)
 	})
-	out := make(chan commitChunk, 1)
+	out := make(chan CommitChunk, 1)
 	go func() {
 		defer close(out)
 		for chunk := range source {
-			if !chunk.done {
+			if !chunk.Done {
 				select {
 				case out <- chunk:
 				case <-ctx.Done():
@@ -89,11 +89,11 @@ func (r repository) streamBase(ctx context.Context, hash string, firstLines int)
 				}
 				continue
 			}
-			untracked, err := r.untrackedChanges()
-			if chunk.err == nil {
-				chunk.err = err
+			untracked, err := r.UntrackedChanges()
+			if chunk.Err == nil {
+				chunk.Err = err
 			}
-			chunk.changes = append(chunk.changes, untracked...)
+			chunk.Changes = append(chunk.Changes, untracked...)
 			select {
 			case out <- chunk:
 			case <-ctx.Done():
@@ -107,23 +107,23 @@ func (r repository) streamBase(ctx context.Context, hash string, firstLines int)
 // streamPatch reads statusArgs to learn every path, then sends the patch from
 // patchArgs one file at a time. Fallback resolves files the patch reader did
 // not recognise.
-func (r repository) streamPatch(ctx context.Context, statusArgs, patchArgs []string, firstLines int, fallback func(path, oldPath, diff string, ok bool) (string, error)) <-chan commitChunk {
-	out := make(chan commitChunk, 1)
+func (r Repo) streamPatch(ctx context.Context, statusArgs, patchArgs []string, firstLines int, fallback func(path, oldPath, diff string, ok bool) (string, error)) <-chan CommitChunk {
+	out := make(chan CommitChunk, 1)
 	go func() {
 		defer close(out)
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
-		r.context = ctx
+		r.Context = ctx
 		type statusResult struct {
 			data []byte
 			err  error
 		}
 		status := make(chan statusResult, 1)
 		go func() {
-			data, err := r.commandStdout(statusArgs...)
+			data, err := r.CommandStdout(statusArgs...)
 			status <- statusResult{data, err}
 		}()
-		cmd := r.gitCommand(patchArgs...)
+		cmd := r.GitCommand(patchArgs...)
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 		pipe, err := cmd.StdoutPipe()
@@ -132,7 +132,7 @@ func (r repository) streamPatch(ctx context.Context, statusArgs, patchArgs []str
 		}
 		if err != nil {
 			select {
-			case out <- commitChunk{done: true, err: err}:
+			case out <- CommitChunk{Done: true, Err: err}:
 			case <-ctx.Done():
 			}
 			return
@@ -147,7 +147,7 @@ func (r repository) streamPatch(ctx context.Context, statusArgs, patchArgs []str
 		result := <-status
 		if result.err != nil {
 			select {
-			case out <- commitChunk{done: true, err: result.err}:
+			case out <- CommitChunk{Done: true, Err: result.err}:
 			case <-ctx.Done():
 			}
 			return
@@ -155,7 +155,7 @@ func (r repository) streamPatch(ctx context.Context, statusArgs, patchArgs []str
 		paths, oldPaths, err := parseCommitPaths(result.data)
 		if err != nil {
 			select {
-			case out <- commitChunk{done: true, err: err}:
+			case out <- CommitChunk{Done: true, Err: err}:
 			case <-ctx.Done():
 			}
 			return
@@ -164,14 +164,14 @@ func (r repository) streamPatch(ctx context.Context, statusArgs, patchArgs []str
 		for _, path := range paths {
 			known[path] = true
 		}
-		generated := r.generatedPaths(paths)
+		generated := r.GeneratedPaths(paths)
 		seen := make(map[string]bool, len(paths))
-		var changes []change
+		var changes []Change
 		loaded, lines := 0, 0
 		first := true
 		last := time.Now()
 		send := func(done bool, err error) bool {
-			chunk := commitChunk{paths: paths, changes: changes, loaded: loaded, done: done, err: err}
+			chunk := CommitChunk{Paths: paths, Changes: changes, Loaded: loaded, Done: done, Err: err}
 			select {
 			case out <- chunk:
 				changes, lines, first, last = nil, 0, false, time.Now()
@@ -185,8 +185,8 @@ func (r repository) streamPatch(ctx context.Context, statusArgs, patchArgs []str
 			if err != nil {
 				return err
 			}
-			c := change{path: path, oldPath: oldPaths[path], diff: diff, generated: generated[path]}
-			c.syntaxSkipped = highlightable(c)
+			c := Change{Path: path, OldPath: oldPaths[path], Diff: diff, Generated: generated[path]}
+			c.SyntaxSkipped = highlightable(c)
 			changes = append(changes, c)
 			seen[path] = true
 			loaded++
@@ -198,9 +198,9 @@ func (r repository) streamPatch(ctx context.Context, statusArgs, patchArgs []str
 			}
 			return nil
 		}
-		reader := newPatchReader(pipe)
+		reader := NewPatchReader(pipe)
 		for {
-			path, section, readErr := reader.next()
+			path, section, readErr := reader.Next()
 			if readErr != nil {
 				if readErr != io.EOF {
 					err = readErr
@@ -219,7 +219,7 @@ func (r repository) streamPatch(ctx context.Context, statusArgs, patchArgs []str
 		waitErr := cmd.Wait()
 		finished = true
 		if err == nil && waitErr != nil {
-			err = gitError(stderr.Bytes(), waitErr)
+			err = GitError(stderr.Bytes(), waitErr)
 		}
 		if err == nil {
 			for _, path := range paths {
@@ -235,13 +235,13 @@ func (r repository) streamPatch(ctx context.Context, statusArgs, patchArgs []str
 	return out
 }
 
-func newPatchReader(reader io.Reader) *patchReader {
+func NewPatchReader(reader io.Reader) *patchReader {
 	return &patchReader{reader: bufio.NewReader(reader)}
 }
 
 // next returns one complete section. Unrecognized paths are returned empty so
 // the caller can fall back to a per-path Git query after the stream ends.
-func (p *patchReader) next() (string, string, error) {
+func (p *patchReader) Next() (string, string, error) {
 	var section strings.Builder
 	for {
 		var line []byte
@@ -274,7 +274,7 @@ func (p *patchReader) next() (string, string, error) {
 		if bytes.HasPrefix(header, []byte("diff ")) {
 			path, boundary = patchPath(string(header)), true
 		} else if bytes.HasPrefix(header, []byte("Submodule ")) {
-			if submodulePath, _, ok := submoduleLine(string(header)); ok && p.path != submodulePath {
+			if submodulePath, _, ok := SubmoduleLine(string(header)); ok && p.path != submodulePath {
 				path, boundary = submodulePath, true
 			}
 		}

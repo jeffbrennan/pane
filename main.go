@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/jeffbrennan/pane/internal/git"
+
 	"fmt"
 	"os"
 	"runtime"
@@ -19,7 +21,7 @@ func main() {
 		// the rows need; 1 GiB keeps collection responsive without thrashing.
 		debug.SetMemoryLimit(1 << 30)
 	}
-	repo, err := openRepository()
+	repo, err := git.OpenRepository()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

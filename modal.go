@@ -230,10 +230,10 @@ func (m model) commitScope() string {
 		}
 		return fmt.Sprintf("%d files", n)
 	}
-	if staged := len(m.snapshot.staged); staged > 0 {
+	if staged := len(m.snapshot.Staged); staged > 0 {
 		return files(staged) + " staged"
 	}
-	if n := len(m.snapshot.unstaged); n > 0 {
+	if n := len(m.snapshot.Unstaged); n > 0 {
 		return "all " + files(n)
 	}
 	return ""
@@ -287,13 +287,13 @@ func (m model) showCommitDialog(lines []string) {
 			spaced := room >= 2*count-1
 			twoLines := room >= 3*count-1
 			for i, commit := range commits[:count] {
-				metadata := relativeCommitTime(commit.date, time.Now()) + " · " + clean(commit.author)
+				metadata := relativeCommitTime(commit.Date, time.Now()) + " · " + clean(commit.Author)
 				if twoLines {
-					content = append(content, fit("  "+clean(commit.subject), boxWidth), styleDim+fit("  "+metadata, boxWidth)+styleReset)
+					content = append(content, fit("  "+clean(commit.Subject), boxWidth), styleDim+fit("  "+metadata, boxWidth)+styleReset)
 				} else {
 					metadata = fit(metadata, max(1, boxWidth/2))
 					available := max(0, boxWidth-4-stringWidth(metadata))
-					content = append(content, "  "+fit(clean(commit.subject), available)+"  "+styleDim+metadata+styleReset)
+					content = append(content, "  "+fit(clean(commit.Subject), available)+"  "+styleDim+metadata+styleReset)
 				}
 				if spaced && i < count-1 {
 					content = append(content, "")
@@ -314,10 +314,10 @@ func (m model) showCommitDialog(lines []string) {
 // showDiscardDialog asks for confirmation before discarding changes.
 func (m model) showDiscardDialog(lines []string) {
 	title := "Discard hunk?"
-	if m.discard.whole {
+	if m.discard.Whole {
 		title = "Discard all unstaged changes in file?"
 	}
-	if m.discard.change.untracked {
+	if m.discard.Change.Untracked {
 		title = "Delete untracked file from disk?"
 	}
 	boxWidth := min(max(48, ansi.StringWidth(title)+6), m.width-2)
@@ -325,15 +325,15 @@ func (m model) showDiscardDialog(lines []string) {
 		width:      boxWidth,
 		title:      title,
 		titleStyle: m.danger(),
-		body:       []string{"", clean(m.discard.change.path), styleDim + "This cannot be undone." + styleReset, ""},
+		body:       []string{"", clean(m.discard.Change.Path), styleDim + "This cannot be undone." + styleReset, ""},
 		hint:       keyHints("y", "discard", "n/esc", "cancel"),
 	}.render())
 }
 
 func (m model) showBranchDelete(lines []string) {
-	title := "Delete branch " + m.branch.confirm.name + "?"
+	title := "Delete branch " + m.branch.confirm.Name + "?"
 	if m.branch.confirmForce {
-		title = "Force delete branch " + m.branch.confirm.name + "?"
+		title = "Force delete branch " + m.branch.confirm.Name + "?"
 	}
 	boxWidth := min(max(48, ansi.StringWidth(title)+6), m.width-2)
 	flag := "-d"
@@ -350,18 +350,18 @@ func (m model) showBranchDelete(lines []string) {
 func (m model) showWorktreeDelete(lines []string) {
 	title := "Remove worktree?"
 	boxWidth := min(max(48, ansi.StringWidth(title)+6), m.width-2)
-	body := []string{"", clean(m.worktrees.confirm.path), styleDim + "This cannot be undone." + styleReset, ""}
+	body := []string{"", clean(m.worktrees.confirm.Path), styleDim + "This cannot be undone." + styleReset, ""}
 	if m.worktrees.confirmForce {
 		title = "Force remove worktree?"
 		note := "Uncommitted changes will be lost."
-		if status := m.worktrees.status[m.worktrees.confirm.path]; status.loaded && status.dirty > 0 {
+		if status := m.worktrees.status[m.worktrees.confirm.Path]; status.loaded && status.dirty > 0 {
 			label := "files"
 			if status.dirty == 1 {
 				label = "file"
 			}
 			note = fmt.Sprintf("%d changed %s will be lost.", status.dirty, label)
 		}
-		body = []string{"", clean(m.worktrees.confirm.path), styleDim + note + styleReset, ""}
+		body = []string{"", clean(m.worktrees.confirm.Path), styleDim + note + styleReset, ""}
 	}
 	placeDialog(lines, m.width, dialog{
 		width: boxWidth, title: title, titleStyle: m.danger(), body: body,

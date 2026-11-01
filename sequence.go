@@ -12,8 +12,8 @@ import (
 )
 
 type sequenceState struct {
-	commits         []commitInfo
-	changes         [][]change
+	commits         []CommitInfo
+	changes         [][]Change
 	states          []sequenceLoadState
 	errors          []string
 	rowCache        [][]row
@@ -46,15 +46,15 @@ const (
 
 type sequenceLoaded struct {
 	index   int
-	commit  commitInfo
-	changes []change
+	commit  CommitInfo
+	changes []Change
 	request int
 	err     error
 }
 
-func initialSequence(repo repository, input io.Reader) (model, error) {
+func initialSequence(repo Repo, input io.Reader) (model, error) {
 	scanner := bufio.NewScanner(io.LimitReader(input, 1024*1024+1))
-	var commits []commitInfo
+	var commits []CommitInfo
 	total := 0
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -73,7 +73,7 @@ func initialSequence(repo repository, input io.Reader) (model, error) {
 		if len(commits) >= maxSequenceCommits {
 			return model{}, fmt.Errorf("commit input exceeds %d commits", maxSequenceCommits)
 		}
-		commits = append(commits, commitInfo{hash: hash})
+		commits = append(commits, CommitInfo{Hash: hash})
 	}
 	if err := scanner.Err(); err != nil {
 		return model{}, fmt.Errorf("reading commit input: %w", err)
@@ -85,34 +85,34 @@ func initialSequence(repo repository, input io.Reader) (model, error) {
 }
 
 // newSequenceModel starts the multi-commit review for already parsed commits.
-func newSequenceModel(repo repository, commits []commitInfo) (model, error) {
+func newSequenceModel(repo Repo, commits []CommitInfo) (model, error) {
 	if len(commits) == 0 {
 		return model{}, fmt.Errorf("no commits in input; use git log --oneline | pane")
 	}
 	if len(commits) > maxSequenceCommits {
 		return model{}, fmt.Errorf("commit input exceeds %d commits", maxSequenceCommits)
 	}
-	state := sequenceState{commits: commits, changes: make([][]change, len(commits)), states: make([]sequenceLoadState, len(commits)), errors: make([]string, len(commits)), loading: true, request: 1}
+	state := sequenceState{commits: commits, changes: make([][]Change, len(commits)), states: make([]sequenceLoadState, len(commits)), errors: make([]string, len(commits)), loading: true, request: 1}
 	state.states[0] = sequenceLoading
 	state.states[len(commits)-1] = sequenceLoading
 	return model{
 		repo: repo, wrap: true, loading: true, startup: true, screen: "sequence",
-		sequence: state, viewed: newViewedStore(repo.root),
+		sequence: state, viewed: newViewedStore(repo.Root),
 	}, nil
 }
 
 type sequenceChunkLoaded struct {
 	index   int
 	request int
-	chunk   commitChunk
-	stream  <-chan commitChunk
+	chunk   CommitChunk
+	stream  <-chan CommitChunk
 }
 
-func waitSequenceChunk(stream <-chan commitChunk, index, request int) tea.Cmd {
+func waitSequenceChunk(stream <-chan CommitChunk, index, request int) tea.Cmd {
 	return func() tea.Msg {
 		chunk, ok := <-stream
 		if !ok {
-			chunk = commitChunk{done: true, err: fmt.Errorf("commit stream ended unexpectedly")}
+			chunk = CommitChunk{Done: true, Err: fmt.Errorf("commit stream ended unexpectedly")}
 		}
 		return sequenceChunkLoaded{index: index, request: request, chunk: chunk, stream: stream}
 	}
@@ -127,12 +127,12 @@ func (m *model) startSequenceStream(index int) tea.Cmd {
 	if m.sequence.streamContext == nil {
 		m.sequence.streamContext, m.sequence.cancel = context.WithCancel(context.Background())
 	}
-	repo, hash := m.repo, m.sequence.commits[index].hash
-	repo.context = m.sequence.streamContext
+	repo, hash := m.repo, m.sequence.commits[index].Hash
+	repo.Context = m.sequence.streamContext
 	ctx := m.sequence.streamContext
 	request, height := m.sequence.request, m.height
 	return func() tea.Msg {
-		stream := repo.streamCommit(ctx, hash, max(height, startupSyntaxLines))
+		stream := repo.StreamCommit(ctx, hash, max(height, startupSyntaxLines))
 		return waitSequenceChunk(stream, index, request)()
 	}
 }
@@ -166,7 +166,7 @@ func (m model) sequenceIdentity() string {
 	if len(m.sequence.commits) == 0 {
 		return ""
 	}
-	return "range:" + m.sequence.commits[0].hash + ".." + m.sequence.commits[len(m.sequence.commits)-1].hash
+	return "range:" + m.sequence.commits[0].Hash + ".." + m.sequence.commits[len(m.sequence.commits)-1].Hash
 }
 
 func (m *model) rebuildSequence() {
@@ -206,25 +206,25 @@ func (m *model) rebuildSequence() {
 		if files == nil {
 			expanded := make(map[string]bool, len(m.sequence.changes[i]))
 			for _, c := range m.sequence.changes[i] {
-				expanded[c.path] = true
+				expanded[c.Path] = true
 			}
 			view := *m
-			view.contextCommit = m.sequence.commits[i].hash
+			view.contextCommit = m.sequence.commits[i].Hash
 			view.contextBase, view.staged = false, false
 			view.viewIdentity = m.sequenceIdentity()
 			view.collapseGenerated(m.sequence.changes[i])
 			view.seedViewedCollapse(m.sequence.changes[i])
 			m.collapsedFiles, m.generatedHandled = view.collapsedFiles, view.generatedHandled
-			changes := m.applySyntaxDemand(contextKey{commit: m.sequence.commits[i].hash}, m.sequence.changes[i])
+			changes := m.applySyntaxDemand(contextKey{commit: m.sequence.commits[i].Hash}, m.sequence.changes[i])
 			files, m.sequence.gutterWidths[i] = buildRowsDisplay(changes, width, m.wrap, expanded, 0, m.shortPaths)
 			if len(files) == 0 {
 				files = append(files, row{kind: '@', text: "  No file changes"})
 			}
 			block := commitHeaderBlock(m.sequence.commits[i], width, m.history.headerCollapsed, now)
-			if len(block) > 0 && m.sequence.commits[i].author != "" {
+			if len(block) > 0 && m.sequence.commits[i].Author != "" {
 				files = append(block, files...)
 			}
-			view.contextCommit = m.sequence.commits[i].hash
+			view.contextCommit = m.sequence.commits[i].Hash
 			view.applyViewed(files, changes)
 			files = view.insertNoteRows(files)
 			files = view.foldContextFiles(files)
@@ -234,7 +234,7 @@ func (m *model) rebuildSequence() {
 			m.sequence.rowCache[i] = files
 		} else if m.sequence.gutterWidths[i] == 0 {
 			for _, c := range m.sequence.changes[i] {
-				m.sequence.gutterWidths[i] = max(m.sequence.gutterWidths[i], lineNumberWidth(strings.Split(c.diff, "\n")))
+				m.sequence.gutterWidths[i] = max(m.sequence.gutterWidths[i], lineNumberWidth(strings.Split(c.Diff, "\n")))
 			}
 		}
 		rows = append(rows, files...)
@@ -302,7 +302,7 @@ func (m model) sequenceView() string {
 		index := int(m.rows[start].commitIndex)
 		if index < len(m.sequence.commits) {
 			commit := m.sequence.commits[index]
-			view.viewTitle = m.accent() + shortHash(commit.hash) + styleReset + "  " + clean(commit.subject)
+			view.viewTitle = m.accent() + shortHash(commit.Hash) + styleReset + "  " + clean(commit.Subject)
 			view.viewBadge = styleDim + fmt.Sprintf("read-only · %d/%d", index+1, len(m.sequence.commits)) + styleReset
 			if viewed, total := viewedCountRows(m.rows); viewed > 0 {
 				view.viewBadge += styleDim + fmt.Sprintf(" · %d/%d viewed", viewed, total) + styleReset
@@ -346,7 +346,7 @@ func (m model) handleSequenceKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.generatedHandled == nil {
 				m.generatedHandled = make(map[contextKey]bool)
 			}
-			fileKey := contextKey{commit: m.sequence.commits[index].hash, path: m.rows[m.pos].path}
+			fileKey := contextKey{commit: m.sequence.commits[index].Hash, path: m.rows[m.pos].path}
 			m.generatedHandled[fileKey] = true
 			if key.String() == "h" {
 				m.collapsedFiles[fileKey] = true
@@ -378,7 +378,7 @@ func (m model) handleSequenceKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.rows) > 0 {
 			index := int(m.rows[m.pos].commitIndex)
 			if index < len(m.sequence.commits) {
-				hash := m.sequence.commits[index].hash
+				hash := m.sequence.commits[index].Hash
 				return m, copyCmd(hash, shortHash(hash))
 			}
 		}
@@ -386,7 +386,7 @@ func (m model) handleSequenceKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.pos >= 0 && m.pos < len(m.rows) {
 			index := int(m.rows[m.pos].commitIndex)
 			if index < len(m.sequence.commits) {
-				return m, m.copyDiffLocation(m.sequence.commits[index].hash)
+				return m, m.copyDiffLocation(m.sequence.commits[index].Hash)
 			}
 		}
 	case "w":

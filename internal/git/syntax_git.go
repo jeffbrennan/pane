@@ -1,4 +1,4 @@
-package main
+package git
 
 import (
 	"strings"
@@ -10,23 +10,23 @@ import (
 // works on plain paths and diffs, so it stays independent of repository and
 // change.
 
-func (r repository) loadSyntaxDiffs(changes []change, key contextKey) {
-	for i, diff := range r.syntaxDiffs(changes, key) {
-		changes[i].syntaxDiff = diff
+func (r Repo) LoadSyntaxDiffs(changes []Change, key Context) {
+	for i, diff := range r.SyntaxDiffs(changes, key) {
+		changes[i].SyntaxDiff = diff
 	}
 	markSyntaxSkipped(changes, syntaxBudgetEnd(changes))
 }
 
 // syntaxBudgetEnd returns the index of the first of changes past the syntax
 // budget, or len(changes) if all fit.
-func syntaxBudgetEnd(changes []change) int {
+func syntaxBudgetEnd(changes []Change) int {
 	files, lines := 0, 0
 	for i, c := range changes {
 		if !highlightable(c) {
 			continue
 		}
 		files++
-		lines += strings.Count(c.diff, "\n")
+		lines += strings.Count(c.Diff, "\n")
 		if files > syntaxBudgetFiles || lines > syntaxBudgetLines {
 			return i
 		}
@@ -35,14 +35,14 @@ func syntaxBudgetEnd(changes []change) int {
 }
 
 // markSyntaxSkipped flags the highlightable changes from end on.
-func markSyntaxSkipped(changes []change, end int) {
+func markSyntaxSkipped(changes []Change, end int) {
 	for i := end; i < len(changes); i++ {
-		changes[i].syntaxSkipped = highlightable(changes[i])
+		changes[i].SyntaxSkipped = highlightable(changes[i])
 	}
 }
 
-func highlightable(c change) bool {
-	return syntax.Lexable(c.path) && !c.conflict
+func highlightable(c Change) bool {
+	return syntax.Lexable(c.Path) && !c.Conflict
 }
 
 // Highlighting stops after this many files or diff lines in one call. Change
@@ -54,32 +54,32 @@ const (
 	syntaxBudgetLines = 5000
 )
 
-// syntaxDiffs loads the full-context diffs that highlighting tokenizes. It
+// SyntaxDiffs loads the full-context diffs that highlighting tokenizes. It
 // only needs paths, so callers can run it alongside the display diffs. Files
 // past the syntax budget are left plain; see syntaxBudgetEnd.
-func (r repository) syntaxDiffs(changes []change, key contextKey) []string {
+func (r Repo) SyntaxDiffs(changes []Change, key Context) []string {
 	diffs := make([]string, len(changes))
 	var indexes []int
-	var selected []change
+	var selected []Change
 	for i := range changes[:syntaxBudgetEnd(changes)] {
 		if highlightable(changes[i]) {
 			indexes = append(indexes, i)
 			selected = append(selected, changes[i])
 		}
 	}
-	for i, result := range r.fullContexts(selected, key) {
-		if result.err == nil && len(result.diff) <= 2*1024*1024 {
-			diffs[indexes[i]] = result.diff
+	for i, result := range r.FullContexts(selected, key) {
+		if result.Err == nil && len(result.Diff) <= 2*1024*1024 {
+			diffs[indexes[i]] = result.Diff
 		}
 	}
 	return diffs
 }
 
-func warmSyntax(changes []change) {
+func WarmSyntax(changes []Change) {
 	files := make([]syntax.File, 0, len(changes))
 	for _, c := range changes {
-		if c.syntaxDiff != "" {
-			files = append(files, syntax.File{Path: c.path, Diff: c.syntaxDiff, Display: c.diff})
+		if c.SyntaxDiff != "" {
+			files = append(files, syntax.File{Path: c.Path, Diff: c.SyntaxDiff, Display: c.Diff})
 		}
 	}
 	syntax.Warm(files)

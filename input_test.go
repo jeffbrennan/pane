@@ -55,7 +55,7 @@ func TestPastedCommitMessage(t *testing.T) {
 	if result.err != nil {
 		t.Fatal(result.err)
 	}
-	out, err := r.command("log", "-1", "--format=%B")
+	out, err := r.Command("log", "-1", "--format=%B")
 	if err != nil || strings.TrimSpace(string(out)) != "subject\n\nbody line" {
 		t.Fatalf("commit message %q: %v", out, err)
 	}

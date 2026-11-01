@@ -13,42 +13,42 @@ import (
 func TestFetchUpdatesHistoryStatus(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file", "initial\n")
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
 	remote := filepath.Join(t.TempDir(), "remote.git")
 	if out, err := exec.Command("git", "init", "--bare", remote).CombinedOutput(); err != nil {
 		t.Fatalf("init remote: %s: %v", out, err)
 	}
-	if _, err := r.action("remote", "add", "team/origin", remote); err != nil {
+	if _, err := r.Action("remote", "add", "team/origin", remote); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.action("push", "-u", "team/origin", "HEAD:refs/heads/main"); err != nil {
+	if _, err := r.Action("push", "-u", "team/origin", "HEAD:refs/heads/main"); err != nil {
 		t.Fatal(err)
 	}
 	clone := filepath.Join(t.TempDir(), "clone")
 	if out, err := exec.Command("git", "clone", "--branch", "main", remote, clone).CombinedOutput(); err != nil {
 		t.Fatalf("clone: %s: %v", out, err)
 	}
-	other := repository{root: clone}
+	other := Repo{Root: clone}
 	for _, args := range [][]string{{"config", "user.name", "Test"}, {"config", "user.email", "test@example.com"}} {
-		if _, err := other.action(args...); err != nil {
+		if _, err := other.Action(args...); err != nil {
 			t.Fatal(err)
 		}
 	}
 	writeFile(t, other, "file", "remote update\n")
-	if _, err := other.commit("remote update"); err != nil {
+	if _, err := other.Commit("remote update"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := other.action("push"); err != nil {
+	if _, err := other.Action("push"); err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := r.load()
+	snapshot, err := r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
 	var fetchArgs []string
-	r.commandHook = func(args []string) {
+	r.CommandHook = func(args []string) {
 		if len(args) > 0 && args[0] == "fetch" {
 			fetchArgs = append([]string(nil), args...)
 		}
@@ -73,14 +73,14 @@ func TestFetchUpdatesHistoryStatus(t *testing.T) {
 	}
 	updated, _ = m.Update(cmd())
 	m = updated.(model)
-	if m.snapshot.branch.behind != 1 || !strings.Contains(m.View(), "↓1 behind") {
-		t.Fatalf("fetch did not update status: %#v %q", m.snapshot.branch, m.View())
+	if m.snapshot.Branch.Behind != 1 || !strings.Contains(m.View(), "↓1 behind") {
+		t.Fatalf("fetch did not update status: %#v %q", m.snapshot.Branch, m.View())
 	}
 }
 
 func TestFetchNoRemoteAndNoUpstream(t *testing.T) {
 	r := testRepo(t)
-	message, err := r.fetch()
+	message, err := r.Fetch()
 	if err != nil || message != "No remotes configured" {
 		t.Fatalf("no remote: %q %v", message, err)
 	}
@@ -88,16 +88,16 @@ func TestFetchNoRemoteAndNoUpstream(t *testing.T) {
 	if out, err := exec.Command("git", "init", "--bare", remote).CombinedOutput(); err != nil {
 		t.Fatalf("init remote: %s: %v", out, err)
 	}
-	if _, err := r.action("remote", "add", "origin", remote); err != nil {
+	if _, err := r.Action("remote", "add", "origin", remote); err != nil {
 		t.Fatal(err)
 	}
 	var fetchArgs []string
-	r.commandHook = func(args []string) {
+	r.CommandHook = func(args []string) {
 		if len(args) > 0 && args[0] == "fetch" {
 			fetchArgs = append([]string(nil), args...)
 		}
 	}
-	if _, err := r.fetch(); err != nil {
+	if _, err := r.Fetch(); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(fetchArgs, []string{"fetch", "--all", "--prune"}) {
@@ -128,7 +128,7 @@ func TestFetchNoRemoteShowsFlashAndErrorsShowModal(t *testing.T) {
 	if got := updated.(model); got.busy || got.flash != "No remotes configured" || got.modal != "" {
 		t.Fatalf("no remote state: %#v", got)
 	}
-	if _, err := r.action("remote", "add", "origin", filepath.Join(t.TempDir(), "missing.git")); err != nil {
+	if _, err := r.Action("remote", "add", "origin", filepath.Join(t.TempDir(), "missing.git")); err != nil {
 		t.Fatal(err)
 	}
 	m = model{repo: r, width: 80, height: 15}

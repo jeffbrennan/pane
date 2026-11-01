@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/jeffbrennan/pane/internal/git"
+
 	"fmt"
 	"os"
 	"strings"
@@ -11,7 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func hotFixture(t *testing.T) repository {
+func hotFixture(t *testing.T) Repo {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	r := testRepo(t)
@@ -19,14 +21,14 @@ func hotFixture(t *testing.T) repository {
 	t.Setenv("GIT_AUTHOR_DATE", old)
 	t.Setenv("GIT_COMMITTER_DATE", old)
 	writeFile(t, r, "old-big.txt", strings.Repeat("old line\n", 100))
-	if _, err := r.commit("old big change"); err != nil {
+	if _, err := r.Commit("old big change"); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("GIT_AUTHOR_DATE", time.Now().Add(-time.Hour).Format(time.RFC3339))
 	t.Setenv("GIT_COMMITTER_DATE", time.Now().Add(-time.Hour).Format(time.RFC3339))
 	t.Setenv("GIT_AUTHOR_NAME", "Other")
 	writeFile(t, r, "recent.txt", "one\ntwo\nthree\nfour\nfive\n")
-	if _, err := r.commit("recent small change"); err != nil {
+	if _, err := r.Commit("recent small change"); err != nil {
 		t.Fatal(err)
 	}
 	return r
@@ -34,7 +36,7 @@ func hotFixture(t *testing.T) repository {
 
 func TestHotspotsRankRecentEditsAboveOldBigOnes(t *testing.T) {
 	r := hotFixture(t)
-	files, _, err := r.hotspots("2.year", "")
+	files, _, err := hotspots(r, "2.year", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +50,7 @@ func TestHotspotsRankRecentEditsAboveOldBigOnes(t *testing.T) {
 
 func TestHotspotsAuthorFilter(t *testing.T) {
 	r := hotFixture(t)
-	files, authors, err := r.hotspots("2.year", "Other")
+	files, authors, err := hotspots(r, "2.year", "Other")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,16 +66,16 @@ func TestHotspotsMergeRenamesAndExcludeGenerated(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "before.txt", "line\n")
 	writeFile(t, r, "go.sum", strings.Repeat("sum line\n", 5))
-	if _, err := r.commit("initial"); err != nil {
+	if _, err := r.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.command("mv", "before.txt", "after.txt"); err != nil {
+	if _, err := r.Command("mv", "before.txt", "after.txt"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.commit("rename"); err != nil {
+	if _, err := r.Commit("rename"); err != nil {
 		t.Fatal(err)
 	}
-	files, _, err := r.hotspots("2.year", "")
+	files, _, err := hotspots(r, "2.year", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +90,7 @@ func TestHotspotsMergeRenamesAndExcludeGenerated(t *testing.T) {
 
 func TestHotspotScreenFoldsSortsAndOpensHistory(t *testing.T) {
 	r := hotFixture(t)
-	m := model{width: 120, height: 30, wrap: true, repo: r, viewed: newViewedStore(r.root)}
+	m := model{width: 120, height: 30, wrap: true, repo: r, viewed: newViewedStore(r.Root)}
 	updated, cmd := m.openHotspots("2.year", "")
 	m = updated.(model)
 	if cmd == nil {
@@ -137,18 +139,18 @@ func drainHotspots(t *testing.T, m model, cmd tea.Cmd) model {
 	return m
 }
 
-func m0Files(t *testing.T, r repository) []hotFile {
+func m0Files(t *testing.T, r Repo) []hotFile {
 	t.Helper()
-	files, _, err := r.hotspots("2.year", "")
+	files, _, err := hotspots(r, "2.year", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	return files
 }
 
-func m0Authors(t *testing.T, r repository) map[string]*hotAuthor {
+func m0Authors(t *testing.T, r Repo) map[string]*hotAuthor {
 	t.Helper()
-	_, authors, err := r.hotspots("2.year", "")
+	_, authors, err := hotspots(r, "2.year", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +159,7 @@ func m0Authors(t *testing.T, r repository) map[string]*hotAuthor {
 
 func TestHotspotVOpensFilteredSequence(t *testing.T) {
 	r := hotFixture(t)
-	m := model{width: 120, height: 30, wrap: true, repo: r, viewed: newViewedStore(r.root)}
+	m := model{width: 120, height: 30, wrap: true, repo: r, viewed: newViewedStore(r.Root)}
 	updated, cmd := m.openHotspots("2.year", "")
 	m = updated.(model)
 	m = drainHotspots(t, m, cmd)
@@ -183,16 +185,16 @@ func TestHotspotVOpensFilteredSequence(t *testing.T) {
 func TestHotspotCacheAvoidsSecondScan(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	r := hotFixture(t)
-	if _, _, err := r.hotspots("2.year", ""); err != nil {
+	if _, _, err := hotspots(r, "2.year", ""); err != nil {
 		t.Fatal(err)
 	}
 	var logs atomic.Int64
-	r.commandHook = func(args []string) {
+	r.CommandHook = func(args []string) {
 		if len(args) > 0 && args[0] == "log" {
 			logs.Add(1)
 		}
 	}
-	files, authors, err := r.hotspots("2.year", "")
+	files, authors, err := hotspots(r, "2.year", "")
 	if err != nil || len(files) != 2 || len(authors) == 0 {
 		t.Fatalf("cached load: %d files %v", len(files), err)
 	}
@@ -214,28 +216,28 @@ func TestHotspotFileHistoryKeepsWindow(t *testing.T) {
 func TestHotspotCacheLoadsOnlyNewCommitsAfterHeadMoves(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	r := hotFixture(t)
-	if _, _, err := r.hotspots("2.year", ""); err != nil {
+	if _, _, err := hotspots(r, "2.year", ""); err != nil {
 		t.Fatal(err)
 	}
-	tip, err := r.command("rev-parse", "HEAD")
+	tip, err := r.Command("rev-parse", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "later.txt", "later\n")
-	if _, err := r.commit("later change"); err != nil {
+	if _, err := r.Commit("later change"); err != nil {
 		t.Fatal(err)
 	}
-	head, err := r.command("rev-parse", "HEAD")
+	head, err := r.Command("rev-parse", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var logs [][]string
-	r.commandHook = func(args []string) {
+	r.CommandHook = func(args []string) {
 		if len(args) > 0 && args[0] == "log" {
 			logs = append(logs, append([]string(nil), args...))
 		}
 	}
-	files, _, err := r.hotspots("2.year", "")
+	files, _, err := hotspots(r, "2.year", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,17 +267,17 @@ func TestHotspotCacheLoadsOnlyNewCommitsAfterHeadMoves(t *testing.T) {
 func TestHotspotCacheFallsBackWhenHistoryIsRewritten(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	r := hotFixture(t)
-	if _, _, err := r.hotspots("2.year", ""); err != nil {
+	if _, _, err := hotspots(r, "2.year", ""); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "later.txt", "later\n")
-	if _, err := r.commit("later change"); err != nil {
+	if _, err := r.Commit("later change"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.command("reset", "--hard", "HEAD~1"); err != nil {
+	if _, err := r.Command("reset", "--hard", "HEAD~1"); err != nil {
 		t.Fatal(err)
 	}
-	files, _, err := r.hotspots("2.year", "")
+	files, _, err := hotspots(r, "2.year", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +320,7 @@ func TestHotspotStreamEmitsPagesAndUpdatesTree(t *testing.T) {
 	hotspotPageSize = 1
 	t.Cleanup(func() { hotspotPageSize = previous })
 	r := hotFixture(t)
-	m := model{width: 120, height: 30, wrap: true, repo: r, viewed: newViewedStore(r.root)}
+	m := model{width: 120, height: 30, wrap: true, repo: r, viewed: newViewedStore(r.Root)}
 	updated, cmd := m.openHotspots("2.year", "")
 	m = updated.(model)
 	// The start message establishes the plan.
@@ -345,21 +347,21 @@ func TestHotspotStreamEmitsPagesAndUpdatesTree(t *testing.T) {
 func TestHotspotSummaryCacheAvoidsCommitDecode(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	r := hotFixture(t)
-	if _, _, err := r.hotspots("2.year", ""); err != nil {
+	if _, _, err := hotspots(r, "2.year", ""); err != nil {
 		t.Fatal(err)
 	}
 	// Remove the large per-commit cache; the summary alone should serve the
 	// unchanged HEAD.
-	if err := os.Remove(hotCachePath(r.root, "2.year", "")); err != nil {
+	if err := os.Remove(hotCachePath(r.Root, "2.year", "")); err != nil {
 		t.Fatal(err)
 	}
 	var logs atomic.Int64
-	r.commandHook = func(args []string) {
+	r.CommandHook = func(args []string) {
 		if len(args) > 0 && args[0] == "log" {
 			logs.Add(1)
 		}
 	}
-	plan, err := r.planHotspots("2.year", "")
+	plan, err := planHotspots(r, "2.year", "")
 	if err != nil || !plan.cacheHit || len(plan.files) != 2 || len(plan.items) == 0 {
 		t.Fatalf("summary cache: %d files %d items %v", len(plan.files), len(plan.items), err)
 	}
@@ -371,7 +373,7 @@ func TestHotspotSummaryCacheAvoidsCommitDecode(t *testing.T) {
 func TestHotspotCacheHitPrefillsTree(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	r := hotFixture(t)
-	if _, _, err := r.hotspots("2.year", ""); err != nil {
+	if _, _, err := hotspots(r, "2.year", ""); err != nil {
 		t.Fatal(err)
 	}
 	m := model{width: 120, height: 30, wrap: true, repo: r}
@@ -394,25 +396,25 @@ func TestParallelHotspotWalkMatchesSingle(t *testing.T) {
 	r := testRepo(t)
 	for i := 0; i < 25; i++ {
 		writeFile(t, r, fmt.Sprintf("file-%02d.txt", i%5), strings.Repeat(fmt.Sprintf("line %d\n", i), 10))
-		if _, err := r.commit(fmt.Sprintf("commit %d", i)); err != nil {
+		if _, err := r.Commit(fmt.Sprintf("commit %d", i)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	oldThreshold, oldWorkers := hotspotParallelThreshold, hotspotWorkers
-	t.Cleanup(func() { hotspotParallelThreshold, hotspotWorkers = oldThreshold, oldWorkers })
+	oldThreshold, oldWorkers := git.HotspotParallelThreshold, git.HotspotWorkers
+	t.Cleanup(func() { git.HotspotParallelThreshold, git.HotspotWorkers = oldThreshold, oldWorkers })
 	clear := func() {
-		_ = os.Remove(hotCachePath(r.root, "1.year", ""))
-		_ = os.Remove(hotSummaryPath(r.root, "1.year", ""))
+		_ = os.Remove(hotCachePath(r.Root, "1.year", ""))
+		_ = os.Remove(hotSummaryPath(r.Root, "1.year", ""))
 	}
-	hotspotParallelThreshold, hotspotWorkers = 5, 4
+	git.HotspotParallelThreshold, git.HotspotWorkers = 5, 4
 	clear()
-	parallelFiles, parallelAuthors, err := r.hotspots("1.year", "")
+	parallelFiles, parallelAuthors, err := hotspots(r, "1.year", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	hotspotParallelThreshold, hotspotWorkers = 10000, 1
+	git.HotspotParallelThreshold, git.HotspotWorkers = 10000, 1
 	clear()
-	singleFiles, singleAuthors, err := r.hotspots("1.year", "")
+	singleFiles, singleAuthors, err := hotspots(r, "1.year", "")
 	if err != nil {
 		t.Fatal(err)
 	}

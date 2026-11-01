@@ -22,7 +22,7 @@ func (m model) commitHeaderRows(rows []row) []row {
 		return rows
 	}
 	commit := m.history.meta
-	if commit.hash == "" {
+	if commit.Hash == "" {
 		return rows
 	}
 	block := commitHeaderBlock(commit, m.diffContentWidth(), m.history.headerCollapsed, time.Now())
@@ -37,10 +37,10 @@ func (m model) commitHeaderRows(rows []row) []row {
 
 // commitHeaderBlock lays out the author, dates, parents, refs and message body.
 // The last row of the block is blank, which separates it from the first file.
-func commitHeaderBlock(commit commitInfo, width int, collapsed bool, now time.Time) []row {
-	age := relativeCommitTime(commit.date, now)
+func commitHeaderBlock(commit CommitInfo, width int, collapsed bool, now time.Time) []row {
+	age := relativeCommitTime(commit.Date, now)
 	if collapsed {
-		summary := fmt.Sprintf("  %s · %s · commit details · l expand", clean(commit.author), age)
+		summary := fmt.Sprintf("  %s · %s · commit details · l expand", clean(commit.Author), age)
 		return []row{{text: fit(summary, max(1, width)), kind: 'M'}}
 	}
 	var rows []row
@@ -49,27 +49,27 @@ func commitHeaderBlock(commit commitInfo, width int, collapsed bool, now time.Ti
 			rows = append(rows, row{text: part, kind: kind})
 		}
 	}
-	author := fmt.Sprintf("  %s <%s> · %s (%s)", commit.author, commit.email, age, absoluteCommitTime(commit.date))
+	author := fmt.Sprintf("  %s <%s> · %s (%s)", commit.Author, commit.Email, age, absoluteCommitTime(commit.Date))
 	add(author, 'm')
-	if commit.committer != "" && (commit.committer != commit.author || commit.committerEmail != commit.email || commit.committerDate != commit.date) {
-		committer := fmt.Sprintf("  Committed by %s <%s> · %s", commit.committer, commit.committerEmail, absoluteCommitTime(commit.committerDate))
+	if commit.Committer != "" && (commit.Committer != commit.Author || commit.CommitterEmail != commit.Email || commit.CommitterDate != commit.Date) {
+		committer := fmt.Sprintf("  Committed by %s <%s> · %s", commit.Committer, commit.CommitterEmail, absoluteCommitTime(commit.CommitterDate))
 		add(committer, 'm')
 	}
-	if len(commit.parents) > 0 {
-		parents := make([]string, len(commit.parents))
-		for i, parent := range commit.parents {
+	if len(commit.Parents) > 0 {
+		parents := make([]string, len(commit.Parents))
+		for i, parent := range commit.Parents {
 			parents[i] = shortHash(parent)
 		}
 		text := "  Parent " + strings.Join(parents, " ")
-		if len(commit.parents) > 1 {
+		if len(commit.Parents) > 1 {
 			text += " · merge"
 		}
 		add(text, 'm')
 	}
-	if refs := formatRefs(commit.refs); refs != "" {
+	if refs := formatRefs(commit.Refs); refs != "" {
 		add("  Refs "+refs, 'm')
 	}
-	body, trailers := splitCommitMessage(commit.subject, commit.message)
+	body, trailers := splitCommitMessage(commit.Subject, commit.Message)
 	if len(body) > 0 || len(trailers) > 0 {
 		rows = append(rows, row{kind: 'm'})
 	}

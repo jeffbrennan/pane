@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"strings"
 )
@@ -35,55 +34,12 @@ func generatedByPath(path string) bool {
 	return false
 }
 
-// generatedPaths marks built-in generated files and asks Git once for the
-// .gitattributes linguist-generated and -diff markers on the rest.
-func (r repository) generatedPaths(paths []string) map[string]bool {
-	generated := make(map[string]bool)
-	var candidates []string
-	for _, path := range paths {
-		if generatedByPath(path) {
-			generated[path] = true
-			continue
-		}
-		candidates = append(candidates, path)
-	}
-	if len(candidates) == 0 {
-		return generated
-	}
-	input := strings.Join(candidates, "\x00") + "\x00"
-	out, err := r.commandInput(strings.NewReader(input), "check-attr", "-z", "--stdin", "linguist-generated", "diff")
-	if err != nil {
-		return generated
-	}
-	fields := bytes.Split(out, []byte{0})
-	for i := 0; i+2 < len(fields); i += 3 {
-		path, attr, value := string(fields[i]), string(fields[i+1]), string(fields[i+2])
-		if path == "" {
-			continue
-		}
-		switch attr {
-		case "linguist-generated":
-			if value == "set" || value == "true" || value == "yes" {
-				generated[path] = true
-			}
-		case "diff":
-			// `-diff` (unset) marks content Git should not show as a diff.
-			if value == "unset" || value == "false" {
-				generated[path] = true
-			}
-		}
-	}
-	return generated
-}
-
-// collapseGenerated seeds the collapsed-file map for generated files the
-// session has not seen before, so a file the reader opened stays open.
-func (m *model) collapseGenerated(changes []change) {
+func (m *model) collapseGenerated(changes []Change) {
 	for _, c := range changes {
-		if !c.generated {
+		if !c.Generated {
 			continue
 		}
-		key := contextKey{path: c.path, commit: m.contextCommit, staged: m.staged, base: m.contextBase}
+		key := contextKey{path: c.Path, commit: m.contextCommit, staged: m.staged, base: m.contextBase}
 		if m.generatedHandled == nil {
 			m.generatedHandled = make(map[contextKey]bool)
 		}

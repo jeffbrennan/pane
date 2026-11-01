@@ -9,9 +9,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func stagingModel(t *testing.T, r repository, staged bool) model {
+func stagingModel(t *testing.T, r Repo, staged bool) model {
 	t.Helper()
-	s, err := r.load()
+	s, err := r.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,16 +53,16 @@ func TestStageAndUnstageMiddleHunk(t *testing.T) {
 	r := testRepo(t)
 	base := "first\n" + strings.Repeat("context\n", 12) + "middle\n" + strings.Repeat("context\n", 12) + "last\n"
 	writeFile(t, r, "file.txt", base)
-	if err := r.stage("file.txt", false); err != nil {
+	if err := r.Stage("file.txt", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.action("commit", "-m", "initial"); err != nil {
+	if _, err := r.Action("commit", "-m", "initial"); err != nil {
 		t.Fatal(err)
 	}
 	changed := strings.NewReplacer("first", "changed first", "middle", "changed middle", "last", "changed last").Replace(base)
 	writeFile(t, r, "file.txt", changed)
 	m := stageAt(t, stagingModel(t, r, false), "changed middle")
-	staged, err := r.diff("file.txt", true)
+	staged, err := r.Diff("file.txt", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,11 +72,11 @@ func TestStageAndUnstageMiddleHunk(t *testing.T) {
 	if m.rows[m.pos].path != "file.txt" || m.rows[m.pos].text != "last" {
 		t.Fatalf("cursor not on next hunk: %#v", m.rows[m.pos])
 	}
-	if err := r.stage("file.txt", false); err != nil {
+	if err := r.Stage("file.txt", false); err != nil {
 		t.Fatal(err)
 	}
 	m = stageAt(t, stagingModel(t, r, true), "changed middle")
-	staged, err = r.diff("file.txt", true)
+	staged, err = r.Diff("file.txt", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestStageHeaderAndUntracked(t *testing.T) {
 				text = " new.txt"
 			}
 			stageAt(t, stagingModel(t, r, false), text)
-			out, err := r.command("show", ":new.txt")
+			out, err := r.Command("show", ":new.txt")
 			if err != nil || string(out) != "new content\n" {
 				t.Fatalf("index: %q, %v", out, err)
 			}
@@ -109,20 +109,20 @@ func TestStageHeaderAndUntracked(t *testing.T) {
 func TestStageHunkWithoutFinalNewline(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file", "old")
-	if err := r.stage("file", false); err != nil {
+	if err := r.Stage("file", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.action("commit", "-m", "initial"); err != nil {
+	if _, err := r.Action("commit", "-m", "initial"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "file", "new")
 	stageAt(t, stagingModel(t, r, false), "new")
-	out, err := r.command("show", ":file")
+	out, err := r.Command("show", ":file")
 	if err != nil || string(out) != "new" {
 		t.Fatalf("index: %q, %v", out, err)
 	}
 	stageAt(t, stagingModel(t, r, true), "new")
-	out, err = r.command("show", ":file")
+	out, err = r.Command("show", ":file")
 	if err != nil || string(out) != "old" {
 		t.Fatalf("index: %q, %v", out, err)
 	}
@@ -131,15 +131,15 @@ func TestStageHunkWithoutFinalNewline(t *testing.T) {
 func TestStageRejectsStaleAndOutsideHunk(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file", "old\n")
-	if err := r.stage("file", false); err != nil {
+	if err := r.Stage("file", false); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "file", "new\n")
 	m := stagingModel(t, r, false)
-	c := m.snapshot.unstaged[0]
-	patch := selectedHunk(c.diff, row{kind: '+', sourceLine: 1})
+	c := m.snapshot.Unstaged[0]
+	patch := selectedHunk(c.Diff, row{kind: '+', sourceLine: 1})
 	writeFile(t, r, "file", "newer\n")
-	if err := r.stageHunk(c, patch, false); err == nil || !strings.Contains(err.Error(), "refresh") {
+	if err := r.StageHunk(c, patch, false); err == nil || !strings.Contains(err.Error(), "refresh") {
 		t.Fatalf("stale error: %v", err)
 	}
 	m.rows = []row{{path: "file", kind: ' ', sourceLine: 100, target: 100}}
@@ -152,20 +152,20 @@ func TestStageRejectsStaleAndOutsideHunk(t *testing.T) {
 func TestStageDeletedFileFromLine(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file", "old\n")
-	if err := r.stage("file", false); err != nil {
+	if err := r.Stage("file", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.action("commit", "-m", "initial"); err != nil {
+	if _, err := r.Action("commit", "-m", "initial"); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(filepath.Join(r.root, "file")); err != nil {
+	if err := os.Remove(filepath.Join(r.Root, "file")); err != nil {
 		t.Fatal(err)
 	}
 	m := stagingModel(t, r, false)
 	m.expandedDeleted = map[string]bool{"file": true}
 	m.rebuild()
 	stageAt(t, m, "old")
-	out, err := r.command("diff", "--cached", "--name-status")
+	out, err := r.Command("diff", "--cached", "--name-status")
 	if err != nil || !strings.HasPrefix(string(out), "D\tfile") {
 		t.Fatalf("deletion: %q, %v", out, err)
 	}
@@ -174,34 +174,34 @@ func TestStageDeletedFileFromLine(t *testing.T) {
 func TestStageContentHunkLeavesModeUnstaged(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file", "old\n")
-	if err := r.stage("file", false); err != nil {
+	if err := r.Stage("file", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.action("commit", "-m", "initial"); err != nil {
+	if _, err := r.Action("commit", "-m", "initial"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "file", "new\n")
-	if err := os.Chmod(filepath.Join(r.root, "file"), 0700); err != nil {
+	if err := os.Chmod(filepath.Join(r.Root, "file"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	stageAt(t, stagingModel(t, r, false), "new")
-	staged, err := r.diff("file", true)
+	staged, err := r.Diff("file", true)
 	if err != nil || !strings.Contains(staged, "+new") || strings.Contains(staged, "new mode") {
 		t.Fatalf("staged diff: %q, %v", staged, err)
 	}
-	unstaged, err := r.diff("file", false)
+	unstaged, err := r.Diff("file", false)
 	if err != nil || !strings.Contains(unstaged, "new mode") {
 		t.Fatalf("unstaged mode: %q, %v", unstaged, err)
 	}
 }
 
 func TestStageConflictAndBinaryGuards(t *testing.T) {
-	conflict := model{snapshot: snapshot{unstaged: []change{{path: "file", conflict: true}}}, rows: []row{{path: "file", kind: 'f'}}}
+	conflict := model{snapshot: Snapshot{Unstaged: []Change{{Path: "file", Conflict: true}}}, rows: []row{{path: "file", kind: 'f'}}}
 	updated, cmd := conflict.stageSelection(true)
 	if cmd != nil || updated.(model).flash != "Resolve conflicts outside pane" {
 		t.Fatalf("conflict: %#v", updated)
 	}
-	binary := model{snapshot: snapshot{unstaged: []change{{path: "file", diff: "Binary files differ"}}}, rows: []row{{path: "file", kind: '@'}}}
+	binary := model{snapshot: Snapshot{Unstaged: []Change{{Path: "file", Diff: "Binary files differ"}}}, rows: []row{{path: "file", kind: '@'}}}
 	updated, cmd = binary.stageSelection(true)
 	if cmd != nil || updated.(model).flash == "" {
 		t.Fatalf("binary: %#v", updated)

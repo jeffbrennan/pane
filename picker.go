@@ -465,7 +465,7 @@ func (m model) showFilesDialog(lines []string) {
 		info = fmt.Sprintf("%d/%d loaded", m.history.streamLoaded, len(m.history.streamPaths))
 	}
 	if m.picker.commitScoped && m.picker.commitIndex >= 0 && m.picker.commitIndex < len(m.sequence.commits) {
-		info = shortHash(m.sequence.commits[m.picker.commitIndex].hash) + " · " + info
+		info = shortHash(m.sequence.commits[m.picker.commitIndex].Hash) + " · " + info
 	}
 	var body []string
 	body = append(body, queryLine, styleDim+columns(strings.Repeat(" ", numberWidth), "Files", "Changes")+styleReset)

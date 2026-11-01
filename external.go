@@ -77,7 +77,7 @@ func (m model) openEditor() (model, tea.Cmd) {
 		return m, nil
 	}
 	r := m.rows[m.pos]
-	path := filepath.Join(m.repo.root, r.path)
+	path := filepath.Join(m.repo.Root, r.path)
 	if _, err := os.Stat(path); err != nil {
 		m.flash = clean(r.path) + " does not exist in the working tree"
 		return m, nil
@@ -88,7 +88,7 @@ func (m model) openEditor() (model, tea.Cmd) {
 	}
 	args := editorArgs(editor, path, r.target)
 	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Dir = m.repo.root
+	cmd.Dir = m.repo.Root
 	return m, tea.Exec(editorCommand{cmd}, func(err error) tea.Msg { return editorClosed{err} })
 }
 

@@ -5,24 +5,24 @@ import (
 	"testing"
 )
 
-func movedFixture(t *testing.T) (model, []change) {
+func movedFixture(t *testing.T) (model, []Change) {
 	t.Helper()
 	r := testRepo(t)
 	writeFile(t, r, "a.go", "package a\n\nfunc one() {}\nfunc two() {}\nfunc three() {}\nfunc four() {}\n")
 	writeFile(t, r, "b.go", "package b\n")
-	if _, err := r.commit("first"); err != nil {
+	if _, err := r.Commit("first"); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, r, "a.go", "package a\n")
 	writeFile(t, r, "b.go", "package b\n\nfunc one() {}\nfunc two() {}\nfunc three() {}\nfunc four() {}\n")
-	if _, err := r.commit("move"); err != nil {
+	if _, err := r.Commit("move"); err != nil {
 		t.Fatal(err)
 	}
-	commit, err := r.resolveCommit("HEAD")
+	commit, err := r.ResolveCommit("HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
-	changes, err := r.commitChanges(commit.hash)
+	changes, err := r.CommitChanges(commit.Hash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestMovedHintRendersOnlyWhenVisible(t *testing.T) {
 
 func TestShortMovedRunsStayNormal(t *testing.T) {
 	index := newMovedIndex()
-	index.addChange(change{path: "b", diff: "@@ -1,2 +1,2 @@\n-one\n-two\n+one\n+two\n"})
+	index.addChange(Change{Path: "b", Diff: "@@ -1,2 +1,2 @@\n-one\n-two\n+one\n+two\n"})
 	row := row{path: "b", kind: '+', target: 1, sourceLine: 1, text: "one"}
 	if moved, _, _ := index.lookup(row); moved {
 		t.Fatal("a two-line move should not be marked")
