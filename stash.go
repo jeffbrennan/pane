@@ -28,6 +28,7 @@ type stashesLoaded struct {
 
 type stashDiffLoaded struct {
 	changes []change
+	meta    commitInfo
 	request int
 	err     error
 }
@@ -179,6 +180,7 @@ func (m model) handleStashKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.stash.viewing = true
 		m.screen = "commit"
 		m.history.current = commitInfo{hash: entry.hash, subject: entry.ref + " · " + entry.message}
+		m.history.meta = commitInfo{}
 		m.history.request++
 		repo := m.startCommitLoad()
 		m.history.streamActive = false
@@ -192,7 +194,11 @@ func (m model) handleStashKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		hash, request := entry.hash, m.history.request
 		return m, func() tea.Msg {
 			changes, err := repo.stashChanges(hash)
-			return stashDiffLoaded{changes: changes, request: request, err: err}
+			detail, detailErr := repo.commitDetail(hash)
+			if err == nil {
+				err = detailErr
+			}
+			return stashDiffLoaded{changes: changes, meta: detail, request: request, err: err}
 		}
 	case "p", "x":
 		if count == 0 || m.stash.loading || m.busy {

@@ -303,6 +303,7 @@ func initialModel(repo repository, args []string) (model, error) {
 	}
 	m.screen = "commit"
 	m.history.current = commit
+	m.history.meta = commit
 	m.history.loading = true
 	m.history.request++
 	m.history.directCommit = true
@@ -750,6 +751,9 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.history.changes = msg.changes
+		if msg.meta.hash != "" {
+			m.history.meta = msg.meta
+		}
 		m.rebuildCommit()
 	case commitLoadingDelay:
 		if m.screen == "commit" && m.history.loading && msg.request == m.history.request {
@@ -764,6 +768,9 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		chunk := msg.chunk
+		if chunk.meta.hash != "" {
+			m.history.meta = chunk.meta
+		}
 		m.history.streamPaths, m.history.streamLoaded = chunk.paths, chunk.loaded
 		m.history.commitLoadingVisible = false
 		m.appendCommitChanges(chunk.changes, chunk.done)
@@ -1247,6 +1254,9 @@ func (m *model) rebuildRows(previous func(path string) ([]row, bool)) {
 	m.previousChanges = nil
 	rows = m.localContextRows(rows, changes)
 	rows = m.foldContextFiles(rows)
+	if m.contextCommit != "" && !m.contextBase {
+		rows = m.commitHeaderRows(rows)
+	}
 	indexRowHeaders(rows)
 	m.rows = rows
 	m.pos = 0
@@ -1964,7 +1974,7 @@ func (m model) renderDiffRowWithGutter(r row, active bool, gutter string) string
 	text := r.text
 	syntax, inline := r.syntaxSpans(), r.inlineSpans()
 	contentWidth := max(0, m.width-margin)
-	if r.kind == 'f' || r.kind == 'F' {
+	if r.kind == 'f' || r.kind == 'F' || r.kind == 'm' || r.kind == 'M' {
 		text = fit(text, contentWidth)
 	} else if !m.wrap {
 		text = sliceWidth(text, m.horizontal, max(0, contentWidth-stringWidth(gutter)))
@@ -1990,6 +2000,8 @@ func (m model) renderDiffRowWithGutter(r row, active bool, gutter string) string
 		if m.lightTheme {
 			color = renameHeaderLight
 		}
+	case 'M':
+		color = styleDim
 	}
 	if (r.kind == 'f' || r.kind == 'F') && len(inline) > 0 && strings.HasPrefix(text, gutter) {
 		highlight := "\x1b[48;2;100;38;43m"

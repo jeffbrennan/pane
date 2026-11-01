@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -136,6 +137,7 @@ func (m *model) rebuildSequence() {
 		m.sequence.gutterWidths = make([]int, len(m.sequence.commits))
 	}
 	var rows []row
+	now := time.Now()
 	for i := range m.sequence.commits {
 		if len(m.sequence.states) > 0 && m.sequence.states[i] == sequenceFailed {
 			rows = append(rows, row{kind: '@', text: "  " + clean(m.sequence.errors[i]), commitIndex: uint16(i)})
@@ -155,6 +157,10 @@ func (m *model) rebuildSequence() {
 			files, m.sequence.gutterWidths[i] = buildRowsDisplay(changes, width, m.wrap, expanded, 0, m.shortPaths)
 			if len(files) == 0 {
 				files = append(files, row{kind: '@', text: "  No file changes"})
+			}
+			block := commitHeaderBlock(m.sequence.commits[i], width, m.history.headerCollapsed, now)
+			if len(block) > 0 && m.sequence.commits[i].author != "" {
+				files = append(block, files...)
 			}
 			for j := range files {
 				files[j].commitIndex = uint16(i)
@@ -255,6 +261,12 @@ func (m model) handleSequenceKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.sequence.endPending = last == sequencePending || last == sequenceLoading
 	} else if key.String() != "G" {
 		m.sequence.endPending = false
+	}
+	if m.pending == "" && (key.String() == "h" || key.String() == "l") && m.onCommitHeader() {
+		m.history.headerCollapsed = key.String() == "h"
+		m.sequence.rowCache = nil
+		m.rebuildSequence()
+		return m, nil
 	}
 	if m.handleDiffNavigation(key.String()) {
 		return m, nil

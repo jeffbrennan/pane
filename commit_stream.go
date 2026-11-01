@@ -19,6 +19,7 @@ type patchReader struct {
 type commitChunk struct {
 	paths   []string
 	changes []change
+	meta    commitInfo
 	loaded  int
 	done    bool
 	err     error
@@ -30,9 +31,40 @@ func (r repository) streamCommit(ctx context.Context, hash string, firstLines in
 	patch := append([]string{"show", "--first-parent", "--format="}, r.diffOptions()...)
 	patch = append(patch, "--src-prefix=a/", "--dst-prefix=b/", hash, "--")
 	status := []string{"show", "--first-parent", "--format=", "--name-status", "-M", "-z", hash, "--"}
-	return r.streamPatch(ctx, status, patch, firstLines, func(path, oldPath, diff string, ok bool) (string, error) {
+	source := r.streamPatch(ctx, status, patch, firstLines, func(path, oldPath, diff string, ok bool) (string, error) {
 		return r.commitFileDiff(hash, path, oldPath, diff, ok)
 	})
+	out := make(chan commitChunk, 1)
+	go func() {
+		defer close(out)
+		meta := make(chan commitInfo, 1)
+		go func() {
+			commit, err := r.commitDetail(hash)
+			if err != nil {
+				commit = commitInfo{}
+			}
+			meta <- commit
+		}()
+		var detail commitInfo
+		metaReady := false
+		for chunk := range source {
+			if !metaReady {
+				select {
+				case detail = <-meta:
+					metaReady = true
+				case <-ctx.Done():
+					return
+				}
+			}
+			chunk.meta = detail
+			select {
+			case out <- chunk:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out
 }
 
 // streamBase is streamCommit for a merge base, which diffs the working tree

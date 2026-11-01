@@ -46,7 +46,7 @@ var shortcutSections = []struct {
 		{"L", "Open history for the current file"},
 		{"/ / g?", "Search forward / backward"},
 		{"n / N", "Next / previous match"},
-		{"h / l", "Fold file / reveal nearby context"},
+		{"h / l", "Fold file or commit details / reveal nearby context"},
 		{"e", "Expand / collapse deleted file"},
 		{"w", "Toggle line wrapping"},
 		{"W", "Toggle ignoring whitespace"},

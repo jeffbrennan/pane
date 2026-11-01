@@ -34,6 +34,8 @@ type historyState struct {
 	statsFetching                                       bool
 	directCommit                                        bool
 	current                                             commitInfo
+	meta                                                commitInfo
+	headerCollapsed                                     bool
 	expandedDeleted                                     map[string]bool
 	jumps                                               []jumpLocation
 	jumpIndex                                           int
@@ -609,6 +611,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.history.streamPaths, m.history.streamLoaded, m.history.streamGutter = nil, 0, 0
 		m.history.streamError = ""
 		m.history.streamEndPending = false
+		m.history.meta = commitInfo{}
 		m.picker.pendingPath = m.history.current.filePath
 		m.history.expandedDeleted = nil
 		m.history.jumps = nil
@@ -648,6 +651,11 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if keyString != "]" && !(pending == "]" && keyString == "c") {
 		m.history.streamEndPending = false
+	}
+	if m.pending == "" && (key.String() == "h" || key.String() == "l") && m.commitModel().onCommitHeader() {
+		m.history.headerCollapsed = key.String() == "h"
+		m.rebuildCommit()
+		return m, nil
 	}
 	if m.pending == "" && (key.String() == "h" || key.String() == "l") && m.commitModel().onDiffFile() {
 		return m.changeContext(key.String())

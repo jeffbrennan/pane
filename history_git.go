@@ -10,6 +10,9 @@ import (
 
 type commitInfo struct {
 	hash, author, email, date, subject, message string
+	committer, committerEmail, committerDate    string
+	refs                                        string
+	parents                                     []string
 	filePath                                    string
 	search                                      string
 	added, deleted, binary                      int
@@ -27,18 +30,43 @@ func (r repository) resolveCommit(revision string) (commitInfo, error) {
 		return commitInfo{}, fmt.Errorf("invalid commit %q: %w", revision, gitError(out, err))
 	}
 	hash := strings.TrimSpace(string(out))
-	out, err = r.command("log", "-1", "-z", "--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00", hash, "--")
-	if err != nil {
-		return commitInfo{}, gitError(out, err)
-	}
-	commits, err := parseHistory(out, false)
+	commit, err := r.commitDetail(hash)
 	if err != nil {
 		return commitInfo{}, err
 	}
-	if len(commits) != 1 {
+	if commit.hash == "" {
 		return commitInfo{}, fmt.Errorf("could not read commit %q", revision)
 	}
-	return commits[0], nil
+	return commit, nil
+}
+
+// commitDetail loads the metadata a commit header shows: identity, dates,
+// parents, refs and the full message. It runs alongside the patch stream.
+func (r repository) commitDetail(hash string) (commitInfo, error) {
+	out, err := r.commandStdout("show", "-s", "--decorate=short", "-z",
+		"--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00%P%x00%cn%x00%ce%x00%cI%x00%D%x00", hash, "--")
+	if err != nil {
+		return commitInfo{}, gitError(out, err)
+	}
+	return parseCommitDetail(out)
+}
+
+func parseCommitDetail(out []byte) (commitInfo, error) {
+	fields := bytes.Split(out, []byte{0})
+	if len(fields) < 12 {
+		return commitInfo{}, fmt.Errorf("unexpected Git commit detail format")
+	}
+	commit := commitInfo{
+		hash: string(fields[1]), author: string(fields[2]), email: string(fields[3]),
+		date: string(fields[4]), subject: string(fields[5]), message: string(fields[6]),
+		committer: string(fields[8]), committerEmail: string(fields[9]), committerDate: string(fields[10]),
+		refs: string(fields[11]),
+	}
+	if parents := strings.Fields(string(fields[7])); len(parents) > 0 {
+		commit.parents = parents
+	}
+	commit.search = strings.ToLower(commit.hash + "\n" + commit.author + "\n" + commit.email + "\n" + commit.message + "\n" + commit.subject)
+	return commit, nil
 }
 
 // history loads up to limit commits after skipping the newest skip commits.

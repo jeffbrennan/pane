@@ -8,6 +8,8 @@ If the working tree and index are clean at startup, pane opens commit history. O
 
 Run `pane <commit>` to open a commit's read-only diff directly. A full or abbreviated hash, branch, tag, or other Git commit revision is accepted. Large commits open as soon as the first files load; the rest loads in the background. Until loading finishes, search covers loaded files and picker jumps to unloaded files wait for them. Press `Esc` or `q` to return to history.
 
+A commit and each commit in a multi-commit review start with a details block: author and date, the committer when different, parents (marked `merge` when there are several), refs pointing at the commit, and the full message body with trailers dimmed. Search covers it, `J` moves from it to the first file, and `h` / `l` collapse or expand it for the session.
+
 Run `pane <start>..<end>` for a continuous review of a Git commit range, for example `pane HEAD~3..HEAD`. Git's usual range semantics apply: the start is excluded and the end is included. Symmetric ranges such as `main...feature` are also supported.
 
 Run `pane --base main`, `pane -b main`, or `pane main...` for one read-only review from the merge base of `main` and `HEAD` to the working tree. It includes committed, staged, unstaged, and untracked changes, and refreshes as the working tree changes. Press `Esc` or `q` to return to history.
@@ -54,7 +56,7 @@ For development, `just b` builds pane, installs it, and runs it in the current r
 | `W` | Toggle ignoring whitespace in diffs |
 | `B` | Toggle short paths (parent directory and filename) |
 | `e` | Expand / collapse a deleted file |
-| `h` / `l` | On a file header, collapse / reopen the file; on a diff line or `···`, hide / reveal nearby context |
+| `h` / `l` | On a file header, collapse / reopen the file; on a commit header, collapse / expand the commit details; on a diff line or `···`, hide / reveal nearby context |
 | `zh` / `zl` | Scroll horizontally when wrapping is off |
 | `c` | Commit staged changes |
 | Commit input: `esc`, `i` / `a`, `I` / `A` | Switch to normal mode; insert before / after the cursor or at the start / end |
