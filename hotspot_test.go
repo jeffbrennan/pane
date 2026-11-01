@@ -234,6 +234,7 @@ func TestHotspotCacheLoadsOnlyNewCommitsAfterHeadMoves(t *testing.T) {
 	}
 	joined := strings.Join(logs[0], " ")
 	wantRange := strings.TrimSpace(string(tip)) + ".." + strings.TrimSpace(string(head))
+	t.Logf("incremental git log: %s", joined)
 	if !strings.Contains(joined, "--numstat") || !strings.Contains(joined, wantRange) {
 		t.Fatalf("incremental log did not use the cached tip: %s", joined)
 	}
