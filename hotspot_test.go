@@ -189,3 +189,13 @@ func TestHotspotCacheAvoidsSecondScan(t *testing.T) {
 		t.Fatalf("second load ran %d git log processes", logs.Load())
 	}
 }
+
+func TestHotspotFileHistoryKeepsWindow(t *testing.T) {
+	r := hotFixture(t)
+	m := model{width: 120, height: 30, wrap: true, repo: r, hotspots: hotspotState{since: "6mo"}}
+	updated, _ := m.openPathHistory("recent.txt")
+	m = updated.(model)
+	if m.screen != "history" || m.history.path != "recent.txt" || m.history.since != "6mo" {
+		t.Fatalf("file history: %#v", m.history)
+	}
+}

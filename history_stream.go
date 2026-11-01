@@ -11,8 +11,9 @@ import (
 )
 
 type historyStream struct {
-	repo repository
-	path string
+	repo  repository
+	path  string
+	since string
 
 	mu      sync.Mutex
 	readMu  sync.Mutex
@@ -24,8 +25,12 @@ type historyStream struct {
 	pending string
 }
 
-func newHistoryStream(repo repository, path string) *historyStream {
-	return &historyStream{repo: repo, path: path}
+func newHistoryStream(repo repository, path string, since ...string) *historyStream {
+	stream := &historyStream{repo: repo, path: path}
+	if len(since) > 0 {
+		stream.since = since[0]
+	}
+	return stream
 }
 
 func (s *historyStream) start() error {
@@ -46,6 +51,9 @@ func (s *historyStream) start() error {
 		return gitError(out, err)
 	}
 	args := []string{"log", "-z", "--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00"}
+	if s.since != "" {
+		args = append(args, "--since="+s.since)
+	}
 	if s.path != "" {
 		args = append(args, "--follow", "--name-status", "-M", "--", s.path)
 	} else {

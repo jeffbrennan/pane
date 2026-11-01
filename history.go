@@ -30,6 +30,7 @@ type historyState struct {
 	stashCount                                          int
 	filter, draft                                       string
 	path                                                string
+	since                                               string
 	draftCursor                                         int
 	searching, loading, stale, more, fetching           bool
 	commitLoadingVisible                                bool
@@ -309,7 +310,7 @@ func (m model) reloadHistory() (model, tea.Cmd) {
 		m.history.stream = prefetch.stream
 		return m, prefetch.loadHistory(m.history.request)
 	}
-	m.history.stream = newHistoryStream(m.repo, m.history.path)
+	m.history.stream = newHistoryStream(m.repo, m.history.path, m.history.since)
 	return m, m.fetchHistory(0, max(historyPage, len(m.history.commits)))
 }
 

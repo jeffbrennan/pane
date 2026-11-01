@@ -303,7 +303,7 @@ func (m model) sequenceView() string {
 		if index < len(m.sequence.commits) {
 			commit := m.sequence.commits[index]
 			view.viewTitle = m.accent() + shortHash(commit.hash) + styleReset + "  " + clean(commit.subject)
-			view.viewBadge = styleDim + fmt.Sprintf("%d/%d", index+1, len(m.sequence.commits)) + styleReset
+			view.viewBadge = styleDim + fmt.Sprintf("read-only · %d/%d", index+1, len(m.sequence.commits)) + styleReset
 			if viewed, total := viewedCountRows(m.rows); viewed > 0 {
 				view.viewBadge += styleDim + fmt.Sprintf(" · %d/%d viewed", viewed, total) + styleReset
 			}

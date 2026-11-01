@@ -160,7 +160,7 @@ func (m model) openPathHistory(path string) (tea.Model, tea.Cmd) {
 	previous.cancelCommitLoad()
 	previous.fileHistoryReturn = nil
 	m.fileHistoryReturn = &previous
-	m.history = historyState{path: path, request: m.history.request}
+	m.history = historyState{path: path, since: m.hotspots.since, request: m.history.request}
 	m.stash.viewing = false
 	m.screen = "history"
 	m.pending, m.count = "", 0
