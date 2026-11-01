@@ -79,16 +79,21 @@ func (m model) openEditor() (model, tea.Cmd) {
 		return m, nil
 	}
 	r := m.rows[m.pos]
-	path := filepath.Join(m.repo.Root, r.path)
+	return m.openFilePath(r.path, r.target)
+}
+
+// openFilePath opens a repository-relative path in the editor at line.
+func (m model) openFilePath(relPath string, line int) (model, tea.Cmd) {
+	path := filepath.Join(m.repo.Root, relPath)
 	if _, err := os.Stat(path); err != nil {
-		m.flash = syntax.Clean(r.path) + " does not exist in the working tree"
+		m.flash = syntax.Clean(relPath) + " does not exist in the working tree"
 		return m, nil
 	}
 	editor := os.Getenv("VISUAL")
 	if editor == "" {
 		editor = os.Getenv("EDITOR")
 	}
-	args := editorArgs(editor, path, r.target)
+	args := editorArgs(editor, path, line)
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Dir = m.repo.Root
 	return m, tea.Exec(editorCommand{cmd}, func(err error) tea.Msg { return editorClosed{err} })

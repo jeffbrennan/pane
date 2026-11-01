@@ -422,8 +422,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.hotspots.commits = append(m.hotspots.commits, msg.commits...)
 		m.hotspots.streamLoaded = len(m.hotspots.commits)
-		generated := builtinGeneratedPaths(m.hotspots.commits)
-		m.hotspots.files, m.hotspots.authors = aggregateHotspots(m.hotspots.commits, generated, m.hotspots.cutoff, time.Now())
+		m.hotspots.files, m.hotspots.authors, m.hotspots.dirs, m.hotspots.hidden = aggregateHotspots(m.hotspots.commits, builtinPathMarks(m.hotspots.commits), m.hotspots.cutoff, time.Now())
 		m.hotspots.dataVersion++
 		m.hotspots.loading = false
 		if msg.done {
@@ -442,6 +441,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.hotspots.files, m.hotspots.authors = msg.files, msg.authors
+		m.hotspots.dirs, m.hotspots.hidden = msg.dirs, msg.hidden
 		m.hotspots.dataVersion++
 		if len(msg.items) > 0 {
 			m.hotspots.items = &hotItemsCache{items: msg.items, filled: true, dataVersion: m.hotspots.dataVersion, builtAt: time.Now()}

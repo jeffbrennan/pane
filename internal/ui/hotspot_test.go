@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -103,21 +104,19 @@ func TestHotspotScreenFoldsSortsAndOpensHistory(t *testing.T) {
 	if !strings.Contains(view, "recent.txt") || !strings.Contains(view, "old-big.txt") {
 		t.Fatalf("view: %q", view)
 	}
-	// Sort by path puts old-big.txt first.
-	updated, _ = m.handleHotspotKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
-	m = updated.(model)
-	items := m.hotItems()
-	if len(items) != 2 || items[0].name != "old-big.txt" {
-		t.Fatalf("path sort: %#v", items)
-	}
-	// Enter on the file opens its history.
+	// The first file is selected and Enter opens its history.
 	updated, cmd = m.handleHotspotKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(model)
-	if m.screen != "history" || m.history.path != "old-big.txt" || cmd == nil {
+	if m.screen != "history" || m.history.path != "recent.txt" || cmd == nil {
 		t.Fatalf("file history: screen=%q path=%q", m.screen, m.history.path)
 	}
-	// The author list filters the tree.
+	// tab cycles tree, files, authors.
 	m = model{width: 120, height: 30, wrap: true, repo: r, hotspots: hotspotState{files: m0Files(t, r), authors: m0Authors(t, r)}}
+	updated, _ = m.handleHotspotKey(tea.KeyMsg{Type: tea.KeyTab})
+	m = updated.(model)
+	if m.hotspots.mode != "files" || len(m.hotFileItems()) != 2 {
+		t.Fatalf("tab did not open the file view: %q %d", m.hotspots.mode, len(m.hotFileItems()))
+	}
 	updated, _ = m.handleHotspotKey(tea.KeyMsg{Type: tea.KeyTab})
 	m = updated.(model)
 	if m.hotspots.mode != "authors" || len(m.hotAuthorList()) == 0 {
@@ -428,6 +427,187 @@ func TestParallelHotspotWalkMatchesSingle(t *testing.T) {
 		other, ok := byPath[file.path]
 		if !ok || file.added != other.added || file.deleted != other.deleted || file.commits != other.commits {
 			t.Fatalf("parallel file %#v, single %#v", file, other)
+		}
+	}
+}
+
+func TestHotspotScoresAttentionNotVolume(t *testing.T) {
+	now := time.Now()
+	var sweep []git.HotCacheChange
+	for i := 0; i < 300; i++ {
+		sweep = append(sweep, git.HotCacheChange{Path: fmt.Sprintf("bulk/file%03d.go", i), Added: 33})
+	}
+	commits := []git.HotCacheCommit{git.NewHotCacheCommit("bulk", now.Unix(), "Bulk", sweep)}
+	for i := 0; i < 30; i++ {
+		commits = append(commits, git.NewHotCacheCommit(fmt.Sprintf("small%d", i), now.Unix(), "Steady", []git.HotCacheChange{{Path: "src/attention.go", Added: 5}}))
+	}
+	files, _, _, _ := aggregateHotspots(commits, newHotPathMarks(), 0, now)
+	if files[0].path != "src/attention.go" {
+		t.Fatalf("bulk commit outranked steady edits: %#v", files[:2])
+	}
+}
+
+func hotItemPaths(items []hotItem) string {
+	var paths []string
+	for _, item := range items {
+		paths = append(paths, item.path)
+	}
+	return strings.Join(paths, "\n")
+}
+
+func TestHotspotClassificationHidesVendoredAndGenerated(t *testing.T) {
+	now := time.Now()
+	commits := []git.HotCacheCommit{git.NewHotCacheCommit("c1", now.Unix(), "A", []git.HotCacheChange{
+		{Path: "src/main.go", Added: 10},
+		{Path: "foo_test.go", Added: 20},
+		{Path: "vendor/lib/x.go", Added: 30},
+		{Path: "docs/guide.md", Added: 40},
+		{Path: "third_party/y.go", Added: 50},
+	})}
+	marks := newHotPathMarks()
+	marks.Generated["gen/api.go"] = true
+	files, _, _, hidden := aggregateHotspots(commits, marks, 0, now)
+	paths := map[string]hotClass{}
+	for _, file := range files {
+		paths[file.path] = file.class
+	}
+	if paths["src/main.go"] != hotSource || paths["foo_test.go"] != hotTests || paths["docs/guide.md"] != hotDocs {
+		t.Fatalf("classes: %#v", paths)
+	}
+	if hidden.vendored != 2 || hidden.generated != 0 {
+		t.Fatalf("hidden counts: %#v", hidden)
+	}
+	if paths["vendor/lib/x.go"] != hotVendored || paths["third_party/y.go"] != hotVendored {
+		t.Fatalf("vendored classes: %#v", paths)
+	}
+	dirs := map[string]*hotDirStat{}
+	if items := buildHotItems(files, dirs, false, hotTreeState{}, ""); strings.Contains(hotItemPaths(items), "vendor/") {
+		t.Fatalf("vendored files shown by default: %v", hotItemPaths(items))
+	}
+	if items := buildHotItems(files, dirs, false, hotTreeState{showHidden: true}, ""); !strings.Contains(hotItemPaths(items), "vendor/") {
+		t.Fatalf("vendored files not shown after toggling: %v", hotItemPaths(items))
+	}
+}
+
+func hotTestFile(path string, score float64, class hotClass, author string, churn int) hotFile {
+	return hotFile{path: path, score: score, class: class, authors: map[string]int{author: churn}, added: churn, last: time.Now()}
+}
+
+func TestHotspotTreeOpensOneLevelAndMergesChains(t *testing.T) {
+	files := []hotFile{
+		hotTestFile("src/bun.js/api/a.go", 10, hotSource, "A", 10),
+		hotTestFile("src/bun.js/api/b.go", 9, hotSource, "A", 9),
+		hotTestFile("test/heavy_test.go", 100, hotTests, "A", 100),
+	}
+	items := buildHotItems(files, nil, false, hotTreeState{}, "")
+	if len(items) == 0 || items[0].path != "src/bun.js/api" || !items[0].directory {
+		t.Fatalf("single-child chain was not merged: %#v", items)
+	}
+	if items[0].name != "▾ src/bun.js/api/" {
+		t.Fatalf("fold marker or name: %q", items[0].name)
+	}
+	if len(items) < 3 || items[1].path != "src/bun.js/api/a.go" {
+		t.Fatalf("top-level area did not open one level: %#v", items)
+	}
+	if last := items[len(items)-1]; last.class != hotTests && !strings.HasPrefix(last.path, "test") {
+		t.Fatalf("tests ranked above source: %#v", items)
+	}
+	// Top-level areas open one level, so test/ shows its file too.
+	found := false
+	for _, item := range items {
+		if item.path == "test" && item.directory && !item.collapsed {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("top-level directory should be open one level: %#v", items)
+	}
+}
+
+func TestHotspotTreeShowsFiveChildrenThenMore(t *testing.T) {
+	var files []hotFile
+	for i := 0; i < 8; i++ {
+		files = append(files, hotTestFile(fmt.Sprintf("pkg/f%d.go", i), float64(100-i), hotSource, "A", i+1))
+	}
+	items := buildHotItems(files, nil, false, hotTreeState{}, "")
+	var more *hotItem
+	for i := range items {
+		if items[i].more {
+			more = &items[i]
+		}
+	}
+	if more == nil || more.remaining != 3 || more.path != "pkg" {
+		t.Fatalf("missing more row: %#v", items)
+	}
+	expanded := buildHotItems(files, nil, false, hotTreeState{showAll: map[string]bool{"pkg": true}}, "")
+	for _, item := range expanded {
+		if item.more {
+			t.Fatalf("showAll still truncated: %#v", expanded)
+		}
+	}
+	if len(expanded) != 9 {
+		t.Fatalf("expanded rows: %d", len(expanded))
+	}
+}
+
+func TestHotspotFilesViewAndAuthorFilter(t *testing.T) {
+	files := []hotFile{
+		hotTestFile("src/slow.go", 1, hotSource, "A", 1),
+		hotTestFile("src/fast.go", 9, hotSource, "B", 9),
+		hotTestFile("vendor/x.go", 100, hotVendored, "A", 100),
+	}
+	m := model{hotspots: hotspotState{files: files, authors: map[string]*hotAuthor{"A": {name: "A"}, "B": {name: "B"}}}}
+	items := m.hotFileItems()
+	if len(items) != 2 || items[0].path != "src/fast.go" {
+		t.Fatalf("files view order or hidden files: %#v", items)
+	}
+	m.hotspots.authorFilter = "A"
+	items = m.hotFileItems()
+	if len(items) != 1 || items[0].path != "src/slow.go" {
+		t.Fatalf("author filter: %#v", items)
+	}
+	m.hotspots.hiddenShown = true
+	m.hotspots.authorFilter = ""
+	if items := m.hotFileItems(); len(items) != 3 {
+		t.Fatalf("hidden files should show after a: %#v", items)
+	}
+}
+
+func TestHotspotBotsSortLast(t *testing.T) {
+	m := model{hotspots: hotspotState{authors: map[string]*hotAuthor{
+		"renovate-bot":        {name: "renovate-bot", commits: 900},
+		"Human":               {name: "Human", commits: 3},
+		"github-actions[bot]": {name: "github-actions[bot]", commits: 50},
+	}}}
+	authors := m.hotAuthorList()
+	if authors[0].name != "Human" || !isBotAuthor(authors[len(authors)-1].name) {
+		var names []string
+		for _, a := range authors {
+			names = append(names, fmt.Sprintf("%s(%d,bot=%v)", a.name, a.commits, isBotAuthor(a.name)))
+		}
+		t.Fatalf("bot ordering: %v", names)
+	}
+}
+
+func TestHotspotsDropDeletedPaths(t *testing.T) {
+	r := testRepo(t)
+	writeFile(t, r, "gone.go", "package gone\n")
+	if _, err := r.Commit("add"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(r.Root, "gone.go")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Commit("remove"); err != nil {
+		t.Fatal(err)
+	}
+	files, _, err := hotspots(r, "1.year", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		if file.path == "gone.go" {
+			t.Fatalf("deleted path kept: %#v", files)
 		}
 	}
 }

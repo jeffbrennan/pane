@@ -144,13 +144,8 @@ func initialModel(repo git.Repo, args []string) (model, error) {
 				since = args[i]
 			case strings.HasPrefix(arg, "--since="):
 				since = strings.TrimPrefix(arg, "--since=")
-			case arg == "--author" && i+1 < len(args):
-				i++
-				author = args[i]
-			case strings.HasPrefix(arg, "--author="):
-				author = strings.TrimPrefix(arg, "--author=")
 			default:
-				return model{}, fmt.Errorf("usage: pane hot [--since <window>] [--author <pattern>]")
+				return model{}, fmt.Errorf("usage: pane hot [--since <window>]")
 			}
 		}
 		m := model{repo: repo, wrap: true, loading: true, startup: true, viewed: newViewedStore(repo.Root)}

@@ -59,11 +59,14 @@ var shortcutSections = []shortcutSection{
 		{"y", "Copy path"},
 	}},
 	{"Hotspots", []string{"hotspots"}, []shortcut{
-		{"tab", "Switch between the file tree and authors"},
-		{"s", "Sort by score or path"},
-		{"h / l", "Fold a directory"},
-		{"↵", "Open file history or filter by author"},
+		{"tab", "Cycle tree, files, authors"},
+		{"h / l", "Fold a directory / expand the rest"},
+		{"↵", "Open file history, fold a directory, or filter by author"},
+		{"L", "Open history for the selected path"},
+		{"o", "Open the file in $EDITOR"},
 		{"V", "Review the selection as a commit range"},
+		{"w", "Cycle 3 months, 12 months, all time"},
+		{"a", "Show or hide generated and vendored files"},
 		{"/", "Filter hotspots"},
 	}},
 	{"Commit input", []string{"commit-input"}, []shortcut{

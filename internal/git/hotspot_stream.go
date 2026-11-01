@@ -369,7 +369,7 @@ func parseHotCommitFields(hash, timestamp, author string, fields []string) (HotC
 		return HotCacheCommit{}, fmt.Errorf("unexpected Git hotspot timestamp")
 	}
 	commit := HotCacheCommit{Hash: hash, Time: seconds, Author: author}
-	byPath := make(map[string]*hotCacheChange)
+	byPath := make(map[string]*HotCacheChange)
 	for i := 0; i < len(fields); i++ {
 		line := strings.TrimPrefix(fields[i], "\n")
 		if line == "" {
@@ -394,7 +394,7 @@ func parseHotCommitFields(hash, timestamp, author string, fields []string) (HotC
 		}
 		change := byPath[path]
 		if change == nil {
-			change = &hotCacheChange{Path: path}
+			change = &HotCacheChange{Path: path}
 			byPath[path] = change
 		}
 		change.Added += added

@@ -511,7 +511,7 @@ func measureHotspotPerf(t *testing.T) {
 			t.Fatalf("hotspot first view: %d commits, %v", len(page), err)
 		}
 		model := model{width: 160, height: 50, repo: repo, hotspots: hotspotState{commits: page, cutoff: plan.cutoff}}
-		model.hotspots.files, model.hotspots.authors = aggregateHotspots(page, builtinGeneratedPaths(page), plan.cutoff, time.Now())
+		model.hotspots.files, model.hotspots.authors, model.hotspots.dirs, model.hotspots.hidden = aggregateHotspots(page, builtinPathMarks(page), plan.cutoff, time.Now())
 		if view := model.hotView(); view == "" {
 			t.Fatal("hotspot first view was empty")
 		}
