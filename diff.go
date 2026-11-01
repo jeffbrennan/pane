@@ -1,13 +1,13 @@
 package main
 
 import (
-	"github.com/jeffbrennan/pane/internal/git"
-
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func submoduleLine(line string) (string, string, bool) { return git.SubmoduleLine(line) }

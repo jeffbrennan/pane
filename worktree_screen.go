@@ -1,8 +1,6 @@
 package main
 
 import (
-	"github.com/jeffbrennan/pane/internal/git"
-
 	"fmt"
 	"os"
 	"sort"
@@ -10,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 type worktreeStatus struct {

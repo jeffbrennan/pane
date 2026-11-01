@@ -17,7 +17,6 @@ import (
 	"unsafe"
 
 	tea "github.com/charmbracelet/bubbletea"
-
 	"github.com/jeffbrennan/pane/internal/syntax"
 )
 

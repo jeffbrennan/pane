@@ -1,12 +1,11 @@
 package main
 
 import (
-	"github.com/jeffbrennan/pane/internal/git"
-
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func TestBranchStatusTracksAheadAndBehind(t *testing.T) {

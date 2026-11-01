@@ -1,10 +1,10 @@
 package main
 
 import (
-	"github.com/jeffbrennan/pane/internal/git"
-
 	"fmt"
 	"strings"
+
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func generatedByPath(path string) bool { return git.GeneratedByPath(path) }

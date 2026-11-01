@@ -7,9 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mattn/go-runewidth"
-
 	"github.com/jeffbrennan/pane/internal/syntax"
+	"github.com/mattn/go-runewidth"
 )
 
 func TestSyntaxUsesFullOldAndNewContext(t *testing.T) {

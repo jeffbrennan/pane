@@ -1,8 +1,6 @@
 package main
 
 import (
-	"github.com/jeffbrennan/pane/internal/git"
-
 	"bytes"
 	"fmt"
 	"os"
@@ -13,6 +11,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func TestCachedRefresh(t *testing.T) {

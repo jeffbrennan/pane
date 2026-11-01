@@ -1,8 +1,6 @@
 package main
 
 import (
-	"github.com/jeffbrennan/pane/internal/git"
-
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func evalPath(t *testing.T, path string) string {

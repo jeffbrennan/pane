@@ -1,8 +1,6 @@
 package main
 
 import (
-	"github.com/jeffbrennan/pane/internal/git"
-
 	"fmt"
 	"os"
 	"runtime"
@@ -12,6 +10,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 	"github.com/mattn/go-isatty"
 )
 

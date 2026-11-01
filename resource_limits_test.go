@@ -1,11 +1,11 @@
 package main
 
 import (
-	"github.com/jeffbrennan/pane/internal/git"
-
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func TestBlurredPollingBacksOffAndResets(t *testing.T) {

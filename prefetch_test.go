@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/alecthomas/chroma/v2"
-
 	"github.com/charmbracelet/x/ansi"
 	"github.com/jeffbrennan/pane/internal/syntax"
 )

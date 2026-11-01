@@ -1,8 +1,6 @@
 package main
 
 import (
-	"github.com/jeffbrennan/pane/internal/git"
-
 	"fmt"
 	"os"
 	"strings"
@@ -11,6 +9,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func hotFixture(t *testing.T) Repo {
