@@ -193,17 +193,6 @@ type historyLoaded struct {
 	skip, limit int
 	stashCount  int
 }
-type commitLoaded struct {
-	changes []git.Change
-	err     error
-	request int
-}
-
-type commitSyntaxLoaded struct {
-	changes []git.Change
-	request int
-}
-
 type commitLoadingDelay struct{ request int }
 
 type commitStreamLoaded struct {
@@ -245,31 +234,6 @@ func commitLoadingTimer(request int) tea.Cmd {
 	return tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg {
 		return commitLoadingDelay{request: request}
 	})
-}
-
-// loadCommitSyntax highlights the changes that commitChangesFirstScreen left
-// plain.
-func loadCommitSyntax(repo git.Repo, hash string, request int, changes []git.Change) tea.Cmd {
-	changes = append([]git.Change(nil), changes...)
-	var indexes []int
-	var plain []git.Change
-	for i, c := range changes {
-		if c.SyntaxDiff == "" && !c.SyntaxSkipped && syntax.Lexable(c.Path) {
-			indexes = append(indexes, i)
-			plain = append(plain, c)
-		}
-	}
-	if len(plain) == 0 {
-		return nil
-	}
-	return func() tea.Msg {
-		repo.LoadSyntaxDiffs(plain, git.Context{Commit: hash})
-		git.WarmSyntax(plain)
-		for i, c := range plain {
-			changes[indexes[i]] = c
-		}
-		return commitSyntaxLoaded{changes: changes, request: request}
-	}
 }
 
 type historyStatsLoaded struct {

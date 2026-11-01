@@ -93,7 +93,7 @@ func TestDirectCommitBackBeforeLoading(t *testing.T) {
 	if m.screen != "history" || cmd == nil || m.history.request == request {
 		t.Fatal("back did not load history and invalidate the commit request")
 	}
-	updated, _ = m.Update(commitLoaded{request: request, changes: []git.Change{{Path: "stale"}}})
+	updated, _ = m.Update(commitStreamLoaded{request: request, chunk: git.CommitChunk{Changes: []git.Change{{Path: "stale"}}, Done: true}})
 	if got := updated.(model); got.screen != "history" || len(got.history.changes) != 0 {
 		t.Fatal("stale commit response changed history")
 	}
@@ -183,43 +183,6 @@ func TestInitialModelOpensSymmetricRange(t *testing.T) {
 	}
 }
 
-func TestCommitFirstScreenIsHighlighted(t *testing.T) {
-	r := testRepo(t)
-	body := func(word string) string {
-		return "package main\n" + strings.Repeat("var "+word+" = 1\n", git.StartupSyntaxLines)
-	}
-	writeFile(t, r, "a.go", body("a"))
-	writeFile(t, r, "b.go", body("b"))
-	if _, err := r.Commit("first"); err != nil {
-		t.Fatal(err)
-	}
-	hash, err := r.Action("rev-parse", "HEAD")
-	if err != nil {
-		t.Fatal(err)
-	}
-	changes, err := r.CommitChangesFirstScreen(hash, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(changes) != 2 || changes[0].SyntaxDiff == "" || changes[1].SyntaxDiff != "" {
-		t.Fatal("only the first screen's file should be highlighted when a commit opens")
-	}
-	focused, err := r.CommitChangesFirstScreen(hash, "b.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if focused[0].SyntaxDiff != "" || focused[1].SyntaxDiff == "" {
-		t.Fatal("the first screen should start at the focused file")
-	}
-	msg, ok := loadCommitSyntax(r, hash, 1, changes)().(commitSyntaxLoaded)
-	if !ok || msg.changes[0].SyntaxDiff != changes[0].SyntaxDiff || msg.changes[1].SyntaxDiff == "" {
-		t.Fatal("follow-up load should highlight the deferred file")
-	}
-	if loadCommitSyntax(r, hash, 1, msg.changes) != nil {
-		t.Fatal("nothing should be left to highlight")
-	}
-}
-
 func TestSkippedFilesHighlightNearViewport(t *testing.T) {
 	r := testRepo(t)
 	// a.go fills the screen. The rest exceed the syntax budget, so they
@@ -242,16 +205,8 @@ func TestSkippedFilesHighlightNearViewport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer m.cancelCommitLoad()
 	m = update(t, m, tea.WindowSizeMsg{Width: 80, Height: 20})
-	changes, err := r.CommitChangesFirstScreen(hash, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for i, c := range changes {
-		if c.SyntaxSkipped != (i > 0) || (c.SyntaxDiff != "") != (i == 0) {
-			t.Fatalf("%s: skipped %t, highlighted %t", c.Path, c.SyntaxSkipped, c.SyntaxDiff != "")
-		}
-	}
 	highlighted := func(m model, path string) bool {
 		for _, r := range m.history.rows {
 			if r.path == path && r.kind == '+' && len(r.syntaxSpans()) == 0 {
@@ -260,14 +215,13 @@ func TestSkippedFilesHighlightNearViewport(t *testing.T) {
 		}
 		return true
 	}
-	updated, cmd := m.Update(commitLoaded{changes, nil, m.history.request})
-	m = runCmd(t, updated.(model), cmd)
+	m = runCommitStream(t, m)
 	for path, want := range map[string]bool{"a.go": true, "b.go": true, "c.go": true, "d.go": true, "e.go": false, "f.go": false} {
 		if highlighted(m, path) != want {
 			t.Fatalf("%s highlighted %t after opening", path, !want)
 		}
 	}
-	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
 	if cmd == nil {
 		t.Fatal("no syntax load for the visible file")
 	}
@@ -284,6 +238,30 @@ func TestSkippedFilesHighlightNearViewport(t *testing.T) {
 			t.Fatalf("rebuild lost on-demand highlighting of %s", path)
 		}
 	}
+}
+
+// runCommitStream opens the commit through its stream and applies every
+// message until no commands remain, so on-demand syntax loads finish too.
+func runCommitStream(t *testing.T, m model) model {
+	t.Helper()
+	queue := []tea.Cmd{startCommitStream(m.commitRepository(), m.history.current.Hash, m.history.request, m.height)}
+	for len(queue) > 0 {
+		cmd := queue[0]
+		queue = queue[1:]
+		if cmd == nil {
+			continue
+		}
+		switch msg := cmd().(type) {
+		case tea.BatchMsg:
+			queue = append(queue, msg...)
+		case nil:
+		default:
+			updated, next := m.Update(msg)
+			m = updated.(model)
+			queue = append(queue, next)
+		}
+	}
+	return m
 }
 
 func update(t *testing.T, m model, msg tea.Msg) model {

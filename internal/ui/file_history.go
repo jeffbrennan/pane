@@ -103,19 +103,6 @@ func (m model) leaveFileHistory() (tea.Model, tea.Cmd) {
 	return previous, nil
 }
 
-func (m *model) jumpToHistoryFile() {
-	path := m.history.current.FilePath
-	if path == "" {
-		return
-	}
-	for i, row := range m.history.rows {
-		if row.kind == 'f' && (row.path == path || row.oldPath == path) {
-			m.history.pos, m.history.viewTop = i, i
-			return
-		}
-	}
-}
-
 func initialFileHistory(repo git.Repo, path string) (model, error) {
 	resolved, err := repo.FileHistoryPath(path)
 	if err != nil {

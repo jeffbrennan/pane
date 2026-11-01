@@ -168,7 +168,7 @@ func TestWhitespaceToggleReloadsHistoricalViews(t *testing.T) {
 				if m.history.request != 4 || !m.history.loading {
 					t.Fatalf("commit not reloading: %#v", m.history)
 				}
-				updated, _ = m.Update(commitLoaded{request: 3, changes: []git.Change{{Path: "stale"}}})
+				updated, _ = m.Update(commitStreamLoaded{request: 3, chunk: git.CommitChunk{Changes: []git.Change{{Path: "stale"}}, Done: true}})
 				if len(updated.(model).history.changes) != 0 {
 					t.Fatal("accepted stale commit load")
 				}

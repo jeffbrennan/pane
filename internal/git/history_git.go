@@ -221,40 +221,6 @@ func (r Repo) CommitChanges(hash string) ([]Change, error) {
 	return changes, err
 }
 
-// CommitChangesFirstScreen loads a commit's changes with the files on its
-// first screen highlighted, so opening it paints in color. The first screen
-// starts at focus when a change has that path. Later files start plain for
-// loadCommitSyntax, or in a commit over the syntax budget for syntaxDemand;
-// see startupSyntaxLines.
-func (r Repo) CommitChangesFirstScreen(hash, focus string) ([]Change, error) {
-	changes, err := r.CommitChangesWithoutSyntax(hash)
-	if err != nil {
-		return changes, err
-	}
-	start := 0
-	for i, c := range changes {
-		if focus != "" && (c.Path == focus || c.OldPath == focus) {
-			start = i
-			break
-		}
-	}
-	end, shown := start, 0
-	for ; end < len(changes) && shown < StartupSyntaxLines; end++ {
-		shown += strings.Count(changes[end].Diff, "\n")
-	}
-	first := changes[start:end]
-	r.LoadSyntaxDiffs(first, Context{Commit: hash})
-	WarmSyntax(first)
-	// Past the first screen, a commit over the syntax budget highlights files
-	// as they near the viewport instead of all at once.
-	rest := append(append([]Change(nil), changes[:start]...), changes[end:]...)
-	if syntaxBudgetEnd(rest) < len(rest) {
-		markSyntaxSkipped(changes[:start], 0)
-		markSyntaxSkipped(changes[end:], 0)
-	}
-	return changes, nil
-}
-
 func (r Repo) CommitChangesWithoutSyntax(hash string) ([]Change, error) {
 	// The patch does not depend on the name status, so both load at once.
 	type result struct {

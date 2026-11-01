@@ -580,36 +580,6 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		return m, waitCommitStream(msg.stream, msg.request)
-	case commitLoaded:
-		if m.screen != "commit" || msg.request != m.history.request {
-			break
-		}
-		m.history.loading = false
-		m.history.streamActive = false
-		m.history.streamPaths, m.history.streamGutter, m.history.streamError = nil, 0, ""
-		m.history.commitLoadingVisible = false
-		if msg.err != nil {
-			m.screen = "history"
-			m.errorText = msg.err.Error()
-			m.errorPos = 0
-			m.modal = "error"
-			if m.history.stale {
-				return m.reloadHistory()
-			}
-			break
-		}
-		m.history.changes = msg.changes
-		m.history.rows = nil
-		m.history.pos = 0
-		m.rebuildCommit()
-		m.jumpToHistoryFile()
-		return m, loadCommitSyntax(m.commitRepository(), m.history.current.Hash, m.history.request, m.history.changes)
-	case commitSyntaxLoaded:
-		if m.screen != "commit" || msg.request != m.history.request {
-			break
-		}
-		m.history.changes = msg.changes
-		m.rebuildCommit()
 	case sequenceChunkLoaded:
 		if m.screen != "sequence" || msg.request != m.sequence.request || msg.index < 0 || msg.index >= len(m.sequence.states) {
 			break
