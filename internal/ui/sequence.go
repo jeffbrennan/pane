@@ -263,13 +263,26 @@ func (m *model) rebuildSequence() {
 	}
 	m.pos = 0
 	if hasAnchor {
-		best := -1
+		best, bestDistance := -1, 0
 		for i, r := range rows {
 			if r.commitIndex != anchor.commitIndex || r.path != anchor.path || r.kind != anchor.kind {
 				continue
 			}
-			if r.lineNumber() == anchor.lineNumber() && r.offset <= anchor.offset {
-				best = i
+			if anchor.path == "" {
+				// Details and placeholder rows all sit on line 0, so their text
+				// is the only identity that keeps the cursor on the same row.
+				if r.text != anchor.text {
+					continue
+				}
+			} else if r.lineNumber() != anchor.lineNumber() || r.offset > anchor.offset {
+				continue
+			}
+			distance := i - oldPos
+			if distance < 0 {
+				distance = -distance
+			}
+			if best < 0 || distance < bestDistance {
+				best, bestDistance = i, distance
 			}
 		}
 		if best >= 0 {

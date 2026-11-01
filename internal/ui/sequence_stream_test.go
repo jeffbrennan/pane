@@ -2,8 +2,10 @@ package ui
 
 import (
 	"context"
-	"github.com/jeffbrennan/pane/internal/git"
+	"strings"
 	"testing"
+
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func sequenceStreamModel(commits []git.CommitInfo) model {
@@ -102,4 +104,33 @@ func TestSequenceStreamLoadsRealCommit(t *testing.T) {
 		t.Fatalf("first chunk: %#v", msg.chunk)
 	}
 	m.resetSequenceStream()
+}
+
+func TestSequenceRebuildKeepsCursorOnDetailsRow(t *testing.T) {
+	m := sequenceStreamModel([]git.CommitInfo{{Hash: "aaaa"}, {Hash: "bbbb"}})
+	m.width, m.height = 100, 20
+	m.sequence.states[0], m.sequence.states[1] = sequenceLoading, sequenceLoading
+	first := git.CommitChunk{
+		Changes: []git.Change{{Path: "one.go", Diff: "@@ -0,0 +1 @@\n+one\n"}},
+		Loaded:  1,
+		Meta:    git.CommitInfo{Hash: "aaaa", Author: "Alice", Subject: "first", Parents: []string{"0000"}},
+	}
+	updated, _ := m.Update(sequenceChunkLoaded{index: 0, request: 1, chunk: first})
+	m = updated.(model)
+	if m.pos != 0 || m.rows[0].kind != 'm' || !strings.Contains(m.rows[0].text, "Alice") {
+		t.Fatalf("cursor not on the first details row: pos=%d row=%#v", m.pos, m.rows[0])
+	}
+	second := git.CommitChunk{
+		Changes: []git.Change{{Path: "two.go", Diff: "@@ -0,0 +1 @@\n+two\n"}},
+		Loaded:  1,
+		Meta:    git.CommitInfo{Hash: "bbbb", Author: "Bob", Subject: "second", Parents: []string{"aaaa"}},
+	}
+	updated, _ = m.Update(sequenceChunkLoaded{index: 1, request: 1, chunk: second})
+	m = updated.(model)
+	if m.pos != 0 || m.viewTop != 0 {
+		t.Fatalf("rebuild scrolled the first commit details away: pos=%d top=%d", m.pos, m.viewTop)
+	}
+	if !strings.Contains(plain(m.View()), "Alice") {
+		t.Fatalf("first commit details missing from the view")
+	}
 }
