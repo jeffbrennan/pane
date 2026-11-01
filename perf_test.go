@@ -226,6 +226,13 @@ func measureSyntaxPerf(t *testing.T) {
 	commands.Store(0)
 	_ = m.loadSyntaxTargets(targets)()
 	recordPerf(t, "synthetic-syntax", "demand_git_commands", commands.Load())
+	largeDiff := "diff --git a/large.go b/large.go\nnew file mode 100644\n@@ -0,0 +1,2000 @@\n" + strings.Repeat("+var value = 1 // comment\n", 2000)
+	measurePerf(t, "synthetic-syntax", "whole_file_tokenize_ns", func() {
+		syntaxCache.Lock()
+		syntaxCache.entries = make(map[syntaxKey]syntaxResult)
+		syntaxCache.Unlock()
+		syntaxLines("large.go", largeDiff)
+	})
 }
 
 func BenchmarkWorkingTreeRefresh(b *testing.B) {

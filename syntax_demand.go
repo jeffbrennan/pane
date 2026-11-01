@@ -2,6 +2,7 @@ package main
 
 import (
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -136,6 +137,31 @@ func (m *model) loadVisibleSyntax() tea.Cmd {
 		}
 	}
 	return tea.Batch(m.loadSyntaxTargets(visible), m.loadSyntaxTargets(ahead))
+}
+
+// warmCursorSyntax tokenizes the whole file under the cursor after a short
+// delay, so fast scrolling does not tokenize every file it passes.
+func (m *model) warmCursorSyntax() {
+	rows, _, ok := m.diffSyntaxView()
+	if !ok || len(rows) == 0 || m.pos < 0 || m.pos >= len(rows) {
+		return
+	}
+	r := rows[m.pos]
+	key, changes := m.syntaxContext(int(r.commitIndex))
+	if r.path == "" || r.path == m.syntaxWarmPath && key.commit == m.syntaxWarmCommit {
+		return
+	}
+	for _, c := range changes {
+		if c.path != r.path || c.syntaxDiff == "" {
+			continue
+		}
+		m.syntaxWarmPath, m.syntaxWarmCommit = r.path, key.commit
+		go func() {
+			time.Sleep(150 * time.Millisecond)
+			syntaxLines(c.path, c.syntaxDiff)
+		}()
+		return
+	}
 }
 
 // addSyntaxTarget appends path's change if it is skipped and neither loaded

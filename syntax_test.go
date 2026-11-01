@@ -45,6 +45,32 @@ func TestSyntaxUsesFullOldAndNewContext(t *testing.T) {
 	assertCommentRows(t, changes, "old text", "staged text")
 }
 
+func TestWarmSyntaxDefersWholeFilesToCursor(t *testing.T) {
+	diff := "diff --git a/file.go b/file.go\n@@ -1 +1 @@\n-var old = 1\n+var new = 2\n"
+	c := change{path: "deferred-file.go", diff: "@@ -1 +1 @@\n-var old = 1\n+var new = 2\n", syntaxDiff: diff}
+	syntaxCache.Lock()
+	syntaxCache.entries = make(map[syntaxKey]syntaxResult)
+	syntaxCache.Unlock()
+	warmSyntax([]change{c})
+	syntaxCache.Lock()
+	entries := len(syntaxCache.entries)
+	_, whole := syntaxCache.entries[syntaxKey{c.path, diff, ""}]
+	syntaxCache.Unlock()
+	if entries == 0 || whole {
+		t.Fatal("warmSyntax tokenized every whole file instead of only displayed lines")
+	}
+	m := model{width: 80, height: 10, rows: buildRows([]change{c}, 80, true), snapshot: snapshot{unstaged: []change{c}}, pos: 1}
+	m.warmCursorSyntax()
+	if m.syntaxWarmPath != c.path {
+		t.Fatal("whole-file warm was not scheduled for the cursor file")
+	}
+	m.syntaxWarmPath = c.path
+	m.warmCursorSyntax()
+	if m.syntaxWarmPath != c.path {
+		t.Fatal("cursor warm state changed on a repeated call")
+	}
+}
+
 func TestSyntaxDiffBackgrounds(t *testing.T) {
 	diff := "@@ -1,2 +1,2 @@\n package main\n-var old = 1\n+var current = 2\n"
 	rows := buildRows([]change{{path: "file.go", diff: diff, syntaxDiff: diff}}, 80, true)

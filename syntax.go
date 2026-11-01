@@ -211,12 +211,11 @@ func syntaxLinesFor(path, diff, display string) (map[int]syntaxLine, map[int]syn
 }
 
 // warmSyntax tokenizes the displayed lines of changes ahead of time, off the
-// UI goroutine, one file per core. Whole files follow in the background, for
-// context expansion and for runs whose lead-in missed an opening comment or
-// string; later rebuilds pick them up.
+// UI goroutine, one file per core. The file under the cursor gets its whole
+// content tokenized later; that covers context expansion and runs whose
+// lead-in missed an opening comment, without tokenizing every file.
 func warmSyntax(changes []change) {
 	eachSyntax(changes, func(c change) { syntaxLinesFor(c.path, c.syntaxDiff, c.diff) })
-	go eachSyntax(changes, func(c change) { syntaxLines(c.path, c.syntaxDiff) })
 }
 
 func eachSyntax(changes []change, tokenize func(change)) {

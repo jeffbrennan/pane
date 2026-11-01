@@ -52,6 +52,8 @@ type model struct {
 	gutterWidth           int
 	sequenceGutters       bool
 	previousChanges       []change
+	syntaxWarmPath        string
+	syntaxWarmCommit      string
 	resizeRequest         int
 	pos, horizontal       int
 	viewTop               int
@@ -389,6 +391,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if load := view.loadVisibleSyntax(); load != nil {
 		return view, tea.Batch(cmd, load)
 	}
+	view.warmCursorSyntax()
 	return view, cmd
 }
 
