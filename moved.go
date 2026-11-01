@@ -1,14 +1,15 @@
 package main
 
 import (
+	"os"
 	"sort"
 	"strings"
 )
 
 // movedDetectionEnabled gates the lazy moved-block pass. The synthetic
 // harness measures moved_index_ns before the feature is relied on for large
-// commits.
-var movedDetectionEnabled = true
+// commits; PANE_MOVED=0 turns it off for an A/B run.
+var movedDetectionEnabled = os.Getenv("PANE_MOVED") != "0"
 
 type movedRange struct {
 	start, end int
