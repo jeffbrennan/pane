@@ -34,6 +34,7 @@ func (m model) onDiffFile() bool {
 
 func (m model) foldContextFiles(rows []row) []row {
 	if len(m.collapsedFiles) == 0 {
+		// Callers rely on the identity to avoid copying rows during refresh.
 		return rows
 	}
 	folded := make([]row, 0, len(rows))

@@ -142,6 +142,53 @@ func TestPerf(t *testing.T) {
 	}
 	recordPerf(t, scenario, "idle_refreshes_per_minute", refreshes)
 	measureSyntaxPerf(t)
+	measureRefreshPerf(t)
+}
+
+func measureRefreshPerf(t *testing.T) {
+	t.Helper()
+	repo := testRepo(t)
+	const files = 1000
+	paths := make([]string, files)
+	for i := range paths {
+		paths[i] = fmt.Sprintf("file-%03d.go", i)
+		writeFile(t, repo, paths[i], "package main\n"+strings.Repeat("var value = 1\n", 50))
+	}
+	if _, err := repo.commit("initial"); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range paths {
+		writeFile(t, repo, path, "package main\n"+strings.Repeat("var value = 2\n", 50))
+	}
+	cache, _, err := repo.loadCached(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, repo, paths[0], "package main\nvar value = 3\n")
+	var commands atomic.Int64
+	repo.commandHook = func([]string) { commands.Add(1) }
+	next, unchanged, err := repo.loadCached(cache)
+	if err != nil || unchanged || len(next.snapshot.unstaged) != files {
+		t.Fatal("refresh fixture did not load changed files")
+	}
+	recordPerf(t, "synthetic-refresh", "git_commands", commands.Load())
+	m := model{width: 160, height: 50, wrap: true}
+	m.snapshot = cache.snapshot
+	measurePerf(t, "synthetic-refresh", "full_rebuild_ns", func() { m.rebuild() })
+	m.snapshot = cache.snapshot
+	nextChanges := next.snapshot
+	m.previousChanges = append([]change(nil), cache.snapshot.unstaged...)
+	measurePerf(t, "synthetic-refresh", "spliced_refresh_ns", func() {
+		m.snapshot = cache.snapshot
+		m.previousChanges = append(m.previousChanges[:0], cache.snapshot.unstaged...)
+		m.snapshot = nextChanges
+		m.refreshRows()
+		m.snapshot = cache.snapshot
+	})
+	measurePerf(t, "synthetic-refresh", "unchanged_refresh_ns", func() {
+		updated, _ := m.Update(loadedUnchanged{generation: m.generation, cache: cache})
+		m = updated.(model)
+	})
 }
 
 func measureSyntaxPerf(t *testing.T) {
@@ -179,6 +226,30 @@ func measureSyntaxPerf(t *testing.T) {
 	commands.Store(0)
 	_ = m.loadSyntaxTargets(targets)()
 	recordPerf(t, "synthetic-syntax", "demand_git_commands", commands.Load())
+}
+
+func BenchmarkWorkingTreeRefresh(b *testing.B) {
+	base := make([]change, 1000)
+	for i := range base {
+		base[i] = change{path: fmt.Sprintf("file-%04d.go", i), diff: "@@ -0,0 +1,50 @@\n" + strings.Repeat("+var value = 2\n", 50)}
+	}
+	next := append([]change(nil), base...)
+	next[0].diff = "@@ -0,0 +1,51 @@\n" + strings.Repeat("+var value = 3\n", 51)
+	m := model{width: 160, height: 50, wrap: true, snapshot: snapshot{unstaged: base}}
+	m.rebuild()
+	b.Run("full", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			m.snapshot = snapshot{unstaged: next}
+			m.rebuild()
+		}
+	})
+	b.Run("splice", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			m.snapshot = snapshot{unstaged: next}
+			m.previousChanges = base
+			m.refreshRows()
+		}
+	})
 }
 
 func measurePerf(t *testing.T, scenario, metric string, f func()) {

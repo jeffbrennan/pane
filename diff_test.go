@@ -1,6 +1,7 @@
 package main
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"unsafe"
@@ -31,6 +32,109 @@ func TestUnifiedDiffPresentation(t *testing.T) {
 func TestRowSize(t *testing.T) {
 	if size := unsafe.Sizeof(row{}); size > 104 {
 		t.Fatalf("row size %d exceeds 104 bytes", size)
+	}
+}
+
+func TestWorkingTreeRefreshSplicesUnchangedFiles(t *testing.T) {
+	changes := []change{
+		{path: "one", diff: "@@ -0,0 +1,2 @@\n+first\n+second\n"},
+		{path: "two", diff: "@@ -0,0 +1,2 @@\n+first\n+second\n"},
+		{path: "three", diff: "@@ -0,0 +1,2 @@\n+first\n+second\n"},
+	}
+	m := model{width: 80, height: 20, wrap: true, snapshot: snapshot{unstaged: changes}}
+	m.rebuild()
+	m.pos = 4
+	kept := m.rows[0]
+	m.previousChanges = changes
+	updated := append([]change(nil), changes...)
+	updated[1].diff = "@@ -0,0 +1 @@\n+changed\n"
+	m.snapshot = snapshot{unstaged: updated}
+	m.refreshRows()
+	if m.rows[0] != kept || m.rows[m.pos].path != "two" {
+		t.Fatal("refresh did not retain unchanged rows or follow the cursor")
+	}
+	want := model{width: 80, height: 20, wrap: true, snapshot: snapshot{unstaged: updated}}
+	want.rebuild()
+	if !reflect.DeepEqual(m.rows, want.rows) {
+		t.Fatalf("spliced rows differ from a full rebuild:\ngot %#v\nwant %#v", m.rows, want.rows)
+	}
+}
+
+func TestWorkingTreeRefreshSpliceMatchesFullRebuild(t *testing.T) {
+	base := []change{
+		{path: "one", diff: "@@ -0,0 +1,2 @@\n+first\n+second\n"},
+		{path: "two", diff: "@@ -0,0 +1,2 @@\n+first\n+second\n"},
+		{path: "three", diff: "@@ -0,0 +1,2 @@\n+first\n+second\n"},
+	}
+	changed := func(index int, diff string) []change {
+		updated := append([]change(nil), base...)
+		updated[index].diff = diff
+		return updated
+	}
+	for _, tc := range []struct {
+		name     string
+		updated  []change
+		staged   bool
+		context  bool
+		collapse bool
+	}{
+		{name: "first", updated: changed(0, "@@ -0,0 +1 @@\n+changed\n")},
+		{name: "middle", updated: changed(1, "@@ -0,0 +1 @@\n+changed\n")},
+		{name: "last", updated: changed(2, "@@ -0,0 +1 @@\n+changed\n")},
+		{name: "added", updated: append(append([]change(nil), base...), change{path: "four", diff: "@@ -0,0 +1 @@\n+four\n"})},
+		{name: "removed", updated: append([]change(nil), base[:2]...)},
+		{name: "reordered", updated: []change{base[2], base[0], base[1]}},
+		{name: "wider gutter", updated: changed(2, "@@ -0,0 +10000 @@\n+changed\n")},
+		{name: "staged", updated: changed(0, "@@ -0,0 +1 @@\n+changed\n"), staged: true},
+		{name: "context", updated: changed(1, "@@ -0,0 +1 @@\n+changed\n"), context: true},
+		{name: "collapsed", updated: changed(1, "@@ -0,0 +1 @@\n+changed\n"), collapse: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			initial := snapshot{unstaged: base}
+			if tc.staged {
+				initial = snapshot{staged: base}
+			}
+			m := model{width: 80, height: 20, wrap: true, snapshot: initial, staged: tc.staged}
+			if tc.context {
+				m.contextFiles = map[contextKey]contextFile{contextKey{path: "two"}: {base: base[1].diff, diff: "@@ -0,0 +1,100 @@\n" + strings.Repeat("+line\n", 100), ranges: []contextRange{{start: 1, end: 3}}}}
+			}
+			if tc.collapse {
+				m.collapsedFiles = map[contextKey]bool{{path: "two"}: true}
+			}
+			m.rebuild()
+			m.previousChanges = base
+			next := snapshot{unstaged: tc.updated}
+			if tc.staged {
+				next = snapshot{staged: tc.updated}
+			}
+			m.snapshot = next
+			m.refreshRows()
+			want := m
+			want.rows = nil
+			want.rebuild()
+			if !reflect.DeepEqual(m.rows, want.rows) {
+				t.Fatalf("spliced rows differ from a full rebuild: got %d rows, want %d", len(m.rows), len(want.rows))
+			}
+		})
+	}
+}
+
+func TestWorkingTreeRefreshMessageSplicesRows(t *testing.T) {
+	base := []change{
+		{path: "one", diff: "@@ -0,0 +1 @@\n+first\n"},
+		{path: "two", diff: "@@ -0,0 +1 @@\n+second\n"},
+	}
+	m := model{width: 80, height: 10, wrap: true, snapshot: snapshot{unstaged: base}}
+	m.rebuild()
+	m.pos = len(m.rows) - 1
+	updated := append([]change(nil), base...)
+	updated[1].diff = "@@ -0,0 +1 @@\n+changed\n"
+	next, _ := m.Update(loaded{snapshot: snapshot{unstaged: updated}})
+	got := next.(model)
+	want := model{width: 80, height: 10, wrap: true, snapshot: snapshot{unstaged: updated}}
+	want.rebuild()
+	if !reflect.DeepEqual(got.rows, want.rows) || got.rows[got.pos].path != "two" {
+		t.Fatal("loaded refresh did not match a full rebuild")
 	}
 }
 

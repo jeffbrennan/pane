@@ -51,6 +51,7 @@ type model struct {
 	gutterFloor           int
 	gutterWidth           int
 	sequenceGutters       bool
+	previousChanges       []change
 	resizeRequest         int
 	pos, horizontal       int
 	viewTop               int
@@ -479,9 +480,18 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.whitespaceRefreshing = false
 		headChanged := m.snapshot.branch.available && msg.snapshot.branch.available && m.snapshot.branch.head != msg.snapshot.branch.head
 		changed := !m.snapshot.equal(msg.snapshot)
+		splice := changed && m.screen == "" && m.rows != nil
+		if splice {
+			m.previousChanges = append([]change(nil), m.currentChanges()...)
+		}
+		m.snapshot = msg.snapshot
 		if changed {
-			m.snapshot = msg.snapshot
-			m.rebuild()
+			if splice {
+				m.refreshRows()
+				m.previousChanges = nil
+			} else {
+				m.rebuild()
+			}
 		}
 		m.restoreStagingCursor()
 		if headChanged && m.screen == "commit" {
@@ -1120,11 +1130,49 @@ func (m model) runAction(args ...string) (tea.Model, tea.Cmd) {
 	}
 }
 
+func (m model) currentChanges() []change {
+	if m.staged {
+		return m.snapshot.staged
+	}
+	return m.snapshot.unstaged
+}
+
 func (m *model) rebuild() {
 	if m.screen == "sequence" {
 		m.rebuildSequence()
 		return
 	}
+	m.rebuildRows(nil)
+	m.previousChanges = nil
+}
+
+func (m *model) refreshRows() {
+	if m.screen == "sequence" {
+		m.rebuildSequence()
+		return
+	}
+	byPath := make(map[string][]row)
+	for start := 0; start < len(m.rows); {
+		begin := start
+		if m.rows[start].kind == 's' {
+			begin++
+		}
+		if begin >= len(m.rows) {
+			break
+		}
+		path := m.rows[begin].path
+		end := begin + 1
+		for end < len(m.rows) && m.rows[end].path == path && m.rows[end].kind != 's' {
+			end++
+		}
+		byPath[path] = m.rows[start:end]
+		start = end
+	}
+	m.rebuildRows(func(path string) ([]row, bool) { rows, ok := byPath[path]; return rows, ok })
+	m.previousChanges = nil
+}
+
+func (m *model) rebuildRows(previous func(path string) ([]row, bool)) {
 	var anchor row
 	if len(m.rows) > 0 && m.pos < len(m.rows) {
 		anchor = m.rows[m.pos]
@@ -1134,13 +1182,26 @@ func (m *model) rebuild() {
 		changes = m.snapshot.staged
 	}
 	changes = m.applySyntaxDemand(contextKey{commit: m.contextCommit, staged: m.staged, base: m.contextBase}, changes)
-	m.rows, m.gutterWidth = buildRowsDisplay(changes, m.diffContentWidth(), m.wrap, m.expandedDeleted, m.gutterFloor, m.shortPaths)
-	m.rows = m.localContextRows(m.rows, changes)
-	m.rows = m.foldContextFiles(m.rows)
+	var rows []row
+	gutterWidth := m.gutterFloor
+	if previous != nil {
+		gutterWidth = m.displayGutterWidth(changes)
+	}
+	if previous != nil && gutterWidth == m.gutterWidth {
+		rows = spliceRows(changes, *m, previous, gutterWidth)
+	} else {
+		rows, gutterWidth = buildRowsDisplay(changes, m.diffContentWidth(), m.wrap, m.expandedDeleted, m.gutterFloor, m.shortPaths)
+	}
+	m.gutterWidth = gutterWidth
+	m.previousChanges = nil
+	rows = m.localContextRows(rows, changes)
+	rows = m.foldContextFiles(rows)
+	indexRowHeaders(rows)
+	m.rows = rows
 	m.pos = 0
 	if anchor.path != "" {
 		best := -1
-		for i, r := range m.rows {
+		for i, r := range rows {
 			if r.path != anchor.path {
 				continue
 			}
@@ -1159,6 +1220,91 @@ func (m *model) rebuild() {
 	}
 	m.clamp()
 	m.viewTop = m.viewportStart(max(1, m.height-2))
+}
+
+// fileRows returns a file's rows plus the spacer that preceded it.
+func fileRows(rows []row, path string) ([]row, bool) {
+	for start := 0; start < len(rows); start++ {
+		begin := start
+		if rows[start].kind == 's' {
+			if start+1 >= len(rows) || rows[start+1].path != path {
+				continue
+			}
+			start++
+		}
+		if rows[start].path != path || (rows[start].kind != 'f' && rows[start].kind != 'F') {
+			continue
+		}
+		end := start + 1
+		for end < len(rows) && rows[end].path == path && rows[end].kind != 's' {
+			end++
+		}
+		return rows[begin:end], true
+	}
+	return nil, false
+}
+
+func (m model) displayGutterWidth(changes []change) int {
+	widths := make([]int, len(changes))
+	parallelEach(len(changes), func(i int) {
+		widths[i] = lineNumberWidth(strings.Split(changes[i].diff, "\n"))
+	})
+	width := m.gutterFloor
+	for _, candidate := range widths {
+		width = max(width, candidate)
+	}
+	return width
+}
+
+// spliceRows builds rows only for files whose diff changed and keeps the
+// previous rows for the rest. Context and collapse are view state, not change
+// state, so those views retain rows when their display diff is unchanged.
+func spliceRows(changes []change, m model, previous func(path string) ([]row, bool), gutterWidth int) []row {
+	view := m
+	if m.screen == "commit" || m.screen == "base" {
+		view = m.commitModel()
+	}
+	oldChanges := view.previousChanges
+	keep := func(i int) bool {
+		if oldChanges == nil || i >= len(oldChanges) || changes[i].oldPath != oldChanges[i].oldPath || changes[i].path != oldChanges[i].path {
+			return false
+		}
+		fileKey := contextKey{path: changes[i].path, commit: view.contextCommit, staged: view.staged, base: view.contextBase}
+		if view.collapsedFiles[fileKey] {
+			return false
+		}
+		if current, ok := view.contextFiles[fileKey]; ok && current.base == changes[i].diff && current.diff != "" && len(current.ranges) > 0 {
+			return false
+		}
+		return changes[i].diff == oldChanges[i].diff
+	}
+	parts := make([][]row, len(changes))
+	type build struct{ index int }
+	var builds []build
+	for i := range changes {
+		if keep(i) {
+			parts[i], _ = previous(changes[i].path)
+		} else {
+			builds = append(builds, build{i})
+		}
+	}
+	parallelEach(len(builds), func(i int) {
+		index := builds[i].index
+		parts[index] = changeRows(changes[index], index > 0, view.diffContentWidth(), view.wrap, view.expandedDeleted[changes[index].path], gutterWidth, view.shortPaths)
+	})
+	total := 0
+	for _, part := range parts {
+		total += len(part)
+	}
+	next := make([]row, 0, total)
+	for _, part := range parts {
+		next = append(next, part...)
+	}
+	// The first file of a diff never has a leading spacer.
+	if len(next) > 0 && next[0].kind == 's' {
+		next = next[1:]
+	}
+	return next
 }
 
 func (m *model) toggleDeletedFile() {
