@@ -59,6 +59,7 @@ type model struct {
 	staged, wrap          bool
 	shortPaths            bool
 	relativeLines         bool
+	startsInHistory       bool
 	lightTheme            bool
 	themeAuto             bool
 	themeNotify           bool

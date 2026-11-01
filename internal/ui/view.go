@@ -281,10 +281,9 @@ func wrapFlash(wrap bool) string {
 	return "Line wrapping off"
 }
 
+// relativeGutterWidth is the width of the relative line-number column, which
+// every diff view shares so counts work the same way everywhere.
 func (m model) relativeGutterWidth() int {
-	if !m.relativeLines && m.screen != "sequence" {
-		return 0
-	}
 	return max(3, len(fmt.Sprint(max(0, m.height-2))))
 }
 
@@ -328,6 +327,10 @@ func (m model) renderNumberedDiffRow(r row, index int) string {
 				value = r.sourceLine
 			}
 			number = fmt.Sprintf("%*d", width, value)
+		}
+		if r.kind == 'm' || r.kind == 'M' {
+			// Details rows are not code, so relative numbers mean nothing there.
+			number = strings.Repeat(" ", width)
 		}
 		if gutter != "" {
 			gutter = number + gutter[len(gutter)-3:]

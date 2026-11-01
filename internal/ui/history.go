@@ -456,6 +456,15 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.history.path != "" {
 			return m.leaveFileHistory()
 		}
+		if m.startsInHistory {
+			// History is the screen pane started on; never go below it.
+			if keyString == "q" {
+				m.closeHistoryStreams()
+				return m, tea.Quit
+			}
+			m.flash = "q quits"
+			return m, nil
+		}
 		m.screen = ""
 		m.history.stream.Close()
 		m.history.stream = nil

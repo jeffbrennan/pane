@@ -39,7 +39,7 @@ func TestFileHeadersSeparateChangesAndFileJumps(t *testing.T) {
 		t.Fatalf("file jump or spacer: %#v", m.rows)
 	}
 	view := m.View()
-	if !strings.Contains(view, "\x1b[1;37;48;5;236m first.go") || !strings.Contains(view, "\x1b[1;37;48;5;236m second.go") {
+	if strings.Count(view, "\x1b[1;37;48;5;236m") != 2 || !strings.Contains(view, "first.go") || !strings.Contains(view, "second.go") {
 		t.Fatalf("missing file header bars: %q", view)
 	}
 	m.jump(-1)
@@ -56,7 +56,7 @@ func TestActiveLineShowsContext(t *testing.T) {
 	m := model{width: 30, height: 10, wrap: true, rows: rows, pos: 7}
 	m.reveal()
 	view := m.View()
-	if !strings.Contains(view, "line 03") || !strings.Contains(view, "▸ \x1b[0mline 07") || !strings.Contains(view, "line 10") {
+	if !strings.Contains(view, "line 03") || !strings.Contains(view, "▸ \x1b[0m  0 line 07") || !strings.Contains(view, "line 10") {
 		t.Fatalf("active line or context missing: %q", view)
 	}
 	if strings.Contains(view, "line 02") {
@@ -287,4 +287,20 @@ func TestStreamingPlaceholderRendersOnce(t *testing.T) {
 	if view := plain(m.View()); strings.Count(view, "Loading…") != 1 {
 		t.Fatalf("streaming placeholder repeated: %q", view)
 	}
+}
+
+func TestDetailsRowsHaveNoRelativeNumbers(t *testing.T) {
+	m := model{width: 60, height: 14, wrap: true, screen: "commit", history: historyState{
+		current: git.CommitInfo{Hash: "abcdef12", Author: "Alice", Subject: "subject", Parents: []string{"12345678"}},
+		meta:    git.CommitInfo{Hash: "abcdef12", Author: "Alice", Subject: "subject", Parents: []string{"12345678"}},
+		changes: []git.Change{{Path: "a.go", Diff: "@@ -1 +1 @@\n-x\n+y\n"}},
+	}}
+	m.rebuildCommit()
+	for _, line := range strings.Split(plain(m.View()), "\n") {
+		trimmed := strings.TrimLeft(line, " ")
+		if strings.HasPrefix(trimmed, "Parent 12345678") {
+			return
+		}
+	}
+	t.Fatalf("details row is not aligned after a blank gutter: %q", plain(m.View()))
 }

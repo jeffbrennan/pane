@@ -614,3 +614,40 @@ func TestHistoryHeaderHeight(t *testing.T) {
 		}
 	}
 }
+
+func quitCommand(t *testing.T, cmd tea.Cmd) bool {
+	t.Helper()
+	switch msg := cmd().(type) {
+	case tea.QuitMsg:
+		return true
+	case tea.BatchMsg:
+		for _, next := range msg {
+			if next != nil && quitCommand(t, next) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func TestHistoryIsTheRootWhenPaneStartsThere(t *testing.T) {
+	commits := []git.CommitInfo{{Hash: "aaaa", Subject: "one"}, {Hash: "bbbb", Subject: "two"}}
+	m := model{width: 80, height: 20, screen: "history", startsInHistory: true, history: historyState{commits: commits}}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if updated.(model).screen != "history" {
+		t.Fatalf("escape left the starting screen: screen=%q", updated.(model).screen)
+	}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	if cmd == nil {
+		t.Fatal("q did not quit at the starting screen")
+	}
+	if !quitCommand(t, cmd) {
+		t.Fatal("q did not produce a quit message")
+	}
+
+	m.startsInHistory = false
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if updated.(model).screen != "" {
+		t.Fatalf("escape did not return to the changes view: screen=%q", updated.(model).screen)
+	}
+}

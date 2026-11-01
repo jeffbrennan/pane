@@ -163,6 +163,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.startup {
 			m.startup = false
 			if len(msg.snapshot.Unstaged) == 0 && len(msg.snapshot.Staged) == 0 && m.screen == "" && m.modal == "" {
+				m.startsInHistory = true
 				return m.openHistory()
 			}
 		}
