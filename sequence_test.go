@@ -35,8 +35,8 @@ func TestPipedCommitReview(t *testing.T) {
 		t.Fatalf("incorrect commit input: %#v", m.sequence.commits)
 	}
 	batch := m.Init()().(tea.BatchMsg)
-	result := batch[2]().(sequenceLoaded)
-	if result.err != nil || result.index != 0 || len(result.changes) != 1 {
+	result := batch[2]().(sequenceChunkLoaded)
+	if result.chunk.err != nil || result.index != 0 || len(result.chunk.changes) != 1 {
 		t.Fatalf("could not load commits: %#v", result)
 	}
 	m.width, m.height = 60, 8
@@ -48,7 +48,7 @@ func TestPipedCommitReview(t *testing.T) {
 	if strings.Count(m.View(), "second commit") != 1 {
 		t.Fatalf("duplicate commit heading: %q", m.View())
 	}
-	result = batch[3]().(sequenceLoaded)
+	result = batch[3]().(sequenceChunkLoaded)
 	updated, _ = m.Update(result)
 	m = updated.(model)
 	for i, row := range m.rows {
@@ -92,8 +92,8 @@ func TestPipedCommitInputValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	batch := m.Init()().(tea.BatchMsg)
-	result := batch[2]().(sequenceLoaded)
-	if result.err == nil {
+	result := batch[2]().(sequenceChunkLoaded)
+	if result.chunk.err == nil {
 		t.Fatal("invalid hash was not reported")
 	}
 	updated, _ := m.Update(result)

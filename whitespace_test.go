@@ -115,10 +115,14 @@ func TestWhitespaceInCommitAndSequence(t *testing.T) {
 	if err != nil || len(changes) != 1 || strings.Contains(changes[0].diff, "+  one") || !strings.Contains(changes[0].diff, "+two changed") {
 		t.Fatalf("historical diff: %#v %v", changes, err)
 	}
-	message := loadSequenceCommit(r, commit.hash, 0, 1)().(sequenceLoaded)
-	if message.err != nil || len(message.changes) != 1 || strings.Contains(message.changes[0].diff, "+  one") {
-		t.Fatalf("sequence diff: %#v", message)
+	m := sequenceStreamModel([]commitInfo{{hash: commit.hash}})
+	m.repo = r
+	m.sequence.states[0] = sequenceLoading
+	message := m.startSequenceStream(0)().(sequenceChunkLoaded)
+	if message.chunk.err != nil || len(message.chunk.changes) != 1 || strings.Contains(message.chunk.changes[0].diff, "+  one") {
+		t.Fatalf("sequence diff: %#v", message.chunk)
 	}
+	m.resetSequenceStream()
 }
 
 func TestWhitespaceToggleRejectsStaleLoads(t *testing.T) {

@@ -123,10 +123,10 @@ func TestInitialModelOpensCommitRange(t *testing.T) {
 				t.Fatalf("incorrect range order or boundaries: %#v", m.sequence.commits)
 			}
 			batch := m.Init()().(tea.BatchMsg)
-			first := batch[2]().(sequenceLoaded)
-			last := batch[3]().(sequenceLoaded)
-			if first.err != nil || last.err != nil || first.commit.hash != hashes[2] || last.commit.hash != hashes[1] {
-				t.Fatalf("range diffs did not load: %#v %#v", first, last)
+			first := batch[2]().(sequenceChunkLoaded)
+			last := batch[3]().(sequenceChunkLoaded)
+			if first.chunk.err != nil || last.chunk.err != nil || first.chunk.meta.hash != hashes[2] || last.chunk.meta.hash != hashes[1] {
+				t.Fatalf("range diffs did not load: %#v %#v", first.chunk, last.chunk)
 			}
 		})
 	}

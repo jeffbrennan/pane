@@ -44,6 +44,7 @@ func (m model) toggleWhitespace() (tea.Model, tea.Cmd) {
 		m.history.rows, m.history.changes = nil, nil
 		commands = append(commands, startCommitStream(repo, hash, request, m.height), commitLoadingTimer(request))
 	case "sequence":
+		m.resetSequenceStream()
 		m.sequence.request++
 		m.sequence.rowCache = nil
 		m.sequence.changes = make([][]change, len(m.sequence.commits))
@@ -55,7 +56,7 @@ func (m model) toggleWhitespace() (tea.Model, tea.Cmd) {
 				continue
 			}
 			m.sequence.states[i] = sequenceLoading
-			commands = append(commands, loadSequenceCommit(m.repo, m.sequence.commits[i].hash, i, m.sequence.request))
+			commands = append(commands, m.startSequenceStream(i))
 		}
 		m.rebuildSequence()
 	}

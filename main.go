@@ -369,7 +369,7 @@ func (m model) Init() tea.Cmd {
 	if m.screen == "sequence" && m.sequence.loading {
 		for i, state := range m.sequence.states {
 			if state == sequenceLoading {
-				commands = append(commands, loadSequenceCommit(m.repo, m.sequence.commits[i].hash, i, m.sequence.request))
+				commands = append(commands, m.startSequenceStream(i))
 			}
 		}
 	}
@@ -976,6 +976,47 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.history.changes = msg.changes
 		m.rebuildCommit()
+	case sequenceChunkLoaded:
+		if m.screen != "sequence" || msg.request != m.sequence.request || msg.index < 0 || msg.index >= len(m.sequence.states) {
+			break
+		}
+		index := msg.index
+		chunk := msg.chunk
+		if chunk.meta.hash != "" {
+			m.sequence.commits[index] = chunk.meta
+		}
+		if len(chunk.changes) > 0 {
+			m.sequence.changes[index] = append(m.sequence.changes[index], chunk.changes...)
+			if index < len(m.sequence.rowCache) {
+				m.sequence.rowCache[index] = nil
+			}
+		}
+		if chunk.done {
+			errText := ""
+			if chunk.err != nil {
+				errText = chunk.err.Error()
+				if strings.Contains(errText, "bad revision") || strings.Contains(errText, "unknown revision") || strings.Contains(errText, "not a valid object") {
+					errText = fmt.Sprintf("invalid commit %q: %s", m.sequence.commits[index].hash, errText)
+				}
+			}
+			if chunk.err != nil && len(m.sequence.changes[index]) == 0 {
+				m.sequence.states[index] = sequenceFailed
+				m.sequence.errors[index] = errText
+			} else {
+				m.sequence.states[index] = sequenceReady
+				if errText != "" {
+					m.sequence.errors[index] = errText
+				}
+			}
+			m.rebuildSequence()
+			return m, m.nextSequenceLoad()
+		}
+		if m.sequence.states[index] != sequenceReady {
+			m.sequence.states[index] = sequenceReady
+			m.sequence.loading = true
+		}
+		m.rebuildSequence()
+		return m, waitSequenceChunk(msg.stream, index, msg.request)
 	case sequenceLoaded:
 		if m.screen != "sequence" || msg.request != m.sequence.request || msg.index < 0 || msg.index >= len(m.sequence.states) || m.sequence.states[msg.index] != sequenceLoading {
 			break

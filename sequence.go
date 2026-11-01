@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -23,6 +24,10 @@ type sequenceState struct {
 	loading         bool
 	request         int
 	endPending      bool
+	cancel          context.CancelFunc
+	streamContext   context.Context
+	streamTotal     []int
+	streamLoaded    []int
 }
 
 type sequenceLoadState uint8
@@ -96,23 +101,55 @@ func newSequenceModel(repo repository, commits []commitInfo) (model, error) {
 	}, nil
 }
 
-func loadSequenceCommit(repo repository, revision string, index, request int) tea.Cmd {
+type sequenceChunkLoaded struct {
+	index   int
+	request int
+	chunk   commitChunk
+	stream  <-chan commitChunk
+}
+
+func waitSequenceChunk(stream <-chan commitChunk, index, request int) tea.Cmd {
 	return func() tea.Msg {
-		commit, err := repo.resolveCommit(revision)
-		if err != nil {
-			return sequenceLoaded{index: index, request: request, err: err}
+		chunk, ok := <-stream
+		if !ok {
+			chunk = commitChunk{done: true, err: fmt.Errorf("commit stream ended unexpectedly")}
 		}
-		changes, err := repo.commitChanges(commit.hash)
-		warmSyntax(changes)
-		return sequenceLoaded{index: index, request: request, commit: commit, changes: changes, err: err}
+		return sequenceChunkLoaded{index: index, request: request, chunk: chunk, stream: stream}
 	}
+}
+
+// startSequenceStream opens a commit inside a range and delivers its files in
+// chunks, so a huge commit does not block the whole review.
+func (m *model) startSequenceStream(index int) tea.Cmd {
+	if index < 0 || index >= len(m.sequence.commits) {
+		return nil
+	}
+	if m.sequence.streamContext == nil {
+		m.sequence.streamContext, m.sequence.cancel = context.WithCancel(context.Background())
+	}
+	repo, hash := m.repo, m.sequence.commits[index].hash
+	repo.context = m.sequence.streamContext
+	ctx := m.sequence.streamContext
+	request, height := m.sequence.request, m.height
+	return func() tea.Msg {
+		stream := repo.streamCommit(ctx, hash, max(height, startupSyntaxLines))
+		return waitSequenceChunk(stream, index, request)()
+	}
+}
+
+// resetSequenceStream cancels a running range load.
+func (m *model) resetSequenceStream() {
+	if m.sequence.cancel != nil {
+		m.sequence.cancel()
+	}
+	m.sequence.cancel, m.sequence.streamContext = nil, nil
 }
 
 func (m *model) nextSequenceLoad() tea.Cmd {
 	for i, state := range m.sequence.states {
 		if state == sequencePending {
 			m.sequence.states[i] = sequenceLoading
-			return loadSequenceCommit(m.repo, m.sequence.commits[i].hash, i, m.sequence.request)
+			return m.startSequenceStream(i)
 		}
 	}
 	m.sequence.loading = false

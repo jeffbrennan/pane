@@ -102,6 +102,7 @@ func (m model) leaveFileHistory() (tea.Model, tea.Cmd) {
 		previous.rebuildCommit()
 		return previous.refreshBase(true)
 	case "sequence":
+		previous.resetSequenceStream()
 		previous.sequence.request++
 		if whitespaceChanged {
 			previous.sequence.rowCache = nil
