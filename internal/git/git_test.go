@@ -1,4 +1,4 @@
-package main
+package git
 
 import (
 	"os"
@@ -6,24 +6,6 @@ import (
 	"strings"
 	"testing"
 )
-
-func testRepo(t *testing.T) Repo {
-	t.Helper()
-	r := Repo{Root: t.TempDir()}
-	for _, args := range [][]string{{"init"}, {"config", "user.email", "test@example.com"}, {"config", "user.name", "Test"}} {
-		if out, err := r.Command(args...); err != nil {
-			t.Fatalf("git %v: %s: %v", args, out, err)
-		}
-	}
-	return r
-}
-
-func writeFile(t *testing.T, r Repo, path, content string) {
-	t.Helper()
-	if err := os.WriteFile(filepath.Join(r.Root, path), []byte(content), 0600); err != nil {
-		t.Fatal(err)
-	}
-}
 
 func TestStagingAndUnbornUnstaging(t *testing.T) {
 	r := testRepo(t)
@@ -128,19 +110,6 @@ func TestBinaryAndDeletedFile(t *testing.T) {
 	}
 	if len(s.Staged) != 1 || len(s.Unstaged) != 0 {
 		t.Fatalf("deletion: %#v", s)
-	}
-}
-
-func TestUntrackedDiffPresentation(t *testing.T) {
-	r := testRepo(t)
-	writeFile(t, r, "new.txt", "first\nsecond\n")
-	s, err := r.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	rows := buildRows(s.Unstaged, 80, true)
-	if len(rows) != 3 || rowGutter(rows[1], 3) != "  1 + " || rows[1].text != "first" || rows[2].text != "second" {
-		t.Fatalf("unexpected rows: %#v", rows)
 	}
 }
 
