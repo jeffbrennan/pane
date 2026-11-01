@@ -122,7 +122,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startDiscard()
 	case "?":
 		m.modal = "help"
-		m.helpPos = 0
+		m.help.reset()
 	case "H":
 		return m.openHistory()
 	case "S":
@@ -297,13 +297,14 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.modal == "help" {
+		entries := m.helpLines()
+		pages := max(1, len(entries)-helpVisibleRows(m.height)+1)
+		if m.handleListKey(&m.help, key.String(), listRunes(key), pages, helpVisibleRows(m.height), nil) {
+			return m, nil
+		}
 		switch key.String() {
 		case "esc", "?", "q":
 			m.modal = ""
-		case "j", "down":
-			m.helpPos = min(m.helpPos+1, max(0, len(shortcutLines(m.width, ""))-helpVisibleRows(m.height)))
-		case "k", "up":
-			m.helpPos = max(0, m.helpPos-1)
 		}
 		return m, nil
 	}

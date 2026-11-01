@@ -82,7 +82,7 @@ func (m model) branchView() string {
 	if m.branch.remote {
 		title += styleDim + " · including remotes" + styleReset
 	}
-	lines = append(lines, m.titleBar(" "+title, styleDim+"read-only"+styleReset))
+	lines = append(lines, m.titleBar(" "+title, stateBadges(m.whitespaceBadge(), m.filterBadge(m.branch.list.filter))))
 	now := time.Now()
 	matches := m.filteredBranches()
 	selected := min(m.branch.list.selected, max(0, len(matches)-1))
@@ -115,10 +115,11 @@ func (m model) branchView() string {
 		}
 		lines = append(lines, m.listRow(i, selected, len(matches), current+" "+name+"  "+strings.Join(parts, "  "), ""))
 	}
-	status, hints := "", keyHints("↵", "switch", "n", "new", "d", "delete", "r", "remotes", "?", "help")
+	status := ""
 	if filter := m.branch.list.listStatus(m.width); filter != "" {
 		status = filter
 	}
+	hints := footer(true, shortcut{"↵", "switch"}, shortcut{"n", "new"}, shortcut{"d", "delete"}, shortcut{"r", "remotes"})
 	if m.flash != "" {
 		status = syntax.Clean(m.flash)
 	}
@@ -146,7 +147,7 @@ func (m model) handleBranchKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "?":
 		m.modal = "help"
-		m.helpPos = 0
+		m.help.reset()
 	case "tab":
 		return m.openWorktrees()
 	case "r":

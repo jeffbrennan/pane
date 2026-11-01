@@ -466,7 +466,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "?":
 		m.modal = "help"
-		m.helpPos = 0
+		m.help.reset()
 	case "p":
 		if !m.busy {
 			return m.runAction("push")
@@ -705,7 +705,7 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if key.String() == "?" {
 		m.modal = "help"
-		m.helpPos = 0
+		m.help.reset()
 		return m, nil
 	}
 	switch key.String() {
@@ -806,6 +806,7 @@ func (m *model) releaseLargeCommitRows() {
 func (m model) commitModel() model {
 	view := m
 	view.screen = ""
+	view.helpContext = "history"
 	view.relativeLines = true
 	view.contextCommit = m.history.current.Hash
 	view.viewIdentity = "commit:" + m.history.current.Hash
@@ -821,25 +822,26 @@ func (m model) commitModel() model {
 	view.staged = false
 	view.rows, view.pos, view.horizontal, view.viewTop = m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop
 	view.viewTitle = m.accent() + shortHash(m.history.current.Hash) + styleReset + "  " + syntax.Clean(m.history.current.Subject)
+	position := ""
 	if index, total := m.commitListPosition(); index > 0 && total > 1 {
-		view.viewTitle += styleDim + fmt.Sprintf("  %d/%d", index, total) + styleReset
+		position = fmt.Sprintf("%d/%d", index, total)
 	}
-	view.viewBadge = styleDim + "read-only" + styleReset
+	view.viewBadge = stateBadges(position, "", m.whitespaceBadge())
 	if m.screen == "commit" && m.history.streamActive && len(m.history.streamPaths) > 0 {
-		view.viewBadge = styleDim + fmt.Sprintf("read-only · loading %d/%d files", m.history.streamLoaded, len(m.history.streamPaths)) + styleReset
+		view.viewBadge = stateBadges(position, fmt.Sprintf("loading %d/%d files", m.history.streamLoaded, len(m.history.streamPaths)), m.whitespaceBadge())
 		view.searchProgress = "loading"
 	}
 	if m.screen == "base" {
 		view.viewTitle = syntax.Clean(m.base.revision) + "…working tree"
-		view.viewBadge = styleDim + shortHash(m.base.hash) + " · read-only" + styleReset
+		view.viewBadge = stateBadges(shortHash(m.base.hash), "", m.whitespaceBadge())
 		if m.history.streamActive && len(m.history.streamPaths) > 0 {
-			view.viewBadge = styleDim + shortHash(m.base.hash) + fmt.Sprintf(" · loading %d/%d files", m.history.streamLoaded, len(m.history.streamPaths)) + styleReset
+			view.viewBadge = stateBadges(shortHash(m.base.hash), fmt.Sprintf("loading %d/%d files", m.history.streamLoaded, len(m.history.streamPaths)), m.whitespaceBadge())
 			view.searchProgress = "loading"
 		}
 	}
 	view.viewHints = keyHints("esc", "back", "?", "help")
 	if viewed, total := viewedCountRows(m.history.rows); viewed > 0 {
-		view.viewBadge += styleDim + fmt.Sprintf(" · %d/%d viewed", viewed, total) + styleReset
+		view.viewBadge = stateBadges(position, fmt.Sprintf("%d/%d viewed", viewed, total), m.whitespaceBadge())
 	}
 	view.message = ""
 	if m.history.loading && m.history.commitLoadingVisible {
@@ -932,16 +934,12 @@ func (m model) historyView() string {
 			lines = append(lines, "")
 		}
 	}
-	status, hints := "", keyHints("↵", "open", "/", "search", "?", "help")
+	status, hints := "", footer(m.history.path != "", shortcut{"↵", "open"}, shortcut{"V", "range"}, shortcut{"b", "branches"})
 	if m.history.visualActive {
-		lo, hi := visualLo, visualHi
-		count := max(0, hi-lo+1)
-		status = fmt.Sprintf("%d commit(s) selected", count)
-		hints = keyHints("↵", "review", "esc", "cancel")
+		hints = footer(false, shortcut{"↵", "review"}, shortcut{"esc", "cancel"})
 	}
 	if filter := m.history.list.listStatus(m.width); filter != "" {
 		status = filter
-		hints = keyHints("↵", "open", "/", "edit", "esc", "back")
 	}
 	if m.flash != "" {
 		status = syntax.Clean(m.flash)

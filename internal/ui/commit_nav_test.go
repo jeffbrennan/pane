@@ -115,7 +115,7 @@ func TestCommitTitleShowsListPosition(t *testing.T) {
 	commits := []git.CommitInfo{{Hash: "aaaa", Subject: "one"}, {Hash: "bbbb", Subject: "two"}}
 	m := model{width: 120, height: 30, wrap: true, screen: "commit", history: historyState{commits: commits, current: commits[1]}}
 	view := m.commitModel()
-	if !strings.Contains(view.viewTitle, fmt.Sprintf("%d/%d", 2, 2)) {
-		t.Fatalf("title %q", view.viewTitle)
+	if !strings.Contains(view.viewBadge, fmt.Sprintf("%d/%d", 2, 2)) {
+		t.Fatalf("badge %q", view.viewBadge)
 	}
 }

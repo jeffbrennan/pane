@@ -78,11 +78,13 @@ func (m model) View() string {
 		return m.sequenceView()
 	}
 	title := " " + m.viewTitle
+	badge := m.viewBadge
 	if m.viewTitle == "" {
 		title = " " + m.stageTabs()
+		badge = stateBadges(m.whitespaceBadge())
 	}
 	var lines []string
-	lines = append(lines, m.titleBar(title, m.viewBadge))
+	lines = append(lines, m.titleBar(title, badge))
 	available := max(0, m.height-2)
 	start, visible, pinned := m.diffViewport(available)
 	if pinned != nil {
@@ -137,16 +139,13 @@ func (m model) View() string {
 	if m.flash != "" {
 		status = syntax.Clean(strings.ReplaceAll(m.flash, "\n", " | "))
 	}
-	if m.repo.IgnoreSpace && m.modal == "" {
-		badge := styleDim + "ignoring whitespace" + styleReset
-		if status != "" {
-			status += "  "
-		}
-		status += badge
-	}
 	hints := m.viewHints
 	if hints == "" {
-		hints = keyHints("?", "help")
+		if m.viewTitle == "" {
+			hints = footer(false, shortcut{"space", "stage"}, shortcut{"s", "hunk"}, shortcut{"c", "commit"}, shortcut{"H", "history"})
+		} else {
+			hints = footer(true)
+		}
 	}
 	switch m.modal {
 	case "search":

@@ -10,169 +10,6 @@ import (
 	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
-type shortcut struct{ keys, action string }
-
-var shortcutSections = []struct {
-	title string
-	keys  []shortcut
-}{
-	{"Changes", []shortcut{
-		{"tab", "Switch unstaged / staged"},
-		{"space", "Stage / unstage file"},
-		{"s", "Stage / unstage hunk"},
-		{"S", "Stash all changes, including untracked"},
-		{"d", "Discard hunk / file"},
-		{"c", "Commit changes"},
-		{"p / P", "Push / pull"},
-		{"F", "Fetch remote changes"},
-		{"r", "Refresh"},
-	}},
-	{"Move", []shortcut{
-		{"j / k", "Down / up"},
-		{"gg / G", "First / last line"},
-		{"ctrl-d / ctrl-u", "Half page down / up"},
-		{"ctrl-f / ctrl-b", "Page down / up"},
-		{"ctrl-e / ctrl-y", "Scroll viewport down / up"},
-		{"} / {", "Next / previous paragraph"},
-		{"J / K", "Next / previous file"},
-		{") / (", "Next / previous commit in the list"},
-		{"]c / [c", "Next / previous change"},
-		{"gH / gM / gL", "Top / middle / bottom of screen"},
-		{"zt / zz / zb", "Align active line"},
-		{"zh / zl", "Scroll horizontally"},
-		{"ctrl-o / gi", "Jump back / forward"},
-		{"count + motion", "Repeat a motion"},
-		{"count + gg / G", "Jump to source line"},
-	}},
-	{"View", []shortcut{
-		{"f", "File tree (h/l fold, / filter)"},
-		{"L", "Open history for the current file"},
-		{"v", "Mark file viewed / unviewed"},
-		{"gb", "Blame the current context or removed line"},
-		{"/ / g?", "Search forward / backward"},
-		{"n / N", "Next / previous match"},
-		{"h / l", "Fold file or commit details / reveal nearby context"},
-		{"e", "Expand / collapse deleted file"},
-		{"w", "Toggle line wrapping"},
-		{"W", "Toggle ignoring whitespace"},
-		{"B", "Toggle short file paths"},
-		{"T", "Toggle light / dark colors"},
-	}},
-	{"History", []shortcut{
-		{"H", "Open commit history"},
-		{"↵ / space", "Open selected commit"},
-		{"} / {", "Jump five commits"},
-		{"/", "Filter commits"},
-		{"esc", "Clear the filter first, then go back"},
-		{"u", "Edit latest unpublished commit message"},
-		{"S", "Open stashes"},
-		{"b", "Open branches (tab switches to worktrees)"},
-		{"X", "Open hotspots for the last year"},
-		{"R", "Review from this commit to the working tree"},
-		{"V", "Select a commit range to review"},
-		{"esc / q", "Back"},
-	}},
-	{"Stashes", []shortcut{
-		{"j / k, gg / G", "Select stash"},
-		{"↵ / space", "View stash"},
-		{"p / d", "Pop / drop selected stash"},
-		{"/", "Filter stashes"},
-		{"esc / q", "Back to history"},
-	}},
-	{"Branches", []shortcut{
-		{"b", "Open from history; tab switches to worktrees"},
-		{"↵", "Switch to the selected branch"},
-		{"n / w", "New branch from the selection / new worktree for it"},
-		{"d / D", "Delete branch / force delete"},
-		{"r", "Include remote branches"},
-		{"y, /", "Copy branch name, filter"},
-		{"esc / q", "Back to history"},
-	}},
-	{"Worktrees", []shortcut{
-		{"↵", "Switch this pane to the worktree"},
-		{"n", "New worktree (path and branch)"},
-		{"d / D", "Remove worktree / force remove"},
-		{"p", "Prune stale worktrees"},
-		{"y, /", "Copy path, filter"},
-		{"esc / q", "Back to history"},
-	}},
-	{"Hotspots", []shortcut{
-		{"X", "Open from history, or run pane hot"},
-		{"tab", "Switch between the file tree and authors"},
-		{"s", "Sort by score or path"},
-		{"h / l", "Fold a directory"},
-		{"↵", "Open file history or filter by author"},
-		{"V", "Review the selected file or directory as a commit range"},
-		{"/", "Filter hotspots"},
-		{"esc / q", "Back to history"},
-	}},
-	{"Search input", []shortcut{
-		{"← / →, home / end", "Move within the query"},
-		{"alt-b / alt-f, ctrl-a / ctrl-e", "Move by word or to start / end"},
-		{"ctrl-w / alt-backspace", "Delete previous word"},
-		{"backspace / delete", "Delete character"},
-	}},
-	{"General", []shortcut{
-		{"o", "Open file in $EDITOR"},
-		{"y", "Copy file path / commit hash"},
-		{"Y", "Copy path:line / commit permalink"},
-		{"?", "Show shortcuts"},
-		{"q", "Quit"},
-	}},
-	{"Commit input", []shortcut{
-		{"← / →, ctrl-b / ctrl-f, alt-b / alt-f", "Move by character or word"},
-		{"home / end, ctrl-a / ctrl-e", "Start / end of subject"},
-		{"ctrl-w / alt-backspace, ctrl-u / ctrl-k", "Delete previous word, to start, or to end"},
-		{"backspace / delete, ctrl-d", "Delete character"},
-		{"ctrl-g", "Write message in external editor"},
-		{"↵ / esc", "Commit / cancel"},
-	}},
-}
-
-const helpBoxWidth = 76
-
-// helpVisibleRows is the number of shortcut rows shown in a help dialog on a
-// screen of height rows: the title and status bars, the dialog border, title
-// and hint take the rest.
-func helpVisibleRows(height int) int { return max(1, height-6) }
-
-func shortcutLines(width int, accent string) []string {
-	innerWidth := max(1, min(helpBoxWidth, width-2)-4)
-	var lines []string
-	for i, section := range shortcutSections {
-		if i > 0 {
-			lines = append(lines, "")
-		}
-		// Each section sizes its own key column, so one long key does not
-		// squeeze the descriptions everywhere else.
-		keyWidth := 0
-		for _, s := range section.keys {
-			keyWidth = max(keyWidth, stringWidth(s.keys))
-		}
-		keyWidth += 2
-		lines = append(lines, styleBold+section.title+styleReset)
-		for _, s := range section.keys {
-			if innerWidth < keyWidth+16 {
-				for j, part := range wrapLine(s.keys+"  "+s.action, innerWidth) {
-					if j == 0 {
-						part = accent + part + styleReset
-					}
-					lines = append(lines, part)
-				}
-				continue
-			}
-			for j, part := range wrapWords(s.action, innerWidth-keyWidth) {
-				key := ""
-				if j == 0 {
-					key = s.keys
-				}
-				lines = append(lines, accent+key+styleReset+strings.Repeat(" ", keyWidth-stringWidth(key))+part)
-			}
-		}
-	}
-	return lines
-}
-
 // wrapWords wraps s at spaces where possible, falling back to wrapLine for
 // words wider than width.
 func wrapWords(s string, width int) []string {
@@ -202,9 +39,9 @@ func (m model) showHelpDialog(lines []string) {
 		return
 	}
 	boxWidth := min(helpBoxWidth, m.width-2)
-	entries := shortcutLines(m.width, m.accent())
+	entries := m.helpLines()
 	visible := min(len(entries), helpVisibleRows(len(lines)))
-	pos := min(m.helpPos, max(0, len(entries)-visible))
+	pos := min(m.help.selected, max(0, len(entries)-visible))
 	info := ""
 	if pos > 0 {
 		info += "↑"
@@ -217,7 +54,7 @@ func (m model) showHelpDialog(lines []string) {
 		title: "Keyboard shortcuts",
 		info:  info,
 		body:  entries[pos : pos+visible],
-		hint:  keyHints("j/k", "scroll", "esc", "close"),
+		hint:  keyHints("j/k", "scroll", "/", "filter", "esc", "close"),
 	}.render())
 }
 

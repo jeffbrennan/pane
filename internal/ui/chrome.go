@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
@@ -65,10 +66,84 @@ func (m model) titleBar(left, right string) string {
 	return bar(m.width, left, right)
 }
 
+// stateBadges joins the non-empty right-hand badges of a title row in the
+// shared order: position, viewed, ignoring whitespace, filter, selection.
+func stateBadges(parts ...string) string {
+	var out []string
+	for _, part := range parts {
+		if part != "" {
+			out = append(out, styleDim+part+styleReset)
+		}
+	}
+	return strings.Join(out, styleDim+" · "+styleReset)
+}
+
+func (m model) whitespaceBadge() string {
+	if m.repo.IgnoreSpace {
+		return "ignoring whitespace"
+	}
+	return ""
+}
+
+func (m model) filterBadge(filter string) string {
+	if filter == "" {
+		return ""
+	}
+	return "filter: " + filter
+}
+
+func (m model) selectionBadge() string {
+	if !m.history.visualActive {
+		return ""
+	}
+	count := m.history.list.selected - m.history.visualAnchor + 1
+	if count < 0 {
+		count = -count
+	}
+	return fmt.Sprintf("selecting %d", count)
+}
+
+// pendingIndicator renders the showcmd-style state of a pending motion.
+func (m model) pendingIndicator() string {
+	if m.pending != "" {
+		if m.count > 0 {
+			return fmt.Sprintf("%d%s…", m.count, m.pending)
+		}
+		return m.pending + "…"
+	}
+	if m.count > 0 {
+		return fmt.Sprintf("%d…", m.count)
+	}
+	return ""
+}
+
 // statusBar renders the last row of every screen: a message or prompt on the
-// left and dimmed key hints on the right.
+// left and dimmed key hints on the right, with any pending motion beside them.
 func (m model) statusBar(status, hints string) string {
+	if indicator := m.pendingIndicator(); indicator != "" {
+		if hints != "" {
+			hints += "  "
+		}
+		hints += styleDim + indicator + styleReset
+	}
 	return bar(m.width, status, hints)
+}
+
+// footer builds a screen's footer from its declared actions: up to four
+// screen-specific keys, then esc back and ? help.
+func footer(back bool, actions ...shortcut) string {
+	pairs := make([]string, 0, 2*len(actions)+4)
+	for i, action := range actions {
+		if i == 4 {
+			break
+		}
+		pairs = append(pairs, action.keys, action.action)
+	}
+	if back {
+		pairs = append(pairs, "esc", "back")
+	}
+	pairs = append(pairs, "?", "help")
+	return keyHints(pairs...)
 }
 
 // keyHints formats alternating key and action pairs, such as

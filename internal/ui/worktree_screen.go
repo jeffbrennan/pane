@@ -95,7 +95,7 @@ func (m model) sortedWorktrees() []git.WorktreeEntry {
 }
 
 func (m model) worktreeView() string {
-	lines := []string{m.titleBar(" "+m.accent()+"worktrees"+styleReset, styleDim+"read-only"+styleReset)}
+	lines := []string{m.titleBar(" "+m.accent()+"worktrees"+styleReset, stateBadges(m.whitespaceBadge(), m.filterBadge(m.worktrees.list.filter)))}
 	entries := m.sortedWorktrees()
 	selected := min(m.worktrees.list.selected, max(0, len(entries)-1))
 	offset, visible := listViewport(m.worktrees.list, len(entries), max(0, m.height-2))
@@ -141,14 +141,15 @@ func (m model) worktreeView() string {
 		path := git.WorktreeDisplayPath(m.worktrees.entries, entry.Path)
 		lines = append(lines, m.listRow(i, selected, len(entries), here+" "+path+"  "+strings.Join(parts, "  "), ""))
 	}
-	hintKeys := []string{"↵", "switch", "n", "new", "d", "remove"}
+	actions := []shortcut{{"↵", "switch"}, {"n", "new"}, {"d", "remove"}}
 	if m.anyPrunable() {
-		hintKeys = append(hintKeys, "p", "prune")
+		actions = append(actions, shortcut{"p", "prune"})
 	}
-	status, hints := "", keyHints(append(hintKeys, "?", "help")...)
+	status := ""
 	if filter := m.worktrees.list.listStatus(m.width); filter != "" {
 		status = filter
 	}
+	hints := footer(true, actions...)
 	if m.flash != "" {
 		status = syntax.Clean(m.flash)
 	}
@@ -176,7 +177,7 @@ func (m model) handleWorktreeKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "?":
 		m.modal = "help"
-		m.helpPos = 0
+		m.help.reset()
 	case "tab":
 		return m.openBranches()
 	case "r":

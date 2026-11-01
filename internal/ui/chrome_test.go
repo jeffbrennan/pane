@@ -38,8 +38,8 @@ func TestEveryScreenSharesTitleAndStatusBars(t *testing.T) {
 		m            model
 		title, hints string
 	}{
-		"diff":    {diff, " unstaged 1 · staged 0", "? help"},
-		"history": {history, " ", "↵ open  / search  ? help"},
+		"diff":    {diff, " unstaged 1 · staged 0", "space stage  s hunk  c commit  H history  ? help"},
+		"history": {history, " ", "↵ open  V range  b branches  ? help"},
 		"commit":  {commit, " 12345678  subject", "esc back  ? help"},
 	} {
 		lines := strings.Split(plain(tt.m.View()), "\n")

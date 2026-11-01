@@ -310,6 +310,7 @@ func (m *model) rebuildSequence() {
 func (m model) sequenceView() string {
 	view := m
 	view.screen = ""
+	view.helpContext = "history"
 	view.sequenceGutters = true
 	view.relativeLines = true
 	view.viewTitle = " "
@@ -319,10 +320,11 @@ func (m model) sequenceView() string {
 		if index < len(m.sequence.commits) {
 			commit := m.sequence.commits[index]
 			view.viewTitle = m.accent() + shortHash(commit.Hash) + styleReset + "  " + syntax.Clean(commit.Subject)
-			view.viewBadge = styleDim + fmt.Sprintf("read-only · %d/%d", index+1, len(m.sequence.commits)) + styleReset
-			if viewed, total := viewedCountRows(m.rows); viewed > 0 {
-				view.viewBadge += styleDim + fmt.Sprintf(" · %d/%d viewed", viewed, total) + styleReset
+			viewed := ""
+			if count, total := viewedCountRows(m.rows); count > 0 {
+				viewed = fmt.Sprintf("%d/%d viewed", count, total)
 			}
+			view.viewBadge = stateBadges(fmt.Sprintf("%d/%d", index+1, len(m.sequence.commits)), viewed, m.whitespaceBadge())
 		}
 	}
 	view.viewHints = keyHints("esc", "back", "?", "help")
@@ -406,7 +408,7 @@ func (m model) handleSequenceKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.rebuildSequence()
 	case "?":
 		m.modal = "help"
-		m.helpPos = 0
+		m.help.reset()
 	case "f":
 		m.openPicker()
 	case "e":

@@ -142,7 +142,7 @@ func (m model) handleStashKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) stashView() string {
 	entries := m.filteredStashes()
 	selected := min(m.stash.list.selected, max(0, len(entries)-1))
-	lines := []string{m.titleBar(" "+m.accent()+"stashes"+styleReset, "")}
+	lines := []string{m.titleBar(" "+m.accent()+"stashes"+styleReset, stateBadges(m.whitespaceBadge(), m.filterBadge(m.stash.list.filter)))}
 	available := max(0, m.height-2)
 	start, _ := listViewport(m.stash.list, len(entries), available)
 	now := time.Now()
@@ -164,7 +164,7 @@ func (m model) stashView() string {
 	} else if filter := m.stash.list.listStatus(m.width); filter != "" {
 		status = filter
 	}
-	lines = append(lines, m.statusBar(status, keyHints("↵", "view", "p", "pop", "d", "drop", "?", "help")))
+	lines = append(lines, m.statusBar(status, footer(true, shortcut{"↵", "view"}, shortcut{"p", "pop"}, shortcut{"d", "drop"})))
 	if m.modal == "help" {
 		clearBody(lines)
 		m.showHelpDialog(lines)

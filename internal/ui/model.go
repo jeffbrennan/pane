@@ -78,7 +78,8 @@ type model struct {
 	commitEditorPath      string
 	errorText             string
 	errorPos              int
-	helpPos               int
+	help                  listState
+	helpContext           string
 	screen, viewTitle     string
 	viewBadge, viewHints  string
 	history               historyState

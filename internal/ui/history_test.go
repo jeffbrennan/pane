@@ -186,7 +186,7 @@ func TestCommitLoadingIsDelayed(t *testing.T) {
 func TestCommitHeadingShowsHashAndSubject(t *testing.T) {
 	m := model{width: 60, height: 10, screen: "commit", history: historyState{current: git.CommitInfo{Hash: "123456789abcdef", Subject: "commit subject"}}}
 	header := strings.Split(plain(m.View()), "\n")[0]
-	if !strings.HasPrefix(header, " 12345678  commit subject ") || !strings.HasSuffix(header, "read-only") || strings.Contains(header, "pane") {
+	if !strings.HasPrefix(header, " 12345678  commit subject") || strings.Contains(header, "pane") || strings.Contains(header, "read-only") {
 		t.Fatalf("unexpected commit heading: %q", header)
 	}
 }

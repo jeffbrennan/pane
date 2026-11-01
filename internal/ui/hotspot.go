@@ -780,7 +780,7 @@ func (m model) hotView() string {
 	if m.hotspots.author != "" {
 		title += " · author " + m.hotspots.author
 	}
-	lines := []string{m.titleBar(" "+m.accent()+syntax.Clean(title)+styleReset, styleDim+"read-only"+styleReset)}
+	lines := []string{m.titleBar(" "+m.accent()+syntax.Clean(title)+styleReset, stateBadges(m.whitespaceBadge(), m.filterBadge(m.hotspots.list.filter)))}
 	now := time.Now()
 	selected := m.hotspots.list.selected
 	if m.hotspots.mode == "authors" {
@@ -834,9 +834,10 @@ func (m model) hotView() string {
 			lines = append(lines, m.listRow(i, selected, len(items), name, meta))
 		}
 	}
-	status, hints := "", keyHints("tab", "authors", "s", "sort", "↵", "open", "?", "help")
+	status := ""
+	hints := footer(true, shortcut{"tab", "authors"}, shortcut{"s", "sort"}, shortcut{"↵", "open"})
 	if m.hotspots.mode == "authors" {
-		hints = keyHints("tab", "files", "↵", "filter", "?", "help")
+		hints = footer(true, shortcut{"tab", "files"}, shortcut{"↵", "filter"})
 	}
 	if filter := m.hotspots.list.listStatus(m.width); filter != "" {
 		status = filter
@@ -932,7 +933,7 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "?":
 		m.modal = "help"
-		m.helpPos = 0
+		m.help.reset()
 	case "tab":
 		if m.hotspots.mode == "authors" {
 			m.hotspots.mode = ""
