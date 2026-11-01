@@ -32,6 +32,7 @@ func main() {
 	content := flag.String("content", os.Getenv("PANE_PERF_CONTENT"), "first diff text to wait for")
 	wait := flag.String("wait", "read-only", "text (or |-separated alternatives) that marks the first painted frame")
 	keyDelay := flag.Duration("key-delay", 0, "wait this long before sending -key")
+	dump := flag.String("dump", "", "write the pane's terminal output to this file")
 	key := flag.String("key", "", "key to send after the title appears")
 	after := flag.String("after", "", "wait for this text before sending the key")
 	flag.Parse()
@@ -42,7 +43,7 @@ func main() {
 		}
 		return
 	}
-	if err := run(*binary, *repo, *revision, *scenario, *args, *idle, *settle, *logPath, *content, *key, *after, *wait, *keyDelay); err != nil {
+	if err := run(*binary, *repo, *revision, *scenario, *args, *idle, *settle, *logPath, *content, *key, *after, *wait, *keyDelay, *dump); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -70,13 +71,13 @@ func (output *terminalOutput) feed(data []byte, terminal io.Writer) (bool, bool,
 		case !output.painted && matchesAnySuffix(output.tail, output.waits):
 			output.painted, painted = true, true
 		}
-		if output.content != "" && !output.found && bytes.HasSuffix(output.tail, []byte(output.content)) {
+		if output.content != "" && !output.found && bytes.Contains(output.tail, []byte(output.content)) {
 			output.found, found = true, true
 		}
-		if output.after != "" && !output.ready && bytes.HasSuffix(output.tail, []byte(output.after)) {
+		if output.after != "" && !output.ready && bytes.Contains(output.tail, []byte(output.after)) {
 			output.ready, ready = true, true
 		}
-		limit := max(64, len(output.content), len(output.after))
+		limit := max(16384, len(output.content)+64, len(output.after)+64)
 		if len(output.tail) > limit {
 			copy(output.tail, output.tail[len(output.tail)-limit:])
 			output.tail = output.tail[:limit]
@@ -97,7 +98,7 @@ func matchesAnySuffix(data []byte, suffixes []string) bool {
 	return false
 }
 
-func run(binary, repo, revision, scenario, paneArgs string, idle, settle time.Duration, logPath, content, key, after, waitText string, keyDelay time.Duration) error {
+func run(binary, repo, revision, scenario, paneArgs string, idle, settle time.Duration, logPath, content, key, after, waitText string, keyDelay time.Duration, dumpPath string) error {
 	if idle < 0 || settle < 0 {
 		return fmt.Errorf("idle and settle durations cannot be negative")
 	}
@@ -122,6 +123,11 @@ func run(binary, repo, revision, scenario, paneArgs string, idle, settle time.Du
 		return err
 	}
 	defer terminal.Close()
+	var dump *os.File
+	if dumpPath != "" {
+		dump, _ = os.Create(dumpPath)
+		defer dump.Close()
+	}
 	defer func() {
 		if cmd.ProcessState == nil {
 			_ = cmd.Process.Kill()
@@ -141,6 +147,9 @@ func run(binary, repo, revision, scenario, paneArgs string, idle, settle time.Du
 			n, err := terminal.Read(buffer)
 			if n > 0 {
 				outputBytes.Add(int64(n))
+				if dump != nil {
+					_, _ = dump.Write(buffer[:n])
+				}
 				first, found, isReady := output.feed(buffer[:n], terminal)
 				if first {
 					painted <- time.Now()

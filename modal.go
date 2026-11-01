@@ -353,7 +353,15 @@ func (m model) showWorktreeDelete(lines []string) {
 	body := []string{"", clean(m.worktrees.confirm.path), styleDim + "This cannot be undone." + styleReset, ""}
 	if m.worktrees.confirmForce {
 		title = "Force remove worktree?"
-		body = []string{"", clean(m.worktrees.confirm.path), styleDim + "Uncommitted changes will be lost." + styleReset, ""}
+		note := "Uncommitted changes will be lost."
+		if status := m.worktrees.status[m.worktrees.confirm.path]; status.loaded && status.dirty > 0 {
+			label := "files"
+			if status.dirty == 1 {
+				label = "file"
+			}
+			note = fmt.Sprintf("%d changed %s will be lost.", status.dirty, label)
+		}
+		body = []string{"", clean(m.worktrees.confirm.path), styleDim + note + styleReset, ""}
 	}
 	placeDialog(lines, m.width, dialog{
 		width: boxWidth, title: title, titleStyle: m.danger(), body: body,

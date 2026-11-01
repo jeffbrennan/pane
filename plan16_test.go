@@ -406,3 +406,32 @@ func TestStatusCountTreatsRenamesAsOneChange(t *testing.T) {
 		t.Fatal("no activity for rename")
 	}
 }
+
+func TestWorktreeForceDialogNamesDirtyCount(t *testing.T) {
+	m := model{width: 100, height: 30, modal: "worktree-delete",
+		worktrees: worktreeState{
+			confirm:      worktreeEntry{path: "/tmp/wt"},
+			confirmForce: true,
+			status:       map[string]worktreeStatus{"/tmp/wt": {dirty: 7, loaded: true}},
+		}}
+	view := m.View()
+	if !strings.Contains(view, "7 changed files will be lost") {
+		t.Fatalf("force dialog: %q", view)
+	}
+}
+
+func TestBranchAndWorktreeFiltersUsePickerMatcher(t *testing.T) {
+	branches := model{branch: branchState{entries: []branchEntry{{name: "feature/x"}, {name: "main"}}, filter: "fx"}}
+	matches := branches.filteredBranches()
+	if len(matches) != 1 || matches[0].name != "feature/x" {
+		t.Fatalf("branch subsequence filter: %#v", matches)
+	}
+	worktrees := model{worktrees: worktreeState{
+		entries: []worktreeEntry{{path: "/tmp/pane-feature", branch: "feature"}, {path: "/tmp/other", branch: "main"}},
+		filter:  "pfe",
+	}}
+	sorted := worktrees.sortedWorktrees()
+	if len(sorted) != 1 || sorted[0].branch != "feature" {
+		t.Fatalf("worktree subsequence filter: %#v", sorted)
+	}
+}

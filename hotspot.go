@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -36,19 +37,39 @@ type hotAuthor struct {
 	dirs    map[string]int
 }
 
+type hotItemsCache struct {
+	items            []hotItem
+	authors          []*hotAuthor
+	filled           bool
+	builtAt          time.Time
+	dataVersion      int
+	collapsedVersion int
+	sortPath         bool
+	authorFilter     string
+}
+
 type hotspotState struct {
-	files        []hotFile
-	authors      map[string]*hotAuthor
-	collapsed    map[string]bool
-	selected     int
-	offset       int
-	request      int
-	loading      bool
-	sortPath     bool
-	mode         string
-	authorFilter string
-	since        string
-	author       string
+	files            []hotFile
+	authors          map[string]*hotAuthor
+	items            *hotItemsCache
+	commits          []hotCacheCommit
+	stream           *hotSpotStream
+	collapsed        map[string]bool
+	head             string
+	cachePath        string
+	cutoff           int64
+	selected         int
+	offset           int
+	request          int
+	streamLoaded     int
+	dataVersion      int
+	collapsedVersion int
+	loading          bool
+	sortPath         bool
+	mode             string
+	authorFilter     string
+	since            string
+	author           string
 }
 
 type hotspotsLoaded struct {
@@ -64,48 +85,125 @@ type hotspotSequenceLoaded struct {
 	err     error
 }
 
+type hotspotsStarted struct {
+	plan    hotspotPlan
+	request int
+	err     error
+}
+
+type hotspotPageLoaded struct {
+	commits []hotCacheCommit
+	stream  *hotSpotStream
+	request int
+	done    bool
+	err     error
+}
+
 func hotSinceDefault() string { return "1.year" }
 
-// hotspots folds per-commit numstat into per-file and per-author churn. The
-// cache keeps each commit's numstat, so a later launch with a moved HEAD reads
-// only the commits after the cached tip.
-func (r repository) hotspots(since, author string) ([]hotFile, map[string]*hotAuthor, error) {
+// hotspotPlan describes how to build the window: a cache hit, or cached
+// commits plus a stream for the rest.
+type hotspotPlan struct {
+	head, cachePath, since, author string
+	cutoff                         int64
+	commits                        []hotCacheCommit
+	stream                         *hotSpotStream
+	files                          []hotFile
+	authors                        map[string]*hotAuthor
+	cacheHit                       bool
+}
+
+func (r repository) planHotspots(since, author string) (hotspotPlan, error) {
 	head := ""
 	if out, err := r.command("rev-parse", "--verify", "--quiet", "HEAD"); err == nil {
 		head = strings.TrimSpace(string(out))
 	}
 	now := time.Now()
-	cachePath := hotCachePath(r.root, since, author)
-	cache, cached := readHotCache(cachePath, since, author)
-	var commits []hotCacheCommit
-	cutoff := int64(0)
-	loaded := false
-	if cached && head != "" && cache.Head == head {
-		cutoff = advanceHotCutoff(since, now)
-		commits = pruneHotCommits(cache.Commits, cutoff)
-		loaded = true
-	} else if cached && cache.Head != "" && head != "" && r.isAncestor(cache.Head, head) {
-		cutoff = advanceHotCutoff(since, now)
-		fresh, err := r.hotCommits(since, author, cache.Head+".."+head)
-		if err == nil {
-			commits = pruneHotCommits(cache.Commits, cutoff)
-			commits = append(commits, pruneHotCommits(fresh, cutoff)...)
-			loaded = true
+	plan := hotspotPlan{head: head, cachePath: hotCachePath(r.root, since, author), since: since, author: author}
+	// Check the small summary first: a matching HEAD must not decode the
+	// per-commit cache.
+	if head != "" {
+		if files, authors, cachedAt, ok := readHotSummary(hotSummaryPath(r.root, since, author), head, since, author); ok && now.Unix()-cachedAt <= int64(hotSummaryTTL.Seconds()) {
+			plan.files, plan.authors = files, authors
+			plan.cacheHit = true
+			return plan, nil
 		}
 	}
-	if !loaded {
-		fresh, err := r.hotCommits(since, author, "")
+	cache, cached := readHotCache(plan.cachePath, since, author)
+	if cached && head != "" && cache.Head == head {
+		plan.cutoff = advanceHotCutoff(since, now)
+		plan.commits = pruneHotCommits(cache.Commits, plan.cutoff)
+		generated := r.generatedPaths(hotspotPaths(plan.commits))
+		plan.files, plan.authors = aggregateHotspots(plan.commits, generated, plan.cutoff, now)
+		writeHotSummary(hotSummaryPath(r.root, since, author), head, since, author, plan.cutoff, now.Unix(), plan.files, plan.authors)
+		plan.cacheHit = true
+		return plan, nil
+	}
+	revisionRange := ""
+	if cached && cache.Head != "" && head != "" && r.isAncestor(cache.Head, head) {
+		plan.cutoff = advanceHotCutoff(since, now)
+		plan.commits = pruneHotCommits(cache.Commits, plan.cutoff)
+		revisionRange = cache.Head + ".." + head
+	} else if cutoff, ok := sinceCutoff(since, now); ok {
+		plan.cutoff = cutoff
+	}
+	plan.stream = newHotSpotStream(r, since, author, revisionRange)
+	generated := builtinGeneratedPaths(plan.commits)
+	plan.files, plan.authors = aggregateHotspots(plan.commits, generated, plan.cutoff, now)
+	return plan, nil
+}
+
+// hotspots is the blocking form used by tests and non-interactive callers.
+func (r repository) hotspots(since, author string) ([]hotFile, map[string]*hotAuthor, error) {
+	plan, err := r.planHotspots(since, author)
+	if err != nil {
+		return nil, nil, err
+	}
+	if plan.cacheHit {
+		return plan.files, plan.authors, nil
+	}
+	commits := append([]hotCacheCommit(nil), plan.commits...)
+	for {
+		page, done, err := plan.stream.nextPage(hotspotPageSize)
 		if err != nil {
+			plan.stream.close()
 			return nil, nil, err
 		}
-		commits = fresh
-		if parsed, ok := sinceCutoff(since, now); ok {
-			cutoff = parsed
-		} else {
-			cutoff = oldestHotCommit(commits)
+		commits = append(commits, page...)
+		if done {
+			break
 		}
 	}
-	commits = pruneHotCommits(commits, cutoff)
+	return r.finishHotspots(plan, commits)
+}
+
+var hotspotPageSize = 100
+
+// The first page is one commit so the tree paints as soon as Git starts
+// emitting; later pages batch more.
+var hotspotFirstPageSize = 1
+
+// hotSummaryTTL bounds how stale cached scores can be; older summaries are
+// rebuilt from the per-commit cache.
+var hotSummaryTTL = time.Hour
+
+func (r repository) finishHotspots(plan hotspotPlan, commits []hotCacheCommit) ([]hotFile, map[string]*hotAuthor, error) {
+	commits = pruneHotCommits(commits, plan.cutoff)
+	now := time.Now()
+	cutoff := plan.cutoff
+	if _, ok := sinceCutoff(plan.since, now); !ok {
+		if oldest := oldestHotCommit(commits); oldest > 0 {
+			cutoff = oldest
+		}
+	}
+	generated := r.generatedPaths(hotspotPaths(commits))
+	files, authors := aggregateHotspots(commits, generated, cutoff, now)
+	writeHotCache(plan.cachePath, plan.head, plan.since, plan.author, cutoff, now.Unix(), commits)
+	writeHotSummary(hotSummaryPath(r.root, plan.since, plan.author), plan.head, plan.since, plan.author, cutoff, now.Unix(), files, authors)
+	return files, authors, nil
+}
+
+func hotspotPaths(commits []hotCacheCommit) []string {
 	paths := make([]string, 0, len(commits))
 	seen := make(map[string]bool)
 	for _, commit := range commits {
@@ -116,92 +214,24 @@ func (r repository) hotspots(since, author string) ([]hotFile, map[string]*hotAu
 			}
 		}
 	}
-	generated := r.generatedPaths(paths)
-	files, authors := aggregateHotspots(commits, generated, cutoff, now)
-	writeHotCache(cachePath, head, since, author, cutoff, now.Unix(), commits)
-	return files, authors, nil
+	return paths
+}
+
+func builtinGeneratedPaths(commits []hotCacheCommit) map[string]bool {
+	generated := make(map[string]bool)
+	for _, commit := range commits {
+		for _, change := range commit.Changes {
+			if generatedByPath(change.Path) {
+				generated[change.Path] = true
+			}
+		}
+	}
+	return generated
 }
 
 func (r repository) isAncestor(ancestor, descendant string) bool {
 	_, err := r.command("merge-base", "--is-ancestor", ancestor, descendant)
 	return err == nil
-}
-
-// hotCommits reads numstat for a revision range, or for the whole window when
-// revisionRange is empty.
-func (r repository) hotCommits(since, author, revisionRange string) ([]hotCacheCommit, error) {
-	args := []string{"log", "--numstat", "-M", "-z", "--format=%x00%H%x00%ct%x00%aN"}
-	if since != "" {
-		args = append(args, "--since="+since)
-	}
-	if author != "" {
-		args = append(args, "--author="+author)
-	}
-	if revisionRange != "" {
-		args = append(args, revisionRange)
-	}
-	args = append(args, "--")
-	out, err := r.commandStdout(args...)
-	if err != nil {
-		return nil, gitError(out, err)
-	}
-	return parseHotCommits(out), nil
-}
-
-func parseHotCommits(out []byte) []hotCacheCommit {
-	var commits []hotCacheCommit
-	fields := bytes.Split(out, []byte{0})
-	for i := 0; i < len(fields); {
-		if len(fields[i]) != 0 {
-			i++
-			continue
-		}
-		if i+3 >= len(fields) {
-			break
-		}
-		seconds, _ := strconv.ParseInt(string(fields[i+2]), 10, 64)
-		commit := hotCacheCommit{Hash: string(fields[i+1]), Time: seconds, Author: string(fields[i+3])}
-		i += 4
-		byPath := make(map[string]*hotCacheChange)
-		for i < len(fields) && len(fields[i]) != 0 {
-			line := strings.TrimPrefix(string(fields[i]), "\n")
-			i++
-			if line == "" {
-				continue
-			}
-			parts := strings.SplitN(line, "\t", 3)
-			if len(parts) != 3 {
-				continue
-			}
-			path := parts[2]
-			if path == "" && i+1 < len(fields) {
-				// A rename record carries the old and new paths separately.
-				path = string(fields[i+1])
-				i += 2
-			}
-			if path == "" {
-				continue
-			}
-			added, addErr := strconv.Atoi(parts[0])
-			deleted, delErr := strconv.Atoi(parts[1])
-			if addErr != nil || delErr != nil {
-				continue
-			}
-			change := byPath[path]
-			if change == nil {
-				change = &hotCacheChange{Path: path}
-				byPath[path] = change
-			}
-			change.Added += added
-			change.Deleted += deleted
-		}
-		for _, change := range byPath {
-			commit.Changes = append(commit.Changes, *change)
-		}
-		sort.Slice(commit.Changes, func(i, j int) bool { return commit.Changes[i].Path < commit.Changes[j].Path })
-		commits = append(commits, commit)
-	}
-	return commits
 }
 
 func aggregateHotspots(commits []hotCacheCommit, generated map[string]bool, cutoff int64, now time.Time) ([]hotFile, map[string]*hotAuthor) {
@@ -353,6 +383,42 @@ type hotCacheChange struct {
 	Deleted int    `json:"deleted"`
 }
 
+type hotCacheFile struct {
+	Path    string         `json:"path"`
+	Added   int            `json:"added"`
+	Deleted int            `json:"deleted"`
+	Commits int            `json:"commits"`
+	Score   float64        `json:"score"`
+	Last    int64          `json:"last"`
+	Authors map[string]int `json:"authors"`
+}
+
+type hotCacheAuthor struct {
+	Name    string         `json:"name"`
+	Commits int            `json:"commits"`
+	Churn   int            `json:"churn"`
+	Dirs    map[string]int `json:"dirs"`
+}
+
+type hotSummary struct {
+	Version  int              `json:"version"`
+	Head     string           `json:"head"`
+	Since    string           `json:"since"`
+	Author   string           `json:"author"`
+	Cutoff   int64            `json:"cutoff"`
+	CachedAt int64            `json:"cached_at"`
+	Files    []hotCacheFile   `json:"files"`
+	Authors  []hotCacheAuthor `json:"authors"`
+}
+
+func hotSummaryPath(root, since, author string) string {
+	path := hotCachePath(root, since, author)
+	if path == "" {
+		return ""
+	}
+	return path + ".summary"
+}
+
 func hotCachePath(root, since, author string) string {
 	dir, err := os.UserCacheDir()
 	if err != nil {
@@ -377,6 +443,52 @@ func readHotCache(path, since, author string) (hotCache, bool) {
 	return cache, true
 }
 
+func readHotSummary(path, head, since, author string) ([]hotFile, map[string]*hotAuthor, int64, bool) {
+	if path == "" || head == "" {
+		return nil, nil, 0, false
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, nil, 0, false
+	}
+	defer file.Close()
+	var summary hotSummary
+	if err := gob.NewDecoder(file).Decode(&summary); err != nil || summary.Version != hotCacheVersion || summary.Head != head || summary.Since != since || summary.Author != author {
+		return nil, nil, 0, false
+	}
+	files := make([]hotFile, len(summary.Files))
+	for i, file := range summary.Files {
+		files[i] = hotFile{path: file.Path, added: file.Added, deleted: file.Deleted, commits: file.Commits, score: file.Score, last: time.Unix(file.Last, 0), authors: file.Authors}
+	}
+	authors := make(map[string]*hotAuthor, len(summary.Authors))
+	for _, author := range summary.Authors {
+		authors[author.Name] = &hotAuthor{name: author.Name, commits: author.Commits, churn: author.Churn, dirs: author.Dirs}
+	}
+	return files, authors, summary.CachedAt, true
+}
+
+func writeHotSummary(path, head, since, author string, cutoff, cachedAt int64, files []hotFile, authors map[string]*hotAuthor) {
+	if path == "" {
+		return
+	}
+	summary := hotSummary{Version: hotCacheVersion, Head: head, Since: since, Author: author, Cutoff: cutoff, CachedAt: cachedAt}
+	for _, file := range files {
+		summary.Files = append(summary.Files, hotCacheFile{Path: file.path, Added: file.added, Deleted: file.deleted, Commits: file.commits, Score: file.score, Last: file.last.Unix(), Authors: file.authors})
+	}
+	for _, item := range authors {
+		summary.Authors = append(summary.Authors, hotCacheAuthor{Name: item.name, Commits: item.commits, Churn: item.churn, Dirs: item.dirs})
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	_ = gob.NewEncoder(file).Encode(summary)
+}
+
 func writeHotCache(path, head, since, author string, cutoff, cachedAt int64, commits []hotCacheCommit) {
 	if path == "" {
 		return
@@ -396,14 +508,48 @@ func (m model) loadHotspots() tea.Cmd {
 	repo, request := m.repo, m.hotspots.request
 	since, author := m.hotspots.since, m.hotspots.author
 	return func() tea.Msg {
-		files, authors, err := repo.hotspots(since, author)
+		plan, err := repo.planHotspots(since, author)
+		if err != nil {
+			return hotspotsLoaded{request: request, err: err}
+		}
+		if plan.cacheHit {
+			return hotspotsLoaded{files: plan.files, authors: plan.authors, request: request}
+		}
+		return hotspotsStarted{plan: plan, request: request}
+	}
+}
+
+func (m model) waitHotspotPage(stream *hotSpotStream, request, limit int) tea.Cmd {
+	return func() tea.Msg {
+		commits, done, err := stream.nextPage(limit)
+		return hotspotPageLoaded{commits: commits, stream: stream, request: request, done: done, err: err}
+	}
+}
+
+func (m model) finishHotspots(request int) tea.Cmd {
+	plan := hotspotPlan{
+		head: m.hotspots.head, cachePath: m.hotspots.cachePath,
+		since: m.hotspots.since, author: m.hotspots.author, cutoff: m.hotspots.cutoff,
+	}
+	commits := append([]hotCacheCommit(nil), m.hotspots.commits...)
+	repo := m.repo
+	return func() tea.Msg {
+		files, authors, err := repo.finishHotspots(plan, commits)
 		return hotspotsLoaded{files: files, authors: authors, request: request, err: err}
 	}
 }
 
+func (m *model) closeHotspotStream() {
+	if m.hotspots.stream != nil {
+		m.hotspots.stream.close()
+		m.hotspots.stream = nil
+	}
+}
+
 func (m model) openHotspots(since, author string) (tea.Model, tea.Cmd) {
+	m.closeHotspotStream()
 	m.screen = "hotspots"
-	m.hotspots = hotspotState{loading: true, since: since, author: author, request: 1, authors: make(map[string]*hotAuthor)}
+	m.hotspots = hotspotState{loading: true, since: since, author: author, request: 1, authors: make(map[string]*hotAuthor), items: &hotItemsCache{}}
 	return m, m.loadHotspots()
 }
 
@@ -431,6 +577,15 @@ type hotItem struct {
 }
 
 func (m model) hotItems() []hotItem {
+	cache := m.hotspots.items
+	if cache != nil && cache.filled && cache.dataVersion == m.hotspots.dataVersion && cache.collapsedVersion == m.hotspots.collapsedVersion && cache.sortPath == m.hotspots.sortPath && cache.authorFilter == m.hotspots.authorFilter {
+		return cache.items
+	}
+	// While pages stream in, keep the previous tree until the rebuild budget
+	// expires instead of rebuilding tens of thousands of nodes per page.
+	if cache != nil && cache.filled && cache.dataVersion != m.hotspots.dataVersion && cache.collapsedVersion == m.hotspots.collapsedVersion && cache.sortPath == m.hotspots.sortPath && cache.authorFilter == m.hotspots.authorFilter && time.Since(cache.builtAt) < 250*time.Millisecond {
+		return cache.items
+	}
 	files := m.hotspots.files
 	if filter := m.hotspots.authorFilter; filter != "" {
 		var filtered []hotFile
@@ -443,7 +598,11 @@ func (m model) hotItems() []hotItem {
 	}
 	root := &hotNode{}
 	for _, file := range files {
-		parts := strings.Split(filepathToSlash(file.path), "/")
+		path := file.path
+		if strings.ContainsRune(path, '\\') {
+			path = filepathToSlash(path)
+		}
+		parts := strings.Split(path, "/")
 		node := root
 		for i, part := range parts {
 			child := node.byName[part]
@@ -530,6 +689,15 @@ func (m model) hotItems() []hotItem {
 		}
 	}
 	appendChildren(root, "")
+	if cache != nil {
+		cache.items = items
+		cache.filled = true
+		cache.builtAt = time.Now()
+		cache.dataVersion = m.hotspots.dataVersion
+		cache.collapsedVersion = m.hotspots.collapsedVersion
+		cache.sortPath = m.hotspots.sortPath
+		cache.authorFilter = m.hotspots.authorFilter
+	}
 	return items
 }
 
@@ -590,6 +758,9 @@ func hotBar(score, maxScore float64, width int) string {
 
 func (m model) hotView() string {
 	title := "hotspots"
+	if m.hotspots.stream != nil {
+		title += fmt.Sprintf(" · loading %d commits", m.hotspots.streamLoaded)
+	}
 	if m.hotspots.authorFilter != "" {
 		title += " · " + m.hotspots.authorFilter
 	}
@@ -695,6 +866,9 @@ func topAuthorDir(author *hotAuthor) string {
 }
 
 func (m model) hotAuthorList() []*hotAuthor {
+	if cache := m.hotspots.items; cache != nil && cache.filled && cache.dataVersion == m.hotspots.dataVersion && cache.authors != nil {
+		return cache.authors
+	}
 	authors := make([]*hotAuthor, 0, len(m.hotspots.authors))
 	for _, author := range m.hotspots.authors {
 		authors = append(authors, author)
@@ -705,14 +879,20 @@ func (m model) hotAuthorList() []*hotAuthor {
 		}
 		return authors[i].name < authors[j].name
 	})
+	if cache := m.hotspots.items; cache != nil {
+		cache.authors = authors
+		cache.dataVersion = m.hotspots.dataVersion
+	}
 	return authors
 }
 
 func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "esc", "q":
+		m.closeHotspotStream()
 		return m.openHistory()
 	case "ctrl+c":
+		m.closeHotspotStream()
 		return m, tea.Quit
 	case "?":
 		m.modal = "help"
@@ -746,12 +926,14 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.hotspots.collapsed = make(map[string]bool)
 				}
 				m.hotspots.collapsed[items[m.hotspots.selected].path] = key.String() == "h"
+				m.hotspots.collapsedVersion++
 			}
 		}
 	case "V":
 		if m.hotspots.mode == "" {
 			items := m.hotItems()
 			if len(items) > 0 {
+				m.closeHotspotStream()
 				return m, m.hotspotSequence(items[min(m.hotspots.selected, len(items)-1)].path)
 			}
 		}
@@ -775,8 +957,10 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.hotspots.collapsed = make(map[string]bool)
 			}
 			m.hotspots.collapsed[item.path] = !item.collapsed
+			m.hotspots.collapsedVersion++
 			break
 		}
+		m.closeHotspotStream()
 		return m.openPathHistory(item.path)
 	}
 	return m, nil

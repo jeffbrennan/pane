@@ -530,3 +530,27 @@ func changeCounts(addedWidth, added, deletedWidth, deleted int, selected bool) s
 	}
 	return fmt.Sprintf("\x1b[32m+%*d\x1b[39m \x1b[31m-%*d\x1b[39m", addedWidth, added, deletedWidth, deleted)
 }
+
+// matchesPicker applies the file picker's matching rules to a single name:
+// basename substring, full-path substring, then subsequence.
+func matchesPicker(path, query string) bool {
+	if query == "" {
+		return true
+	}
+	query = strings.ToLower(query)
+	full := strings.ToLower(path)
+	if strings.Contains(strings.ToLower(packageBase(path)), query) {
+		return true
+	}
+	if strings.Contains(full, query) {
+		return true
+	}
+	return isSubsequence(full, query)
+}
+
+func packageBase(path string) string {
+	if i := strings.LastIndex(path, "/"); i >= 0 {
+		return path[i+1:]
+	}
+	return path
+}

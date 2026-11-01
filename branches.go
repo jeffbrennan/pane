@@ -108,7 +108,7 @@ func (m model) filteredBranches() []branchEntry {
 	}
 	var matches []branchEntry
 	for _, entry := range m.branch.entries {
-		if strings.Contains(strings.ToLower(entry.name+" "+entry.subject+" "+entry.upstream), query) {
+		if matchesPicker(entry.name, query) {
 			matches = append(matches, entry)
 		}
 	}

@@ -79,7 +79,7 @@ func (m model) sortedWorktrees() []worktreeEntry {
 	if query != "" {
 		var filtered []worktreeEntry
 		for _, entry := range entries {
-			if strings.Contains(strings.ToLower(entry.path+" "+entry.branch), query) {
+			if matchesPicker(entry.path, query) || matchesPicker(entry.branch, query) {
 				filtered = append(filtered, entry)
 			}
 		}

@@ -821,16 +821,58 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		next.width, next.height, next.wrap = m.width, m.height, m.wrap
 		next.viewed = m.viewed
 		return next, next.Init()
+	case hotspotsStarted:
+		if m.screen != "hotspots" || msg.request != m.hotspots.request || msg.err != nil {
+			if msg.plan.stream != nil {
+				msg.plan.stream.close()
+			}
+			if msg.err != nil {
+				m.flash = "Hotspots: " + msg.err.Error()
+				m.hotspots.loading = false
+			}
+			break
+		}
+		m.hotspots.head, m.hotspots.cachePath = msg.plan.head, msg.plan.cachePath
+		m.hotspots.cutoff, m.hotspots.commits = msg.plan.cutoff, msg.plan.commits
+		m.hotspots.files, m.hotspots.authors = msg.plan.files, msg.plan.authors
+		m.hotspots.dataVersion++
+		m.hotspots.stream = msg.plan.stream
+		m.hotspots.streamLoaded = len(msg.plan.commits)
+		m.hotspots.loading = true
+		return m, m.waitHotspotPage(msg.plan.stream, msg.request, hotspotFirstPageSize)
+	case hotspotPageLoaded:
+		if m.screen != "hotspots" || msg.request != m.hotspots.request {
+			break
+		}
+		if msg.err != nil {
+			m.hotspots.stream = nil
+			m.hotspots.loading = false
+			m.flash = "Hotspots: " + msg.err.Error()
+			break
+		}
+		m.hotspots.commits = append(m.hotspots.commits, msg.commits...)
+		m.hotspots.streamLoaded = len(m.hotspots.commits)
+		generated := builtinGeneratedPaths(m.hotspots.commits)
+		m.hotspots.files, m.hotspots.authors = aggregateHotspots(m.hotspots.commits, generated, m.hotspots.cutoff, time.Now())
+		m.hotspots.dataVersion++
+		m.hotspots.loading = false
+		if msg.done {
+			m.hotspots.stream = nil
+			return m, m.finishHotspots(msg.request)
+		}
+		return m, m.waitHotspotPage(msg.stream, msg.request, hotspotPageSize)
 	case hotspotsLoaded:
 		if m.screen != "hotspots" || msg.request != m.hotspots.request {
 			break
 		}
 		m.hotspots.loading = false
+		m.hotspots.stream = nil
 		if msg.err != nil {
 			m.flash = "Hotspots: " + msg.err.Error()
 			break
 		}
 		m.hotspots.files, m.hotspots.authors = msg.files, msg.authors
+		m.hotspots.dataVersion++
 		m.hotspots.selected, m.hotspots.offset = 0, 0
 	case blameLoaded:
 		return m.applyBlame(msg)

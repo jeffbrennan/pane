@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -92,7 +93,7 @@ func TestHotspotScreenFoldsSortsAndOpensHistory(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("hotspots produced no load command")
 	}
-	m, _ = applyBatch(t, m, cmd)
+	m = drainHotspots(t, m, cmd)
 	if m.hotspots.loading || len(m.hotspots.files) != 2 {
 		t.Fatalf("hotspots did not load: %#v", m.hotspots.files)
 	}
@@ -127,6 +128,14 @@ func TestHotspotScreenFoldsSortsAndOpensHistory(t *testing.T) {
 	}
 }
 
+func drainHotspots(t *testing.T, m model, cmd tea.Cmd) model {
+	t.Helper()
+	for i := 0; cmd != nil && i < 10000; i++ {
+		m, cmd = applyBatch(t, m, cmd)
+	}
+	return m
+}
+
 func m0Files(t *testing.T, r repository) []hotFile {
 	t.Helper()
 	files, _, err := r.hotspots("2.year", "")
@@ -150,7 +159,7 @@ func TestHotspotVOpensFilteredSequence(t *testing.T) {
 	m := model{width: 120, height: 30, wrap: true, repo: r, viewed: newViewedStore(r.root)}
 	updated, cmd := m.openHotspots("2.year", "")
 	m = updated.(model)
-	m, _ = applyBatch(t, m, cmd)
+	m = drainHotspots(t, m, cmd)
 	items := m.hotItems()
 	if len(items) == 0 {
 		t.Fatal("no hotspot items")
@@ -299,5 +308,61 @@ func TestSinceCutoff(t *testing.T) {
 		if ok != test.ok || (ok && got != want) {
 			t.Errorf("sinceCutoff(%q) = %d, %v; want %d, %v", test.since, got, ok, want, test.ok)
 		}
+	}
+}
+
+func TestHotspotStreamEmitsPagesAndUpdatesTree(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	previous := hotspotPageSize
+	hotspotPageSize = 1
+	t.Cleanup(func() { hotspotPageSize = previous })
+	r := hotFixture(t)
+	m := model{width: 120, height: 30, wrap: true, repo: r, viewed: newViewedStore(r.root)}
+	updated, cmd := m.openHotspots("2.year", "")
+	m = updated.(model)
+	// The start message establishes the plan.
+	m, cmd = applyBatch(t, m, cmd)
+	if cmd == nil || m.hotspots.stream == nil {
+		t.Fatalf("hotspot stream did not start: %#v", m.hotspots)
+	}
+	// A partial page must already produce rows, before the stream finishes.
+	updated, cmd = applyBatch(t, m, cmd)
+	m = updated.(model)
+	if len(m.hotspots.commits) != 1 || len(m.hotspots.files) == 0 || cmd == nil {
+		t.Fatalf("first page did not update the tree: commits=%d files=%d", len(m.hotspots.commits), len(m.hotspots.files))
+	}
+	if !strings.Contains(m.hotView(), "recent.txt") && !strings.Contains(m.hotView(), "old-big.txt") {
+		t.Fatalf("first page view: %q", m.hotView())
+	}
+	// Drain the rest and confirm both commits are present.
+	m = drainHotspots(t, m, cmd)
+	if len(m.hotspots.commits) != 2 || m.hotspots.stream != nil || m.hotspots.loading {
+		t.Fatalf("stream did not finish: commits=%d stream=%v loading=%v", len(m.hotspots.commits), m.hotspots.stream, m.hotspots.loading)
+	}
+}
+
+func TestHotspotSummaryCacheAvoidsCommitDecode(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	r := hotFixture(t)
+	if _, _, err := r.hotspots("2.year", ""); err != nil {
+		t.Fatal(err)
+	}
+	// Remove the large per-commit cache; the summary alone should serve the
+	// unchanged HEAD.
+	if err := os.Remove(hotCachePath(r.root, "2.year", "")); err != nil {
+		t.Fatal(err)
+	}
+	var logs atomic.Int64
+	r.commandHook = func(args []string) {
+		if len(args) > 0 && args[0] == "log" {
+			logs.Add(1)
+		}
+	}
+	files, authors, err := r.hotspots("2.year", "")
+	if err != nil || len(files) != 2 || len(authors) == 0 {
+		t.Fatalf("summary cache: %d files %v", len(files), err)
+	}
+	if logs.Load() != 0 {
+		t.Fatalf("summary cache ran %d git log processes", logs.Load())
 	}
 }

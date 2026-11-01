@@ -205,6 +205,7 @@ func TestPerf(t *testing.T) {
 	if len(changes) > 2000 {
 		measureCommitRelease(t, scenario, changes)
 	}
+	measureHotspotPerf(t)
 	measureSyntaxPerf(t)
 	measureRefreshPerf(t)
 	measureSyntheticScenarios(t)
@@ -463,4 +464,71 @@ func measureCommitRelease(t *testing.T, scenario string, changes []change) {
 	recordPerf(t, scenario, "sys_after_release_bytes", int64(memory.Sys))
 	recordPerf(t, scenario, "heap_after_release_bytes", int64(memory.HeapAlloc))
 	recordPerf(t, scenario, "rows_after_release", int64(len(m.history.rows)))
+}
+
+// measureHotspotPerf measures the streamed hotspot view: the first page of
+// commits and a warm cache launch. It uses the external repo when one is
+// configured, otherwise this checkout.
+func measureHotspotPerf(t *testing.T) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	root := os.Getenv("PANE_PERF_REPO")
+	if root == "" {
+		root = "."
+	}
+	repo := repository{root: root}
+	since, author := "1.year", ""
+	cache := hotCachePath(repo.root, since, author)
+	measurePerf(t, "hotspot", "first_page_ns", func() {
+		_ = os.Remove(cache)
+		plan, err := repo.planHotspots(since, author)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if plan.cacheHit {
+			t.Fatal("cold hotspot plan was a cache hit")
+		}
+		page, _, err := plan.stream.nextPage(hotspotFirstPageSize)
+		plan.stream.close()
+		if err != nil || len(page) == 0 {
+			t.Fatalf("hotspot first page: %d commits, %v", len(page), err)
+		}
+	})
+	measurePerf(t, "hotspot", "first_view_ns", func() {
+		_ = os.Remove(cache)
+		plan, err := repo.planHotspots(since, author)
+		if err != nil {
+			t.Fatal(err)
+		}
+		page, _, err := plan.stream.nextPage(hotspotFirstPageSize)
+		plan.stream.close()
+		if err != nil || len(page) == 0 {
+			t.Fatalf("hotspot first view: %d commits, %v", len(page), err)
+		}
+		model := model{width: 160, height: 50, repo: repo, hotspots: hotspotState{commits: page, cutoff: plan.cutoff}}
+		model.hotspots.files, model.hotspots.authors = aggregateHotspots(page, builtinGeneratedPaths(page), plan.cutoff, time.Now())
+		if view := model.hotView(); view == "" {
+			t.Fatal("hotspot first view was empty")
+		}
+	})
+	_ = os.Remove(cache)
+	if _, _, err := repo.hotspots(since, author); err != nil {
+		t.Fatal(err)
+	}
+	measurePerf(t, "hotspot", "cache_hit_ns", func() {
+		plan, err := repo.planHotspots(since, author)
+		if err != nil || !plan.cacheHit {
+			t.Fatalf("hotspot cache hit: %v hit=%v", err, plan.cacheHit)
+		}
+	})
+	measurePerf(t, "hotspot", "cache_view_ns", func() {
+		plan, err := repo.planHotspots(since, author)
+		if err != nil || !plan.cacheHit {
+			t.Fatalf("hotspot cache view: %v hit=%v", err, plan.cacheHit)
+		}
+		model := model{width: 160, height: 50, repo: repo, hotspots: hotspotState{files: plan.files, authors: plan.authors}}
+		if view := model.hotView(); view == "" {
+			t.Fatal("hotspot cache view was empty")
+		}
+	})
 }
