@@ -31,6 +31,11 @@ func TestRowSpansAreSparseAndCopyOnWrite(t *testing.T) {
 func TestHighlightRowsDoesNotModifyCopiedRows(t *testing.T) {
 	diff := "diff --git a/file.go b/file.go\n@@ -1 +1 @@\n-var total = 1\n+var total = 2\n"
 	original := buildRows([]change{{path: "file.go", diff: diff}}, 80, false)
+	for i := range original {
+		if original[i].kind == '+' {
+			original[i].setInlineSpans([]syntaxSpan{{start: 4, end: 9}})
+		}
+	}
 	copied := append([]row(nil), original...)
 	highlightRows(copied, "file.go", 0, diff, diff)
 	found := false

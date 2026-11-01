@@ -1714,6 +1714,9 @@ func (m model) lineDistance(index int) int {
 }
 
 func (m model) renderNumberedDiffRow(r row, index int) string {
+	if index >= 0 && len(r.inlineSpans()) == 0 {
+		r.setInlineSpans(m.inlineSpansForRow(index))
+	}
 	gutterWidth := m.rowGutterWidth(r)
 	gutter := rowGutter(r, gutterWidth)
 	width := m.relativeGutterWidth()

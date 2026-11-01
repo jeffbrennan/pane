@@ -196,7 +196,6 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 			return rows
 		}
 	}
-	inline := inlineChanges(lines)
 	oldLine, newLine, hunks := 0, 0, 0
 	inHunk, hasContent := false, false
 	var metadata []string
@@ -272,8 +271,7 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 			if syntaxOK && lineSyntax.text == text {
 				spans = clipSyntax(lineSyntax.spans, byteOffset, byteOffset+len(part))
 			}
-			inlineSpans := clipSyntax(inline[i], byteOffset, byteOffset+len(part))
-			rows = append(rows, (row{path: c.path, offset: offset, target: target, sourceLine: number, text: part, kind: kind, spans: newRowSpans(spans, inlineSpans, nil), syntaxPresent: spans != nil}).withLineNumber(i))
+			rows = append(rows, (row{path: c.path, offset: offset, target: target, sourceLine: number, text: part, kind: kind, spans: newRowSpans(spans, nil, nil), syntaxPresent: spans != nil}).withLineNumber(i))
 			byteOffset += len(part)
 			for _, r := range part {
 				offset += runewidth.RuneWidth(r)
