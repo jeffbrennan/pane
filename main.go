@@ -270,7 +270,7 @@ func initialModel(repo repository, args []string) (model, error) {
 		return m, nil
 	}
 	if strings.Contains(args[0], "..") {
-		out, err := repo.command("rev-list", "--max-count=1001", "--end-of-options", args[0], "--")
+		out, err := repo.command("rev-list", fmt.Sprintf("--max-count=%d", maxSequenceCommits+1), "--end-of-options", args[0], "--")
 		if err != nil {
 			return model{}, fmt.Errorf("invalid commit range %q: %w", args[0], gitError(out, err))
 		}
@@ -1584,7 +1584,7 @@ func (m model) renderDiffRow(r row, active bool) string {
 
 func (m model) rowGutterWidth(r row) int {
 	if m.screen == "sequence" || m.sequenceGutters {
-		if r.commitIndex >= 0 && r.commitIndex < len(m.sequence.gutterWidths) {
+		if int(r.commitIndex) < len(m.sequence.gutterWidths) {
 			return m.sequence.gutterWidths[r.commitIndex]
 		}
 		return 0

@@ -29,8 +29,8 @@ func TestUnifiedDiffPresentation(t *testing.T) {
 }
 
 func TestRowSize(t *testing.T) {
-	if size := unsafe.Sizeof(row{}); size > 120 {
-		t.Fatalf("row size %d exceeds 120 bytes", size)
+	if size := unsafe.Sizeof(row{}); size > 112 {
+		t.Fatalf("row size %d exceeds 112 bytes", size)
 	}
 }
 

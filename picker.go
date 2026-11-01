@@ -63,7 +63,7 @@ func (m model) fileEntries() []fileEntry {
 	}
 	entries := []fileEntry{}
 	for i, r := range m.rows {
-		if m.modal == "files" && m.picker.commitScoped && r.commitIndex != m.picker.commitIndex {
+		if m.modal == "files" && m.picker.commitScoped && int(r.commitIndex) != m.picker.commitIndex {
 			continue
 		}
 		switch {
@@ -151,7 +151,7 @@ func (m *model) openPicker() {
 	m.picker = pickerState{cache: &pickerCache{}}
 	if m.screen == "sequence" {
 		m.picker.commitScoped = true
-		m.picker.commitIndex = m.rows[m.pos].commitIndex
+		m.picker.commitIndex = int(m.rows[m.pos].commitIndex)
 	}
 	current := m.rows[m.pos].path
 	for i, e := range m.pickerItems() {

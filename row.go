@@ -1,11 +1,12 @@
 package main
 
 type row struct {
-	path, oldPath, text                    string
-	spans                                  *rowSpans
-	line, offset, target, sourceLine       int
-	deletedLines, headerIndex, commitIndex int
-	renameAdded, submodule                 bool
+	path, oldPath, text              string
+	spans                            *rowSpans
+	line, offset, target, sourceLine int
+	deletedLines, headerIndex        int
+	commitIndex                      uint16
+	renameAdded, submodule           bool
 	// A highlighted line can have no spans but still use syntax-aware rendering.
 	syntaxPresent bool
 	kind          byte

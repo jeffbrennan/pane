@@ -123,14 +123,14 @@ func (m *model) loadVisibleSyntax() tea.Cmd {
 	var visible, ahead []syntaxTarget
 	seen := make(map[contextKey]bool)
 	for _, r := range screen {
-		visible = m.addSyntaxTarget(visible, seen, r.commitIndex, r.path)
+		visible = m.addSyntaxTarget(visible, seen, int(r.commitIndex), r.path)
 	}
 	last := screen[len(screen)-1]
-	_, changes := m.syntaxContext(last.commitIndex)
+	_, changes := m.syntaxContext(int(last.commitIndex))
 	for i, c := range changes {
 		if c.path == last.path {
 			for _, next := range changes[i+1 : min(len(changes), i+1+syntaxLookahead)] {
-				ahead = m.addSyntaxTarget(ahead, seen, last.commitIndex, next.path)
+				ahead = m.addSyntaxTarget(ahead, seen, int(last.commitIndex), next.path)
 			}
 			break
 		}
@@ -241,13 +241,13 @@ func highlightRows(rows []row, path string, commitIndex int, syntaxDiff, display
 	for i := 0; i < len(rows); {
 		r := rows[i]
 		diffLine := r.kind == ' ' || r.kind == '+' || r.kind == '-' || r.kind == 'd'
-		if r.path != path || r.commitIndex != commitIndex || !diffLine || r.offset != 0 {
+		if r.path != path || int(r.commitIndex) != commitIndex || !diffLine || r.offset != 0 {
 			i++
 			continue
 		}
 		// Wrapped continuations follow with the same diff line.
 		end := i + 1
-		for end < len(rows) && rows[end].path == path && rows[end].commitIndex == commitIndex && rows[end].kind == r.kind && rows[end].line == r.line && rows[end].offset > 0 {
+		for end < len(rows) && rows[end].path == path && int(rows[end].commitIndex) == commitIndex && rows[end].kind == r.kind && rows[end].line == r.line && rows[end].offset > 0 {
 			end++
 		}
 		var text strings.Builder

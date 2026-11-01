@@ -103,6 +103,24 @@ func TestPipedCommitInputValidation(t *testing.T) {
 	}
 }
 
+func TestSequenceCommitIndexCapacity(t *testing.T) {
+	input := strings.Repeat("deadbeef\n", maxSequenceCommits)
+	m, err := initialSequence(repository{}, strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.width, m.height = 80, 12
+	m.sequence.states[maxSequenceCommits-1] = sequenceReady
+	m.sequence.changes[maxSequenceCommits-1] = []change{{path: "last", diff: "@@ -0,0 +1 @@\n+last\n"}}
+	m.rebuildSequence()
+	if len(m.rows) != maxSequenceCommits+1 || int(m.rows[len(m.rows)-1].commitIndex) != maxSequenceCommits-1 || m.rows[len(m.rows)-1].path != "last" {
+		t.Fatal("largest supported sequence index was not preserved")
+	}
+	if _, err := initialSequence(repository{}, strings.NewReader(input+"deadbeef\n")); err == nil || !strings.Contains(err.Error(), fmt.Sprintf("exceeds %d commits", maxSequenceCommits)) {
+		t.Fatalf("sequence over the supported limit: %v", err)
+	}
+}
+
 func TestSequenceHeadersAndResizeKeepCommitIdentity(t *testing.T) {
 	m := model{width: 30, height: 8, wrap: true, screen: "sequence", sequence: sequenceState{
 		commits: []commitInfo{{hash: "11111111", subject: "first"}, {hash: "22222222", subject: "second"}},

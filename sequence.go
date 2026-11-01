@@ -26,6 +26,11 @@ type sequenceState struct {
 
 type sequenceLoadState uint8
 
+const maxSequenceCommits = 1000
+
+// Sequence input is capped before any index is stored in a row.
+const _ uint16 = maxSequenceCommits - 1
+
 const (
 	sequencePending sequenceLoadState = iota
 	sequenceLoading
@@ -59,8 +64,8 @@ func initialSequence(repo repository, input io.Reader) (model, error) {
 		if len(hash) < 4 || len(hash) > 64 || strings.Trim(hash, "0123456789abcdefABCDEF") != "" {
 			return model{}, fmt.Errorf("invalid commit hash %q in input; use git log --oneline", hash)
 		}
-		if len(commits) >= 1000 {
-			return model{}, fmt.Errorf("commit input exceeds 1000 commits")
+		if len(commits) >= maxSequenceCommits {
+			return model{}, fmt.Errorf("commit input exceeds %d commits", maxSequenceCommits)
 		}
 		commits = append(commits, commitInfo{hash: hash})
 	}
@@ -133,11 +138,11 @@ func (m *model) rebuildSequence() {
 	var rows []row
 	for i := range m.sequence.commits {
 		if len(m.sequence.states) > 0 && m.sequence.states[i] == sequenceFailed {
-			rows = append(rows, row{kind: '@', text: "  " + clean(m.sequence.errors[i]), commitIndex: i})
+			rows = append(rows, row{kind: '@', text: "  " + clean(m.sequence.errors[i]), commitIndex: uint16(i)})
 			continue
 		}
 		if i >= len(m.sequence.changes) || (len(m.sequence.states) > 0 && m.sequence.states[i] != sequenceReady) {
-			rows = append(rows, row{kind: '@', text: "  Loading commit…", commitIndex: i})
+			rows = append(rows, row{kind: '@', text: "  Loading commit…", commitIndex: uint16(i)})
 			continue
 		}
 		files := m.sequence.rowCache[i]
@@ -152,7 +157,7 @@ func (m *model) rebuildSequence() {
 				files = append(files, row{kind: '@', text: "  No file changes"})
 			}
 			for j := range files {
-				files[j].commitIndex = i
+				files[j].commitIndex = uint16(i)
 			}
 			m.sequence.rowCache[i] = files
 		} else if m.sequence.gutterWidths[i] == 0 {
@@ -222,8 +227,8 @@ func (m model) sequenceView() string {
 	view.viewTitle = " "
 	if len(m.rows) > 0 && len(m.sequence.commits) > 0 {
 		start := m.viewportStart(max(1, m.height-2))
-		index := m.rows[start].commitIndex
-		if index >= 0 && index < len(m.sequence.commits) {
+		index := int(m.rows[start].commitIndex)
+		if index < len(m.sequence.commits) {
 			commit := m.sequence.commits[index]
 			view.viewTitle = m.accent() + shortHash(commit.hash) + styleReset + "  " + clean(commit.subject)
 			view.viewBadge = styleDim + fmt.Sprintf("%d/%d", index+1, len(m.sequence.commits)) + styleReset
@@ -261,16 +266,16 @@ func (m model) handleSequenceKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openEditor()
 	case "y":
 		if len(m.rows) > 0 {
-			index := m.rows[m.pos].commitIndex
-			if index >= 0 && index < len(m.sequence.commits) {
+			index := int(m.rows[m.pos].commitIndex)
+			if index < len(m.sequence.commits) {
 				hash := m.sequence.commits[index].hash
 				return m, copyCmd(hash, shortHash(hash))
 			}
 		}
 	case "Y":
 		if m.pos >= 0 && m.pos < len(m.rows) {
-			index := m.rows[m.pos].commitIndex
-			if index >= 0 && index < len(m.sequence.commits) {
+			index := int(m.rows[m.pos].commitIndex)
+			if index < len(m.sequence.commits) {
 				return m, m.copyDiffLocation(m.sequence.commits[index].hash)
 			}
 		}
