@@ -11,8 +11,6 @@ import (
 	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
-func submoduleLine(line string) (string, string, bool) { return git.SubmoduleLine(line) }
-
 func buildRows(changes []git.Change, width int, wrap bool) []row {
 	return buildRowsExpanded(changes, width, wrap, nil)
 }
