@@ -1,121 +1,51 @@
 # pane
 
-A narrow, keyboard-first terminal viewer for Git changes. Diffs show file headers, line numbers, and added and removed lines without Git's patch metadata. Run `pane` anywhere inside a Git working tree.
+A narrow, keyboard-first terminal viewer for Git changes. Diffs show file
+headers, line numbers, and added and removed lines without Git's patch
+metadata. Run `pane` anywhere inside a Git working tree.
 
-Pane detects terminal background changes when supported, falling back to `COLORFGBG`. Set `PANE_THEME=light` or `PANE_THEME=dark` to override detection, or press `T` to choose the opposite theme for the current session.
+```
+ 1  internal/ui/view.go
+ 2  @@ -14,7 +14,7 @@
+ 3     func (m model) View() string {
+ 4 -       return m.render()
+ 5 +       return m.render(width)
+ 6     }
+```
 
-If the working tree and index are clean at startup, pane opens commit history. Otherwise it opens the unstaged diff view.
+## Features
 
-Run `pane <commit>` to open a commit's read-only diff directly. A full or abbreviated hash, branch, tag, or other Git commit revision is accepted. Large commits open as soon as the first files load; the rest loads in the background. Until loading finishes, search covers loaded files and picker jumps to unloaded files wait for them. Press `Esc` or `q` to return to history.
+- **Changes:** unstaged and staged diffs with hunk staging, discarding, committing, push and pull.
+- **History:** commit list with search, push/pull, fetching, message edits, and stash access.
+- **Commit and range review:** read-only diffs with next/previous commit jumps and oldest-first ranges.
+- **Base review:** one review from a merge base to the working tree, including staged, unstaged, and untracked changes.
+- **File history:** follow one path across renames and step through the commits that touched it.
+- **Blame:** open the commit that last touched the line under the cursor.
+- **Branches and worktrees:** switch, create, delete, copy, filter, and move this pane into a worktree.
+- **Stash:** push, list, inspect, pop, and drop stashes.
+- **Hotspots:** explore an unfamiliar repository by attention-weighted activity, by tree, file, or author.
+- **Review state:** line wrapping, whitespace toggling, short paths, viewed marks, search, and an editor hand-off.
 
-A commit and each commit in a multi-commit review start with a details block: author and date, the committer when different, parents (marked `merge` when there are several), refs pointing at the commit, and the full message body with trailers dimmed. Search covers it, `J` moves from it to the first file, and `h` / `l` collapse or expand it for the session. In a commit opened from history or file history, `)` and `(` open the next and previous commit without leaving the view; the title shows the position, and returning to a commit restores the file and line you were reading.
+## Install
 
-Run `pane <start>..<end>` for a continuous review of a Git commit range, for example `pane HEAD~3..HEAD`. Git's usual range semantics apply: the start is excluded and the end is included. Commits are reviewed oldest first, in the order they were written. Symmetric ranges such as `main...feature` are also supported.
+```sh
+go install github.com/jeffbrennan/pane@latest
+```
 
-Run `pane --base main`, `pane -b main`, or `pane main...` for one read-only review from the merge base of `main` and `HEAD` to the working tree. `pane -b` with no revision uses `@{upstream}`, falling back to `origin`'s default branch. It includes committed, staged, unstaged, and untracked changes, and refreshes as the working tree changes. Press `Esc` or `q` to return to history.
+Go and Git must be installed. The initial target is macOS.
 
-Run `pane log -- <path>` or `pane -- <path>` to open a file's history, following renames. From a diff, press `L` on a file to open its history and `Esc` to return to the original view. Opening a commit selects that file in the diff; change counts describe the whole commit, not just the selected file. To review the commits continuously instead, pipe `git log --format=%H --follow -- <path>` into pane.
+## Quickstart
 
-Pipe commit lines into pane for a continuous read-only review, for example `git log --oneline -n 10 | pane`. Commits appear in input order with a pinned commit heading and file header. The first field of each nonempty line must be a commit hash. Pane loads the first and last commits first, then fills in the rest in the background; a large commit appears as its first files load, and invalid hashes are shown in place. Search covers the diffs loaded so far. The file picker shows files in the commit containing the active line. Deleted files are expanded, and context expansion is not available in this view; normal diff navigation works across commits. Press `Esc` or `q` to return to history.
+```sh
+pane                      # working-tree changes, or history when clean
+pane HEAD~5..HEAD         # review a commit range
+pane hot                  # explore activity in an unfamiliar repository
+```
 
-Install with `go install github.com/jeffbrennan/pane@latest`, or run `go install .` from a checkout; either places `pane` in `$(go env GOPATH)/bin`, which must be on your `PATH`. Go and Git must be installed. The initial target is macOS.
+## Learn more
 
-For development, `just b` builds pane, installs it, and runs it in the current repository. `just release` and `just install` produce an optimized Apple Silicon build. Both use profile-guided optimization from `default.pgo`. To refine it, run `just profile`, use pane normally, quit, then run `just pgo` to merge the session into the profile.
-
-| Key | Action |
-| --- | --- |
-| `j` / `k` | Scroll one line |
-| `gg` / `G` | Jump to the first / last line or history entry |
-| `10j`, `3}`, etc. | Repeat a motion with a numeric count |
-| `42gg` / `42G` | Jump to the closest visible source line in the current file, or history entry 42 |
-| `gH` / `gM` / `gL` | Move to the top / middle / bottom of the viewport |
-| `[c` / `]c` | Jump to the previous / next change block in a diff |
-| `ctrl-o` / `gi` | Jump back / forward in the diff jump list |
-| `ctrl-d` / `ctrl-u` | Move down / up half a page |
-| `ctrl-f` / `ctrl-b` | Move down / up a page |
-| `ctrl-e` / `ctrl-y` | Scroll the diff viewport down / up one line |
-| `zt` / `zz` / `zb` | Place the active diff line at the top / middle / bottom |
-| `}` / `{` | Jump to the next / previous paragraph boundary, or five entries in any list |
-| `J` / `K` | Jump to the next / previous file, placing it at the top |
-| `)` / `(` | Open the next / previous commit in the history or file history the current commit came from |
-| `f` | Open file tree; `h` / `l` fold directories, `v` hides viewed files. It shares the list keys below. |
-| `L` | Open history for the file under the cursor, following renames |
-| `v` | Mark the current file viewed or unviewed; viewed files collapse and the next unviewed file is selected |
-| `gb` | In a commit, open the commit that last touched the context or removed line under the cursor |
-| `/`, `n` / `N` | Search the diff; jump to the next / previous match |
-| Search / filter input: `←` / `→`, `home` / `end`, `alt-b` / `alt-f`, `ctrl-a` / `ctrl-e` | Move the query cursor by character, word, or to the start / end |
-| Search / filter input: `backspace` / `delete`, `ctrl-w` / `alt-backspace` | Delete a character or the previous word |
-| `g?` | Search the diff backward; `n` / `N` follow / reverse the search direction |
-| `o` | Open the current file at the active line in `$VISUAL` / `$EDITOR` |
-| `y` | Copy the current file path, or the commit hash in history |
-| `Y` | Copy the current path and line; in commit or file-history views, use a GitHub or GitLab permalink when available |
-| `tab` | Switch unstaged / staged view |
-| `space` | Stage / unstage the current whole file |
-| `s` | Stage / unstage the current hunk, or the whole file on its header |
-| `S` | Stash all changes including untracked files; in history, open the stash list |
-| `b` | In history, open branches; `tab` switches to worktrees |
-| `X` | In history, open hotspots for the last year |
-| Hotspots: `tab`, `w`, `a`, `h` / `l`, `↵`, `L`, `o`, `V` | Cycle tree, files and authors; change the window; show hidden files; fold a directory; open history or filter by author; open a path's history; open the file; review the selection as a range |
-| Branches: `↵`, `n`, `w`, `d` / `D`, `r`, `y`, `/` | Switch, create from the selection, create a worktree, delete / force delete, include remotes, copy the name, filter |
-| Worktrees: `↵`, `n`, `d` / `D`, `p`, `y`, `/` | Switch this pane, create, remove / force remove, prune, copy the path, filter |
-| Lists: `j` / `k`, `gg` / `G`, `42j`, `ctrl-d` / `ctrl-u`, `ctrl-f` / `ctrl-b`, `{` / `}`, `/`, `v` in the picker | Move, jump, filter and hide viewed files the same way in history, branches, worktrees, stashes, hotspots and the file picker; `esc` clears a filter first and leaves on a second press |
-| `R` | In history, review from the selected commit to the working tree |
-| `V` | In history, start or end a commit-range selection; Enter reviews the range |
-| Stash list: `enter` / `space`, `p`, `d` | View, pop, or drop the selected stash; pop and drop require confirmation |
-| `d` | Discard the current unstaged hunk, or the whole file on its header (confirmation required) |
-| `w` | Toggle line wrapping |
-| `W` | Toggle ignoring whitespace in diffs |
-| `B` | Toggle short paths (parent directory and filename) |
-| `e` | Expand / collapse a deleted file |
-| `h` / `l` | On a file header, collapse / reopen the file; on a commit header, collapse / expand the commit details; on a diff line or `···`, hide / reveal nearby context |
-| `zh` / `zl` | Scroll horizontally when wrapping is off |
-| `c` | Commit staged changes |
-| Commit input: `ctrl-g` | Write the message in `$VISUAL` / `$EDITOR` and commit when it closes |
-| Commit input: `←` / `→`, `ctrl-b` / `ctrl-f`, `alt-b` / `alt-f`, `home` / `end`, `ctrl-a` / `ctrl-e` | Move the subject cursor by character, word, or to the start / end |
-| Commit input: `backspace` / `delete`, `ctrl-d`, `ctrl-w` / `alt-backspace`, `ctrl-u` / `ctrl-k` | Delete a character, previous word, or text to the start / end |
-| `p` / `P` | Push / pull |
-| `F` | Fetch remote changes and refresh branch status |
-| `r` | Refresh |
-| `H` | Open commit history |
-| `u` | In history, edit the latest unpublished commit's message |
-| `?` | Show keyboard shortcuts |
-| `q` | Quit |
-
-Every diff view numbers rows relative to the cursor; the cursor row shows its source line, and `42gg` jumps to a source line. The active line is marked with `▸`. Use `s` to stage or unstage its hunk; untracked and deleted files are staged or unstaged as whole files. The viewport keeps surrounding lines visible as you navigate and pins a file header when its diff scrolls beyond the viewport. Changes are refreshed by background polling about every second, or every three seconds while the terminal is unfocused, preserving the current file and approximate position. Regaining focus refreshes immediately. Line counts for commits in history are cached across launches in `~/Library/Caches/pane`; deleting that directory is always safe. Syntax highlighting uses the terminal's color palette for Go, Python, SQL, Rust, Scala, Java, Kotlin, R, Julia, Groovy, JavaScript, TypeScript, shell scripts, PowerShell, JSON (including notebooks and Avro schemas), YAML, TOML, INI, properties, HCL, Terraform, XML, Protocol Buffers, Dockerfiles, and Makefiles. Added and removed lines use subtle dark-background tints, with stronger highlights for changes within paired lines. Git operations use the repository's existing configuration; authentication failures and conflicts must be handled outside pane. Line-level staging and conflict resolution are not supported.
-
-Commits include only staged changes if any are staged. Otherwise, pane stages all non-ignored changes, including untracked files, before committing. Enter commits the subject and `esc` cancels; `ctrl-c` quits. The subject edits like pane's other text inputs. Pasting a multiline message puts the first line in the editable subject and preserves the remaining lines as the body. If the commit fails, the automatically staged changes remain staged. After a successful commit, pane opens history with the new commit selected.
-
-Press `ctrl-g` in the commit dialog to edit the full message in `$VISUAL` or `$EDITOR`. Saving and closing the editor submits the commit; lines beginning with `#` are ignored, and an empty message aborts. This also works when editing the latest commit's message from history, subject to the same remote checks.
-
-Lock files and generated files (`*.lock`, `*.snap`, `*.min.js`, `go.sum`, `Cargo.lock`, `bun.lock`, `package-lock.json`, and paths marked `linguist-generated` or `-diff` in `.gitattributes`) start collapsed and show `generated` with line counts on the header. Press `l` to open one; the choice lasts for the session.
-
-Removed and added runs of three or more lines that reappear elsewhere in the same commit render dim, with a `moved from path:line` hint after the addition.
-
-Detected renames show the old and new paths on separate lines in staged changes and commit views, with removed path text highlighted in red and added text in green. Press `B` to shorten displayed paths to the parent directory and filename; an ellipsis indicates omitted directories and is highlighted when they differ. The file picker displays the new path and can search either full name. Unstaged moves appear as a deletion and an untracked file, as in Git status.
-
-Submodule changes show the old and new revisions, available commit subjects, and dirty-state notices. The file picker labels submodules. In multi-commit review, search shows how many commits have loaded and includes new matches as loading continues.
-
-`Y` copies the new-side `path:line` in working-tree and base diffs; on a deleted line it uses the nearest new-side line. In commit and multi-commit diffs, it instead copies a permalink when the origin is a recognized GitHub or GitLab remote, falling back to `path:line`. File history copies a link to the historical path when available; ordinary history copies the selected hash. File headers copy a path without a line number.
-
-Press `W` to ignore whitespace differences in working-tree, commit, and multi-commit diffs. The setting lasts for the session. Hunk staging and discarding are disabled while it is on, because the displayed patch may omit changes; whole-file staging remains available.
-
-Press `S` in the changes view to stash the whole working tree, including untracked (but not ignored) files. In history, `S` opens the stash list. Select a stash and press Enter to inspect it, `p` to pop it, or `d` to drop it, and `/` filters the list. Pane asks for confirmation before popping or dropping; resolve any pop conflicts outside pane.
-
-In a commit, `gb` on a context or removed line blames it against the first parent and opens the commit that last touched it, selecting the file and line. `ctrl-o` returns to where you were.
-
-Press `v` on any line of a file in a commit, range, or base review to mark it viewed. Viewed files collapse and the cursor moves to the next unviewed file; `v` again reopens and unmarks it. The file picker shows `✓` and `12/40 viewed`, and `v` there hides viewed files. Marks last across launches in `~/Library/Caches/pane` and are tied to the file's displayed change, so editing a file after marking it viewed clears the mark, which suits reviewing an agent's work in progress. Sequence reviews key marks by their first and last commit.
-
-In diffs, paragraph boundaries are blank lines, file headers, and hunk separators. On a file header, `h` collapses the file and `l` reopens its standard diff. On a diff line or `···`, `l` reveals nearby unchanged lines in chunks; repeat to see more, or use `h` to undo a nearby expansion. This also works for staged changes and historical commits. In the unstaged view, `d` discards the Git hunk containing the selected line, or all unstaged changes in the selected file when on its header. Discarding an untracked file deletes it from disk. Pane asks for confirmation; staged changes must be unstaged first. Diff search is incremental and case-insensitive unless the query contains an uppercase letter; matches are highlighted and `n` / `N` wrap around. The diff jump list tracks searches and larger jumps within the current view. `gi` is used for jump-forward because terminals commonly send `ctrl-i` as Tab, which switches staged views. `o` opens the working-tree file, so in a historical commit the line may have moved since. Copying uses `pbcopy`, `wl-copy`, `xclip`, or `xsel`. Run `pane hot` (optionally `--since 6mo`) to explore an unfamiliar repository. Activity is scored by attention, not raw churn: each commit's weight is damped by its size and by how many files it touched, with a 90-day half-life, so a fixture dump does not outrank a file people keep editing. The tree opens one level deep and merges single-child directories; `h` / `l` fold a directory or reveal the rest of a long one. Rows show the activity bar, distinct commits, people, last change and the top two owners, with a detail line for the selection. `tab` cycles the tree, a flat ranked file list and an author list; Enter on an author filters every view, and `esc` clears that filter first. Tests and docs rank below source, generated and vendored files are hidden behind `a`, and paths deleted inside the window are dropped. `w` cycles 3 months, 12 months and all time. `↵` opens a file's history for the window, `L` opens history for a directory, `o` opens the file, and `V` reviews the selection as a commit range. `X` opens the same view from history with the default one-year window. Results are cached in `~/Library/Caches/pane` as per-commit numstat, so reopening is instant and after HEAD moves only the new commits are read.
-
-Press `b` in history to list branches with their upstream state, last commit and subject; branches checked out in another worktree are marked `⌂`. Enter switches, `n` creates a branch from the selection, `w` creates a worktree for it, `d` deletes with confirmation, `r` includes remote branches, `y` copies the name, and `/` filters. Press `tab` for worktrees, which show dirty counts and last activity, sorted most recent first; Enter moves this pane into a worktree, `n` creates one using the shared parent directory and the branch name, `d` removes it, and `p` prunes stale entries. Switching worktrees keeps theme and wrapping but starts the new repository's history and caches fresh. History marks commits that are the HEAD of another worktree with `⌂`.
-
-In history, `j` / `k` select commits, `}` / `{` jump five commits, and `/` searches author name or email, message, and hash. Enter or Space opens the selected commit's read-only diff. Press `R` to review from the selected commit to the working tree, or `V` to start a range selection, move with `j` / `k`, and Enter to review the selected commits oldest first. While typing a search, use the arrow keys to select a result and Enter to open it. Press `Esc` or `q` to go back. If you opened a file from a diff's file picker, back returns to the picker first; back again returns to history. Addition and deletion counts omit binary files, which are counted separately. Merge commit counts and diffs are relative to their first parent.
-
-While editing a diff or history search, `ctrl-b` / `ctrl-f` move by character, `ctrl-d` deletes the next character, and `ctrl-u` / `ctrl-k` delete to the start / end. In the file picker those keys retain their list-navigation behavior while filtering; use the arrow keys to move the query cursor and the other editing shortcuts above.
-
-The history landing page shows the branch, local changes, and commits ahead of or behind its configured upstream. Ahead/behind counts use locally stored remote-tracking refs and may be stale; pane does not fetch automatically. Press `F` to fetch and prune the current branch's upstream remote, or all remotes if it has no upstream. History reloads when the checked-out commit changes. Push and pull are available from history as well as the diff view. After a successful push, pane returns to history and refreshes its status.
-
-In history, `u` edits the latest commit's subject without changing its body, contents, or staged changes; use `ctrl-g` to edit the body as well. Before rewriting, pane checks the current branch and tag tips on every configured remote. It refuses if the commit is reachable from one, if a remote cannot be contacted, or if a remote's history is not available locally; fetch the remote's branches and tags and try again in the latter case. With no configured remotes, pane permits the edit. Remote state can still change between the check and the rewrite.
+See [docs/guide.md](docs/guide.md) for every key, the CLI forms, hotspot
+scoring, caching, and development notes.
 
 ## License
 
