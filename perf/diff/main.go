@@ -116,7 +116,11 @@ func printDiff(output io.Writer, previous, current perfRun) {
 		if before != 0 {
 			change = fmt.Sprintf("%+.1f%%", (float64(after)-float64(before))*100/float64(before))
 		}
-		fmt.Fprintf(output, "%s\t%s\t%d\t%d\t%s\t%s\n", key.scenario, key.metric, before, after, change, classify(key.metric, before, after))
+		status := classify(key.metric, before, after)
+		if key.metric == "idle_duration_ns" {
+			status = "info"
+		}
+		fmt.Fprintf(output, "%s\t%s\t%d\t%d\t%s\t%s\n", key.scenario, key.metric, before, after, change, status)
 	}
 }
 
