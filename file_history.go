@@ -66,7 +66,7 @@ func (m model) leaveFileHistory() (tea.Model, tea.Cmd) {
 	previous.loading, previous.busy, previous.generation = m.loading, m.busy, m.generation
 	previous.activeAction, previous.whitespaceRefreshing = m.activeAction, m.whitespaceRefreshing
 	previous.width, previous.height = m.width, m.height
-	previous.lightTheme, previous.themeAuto, previous.themeQuery = m.lightTheme, m.themeAuto, m.themeQuery
+	previous.lightTheme, previous.themeAuto, previous.themeNotify, previous.themeQuery = m.lightTheme, m.themeAuto, m.themeNotify, m.themeQuery
 	previous.flash = ""
 	switch previous.screen {
 	case "commit":

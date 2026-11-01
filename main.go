@@ -67,6 +67,7 @@ type model struct {
 	relativeLines         bool
 	lightTheme            bool
 	themeAuto             bool
+	themeNotify           bool
 	themeQuery            func()
 	ticks                 int
 	blurred               bool
@@ -163,6 +164,9 @@ func main() {
 	program := tea.NewProgram(m, options...)
 	if tracking.setHandler != nil {
 		tracking.setHandler(func(light bool) { go program.Send(terminalBackgroundChanged(light)) })
+	}
+	if tracking.setNotifyHandler != nil {
+		tracking.setNotifyHandler(func() { go program.Send(terminalThemeNotifications(true)) })
 	}
 	stopProfile := startCPUProfile(os.Getenv("PANE_CPUPROFILE"))
 	stopTrace := startTrace(os.Getenv("PANE_TRACE"))
@@ -329,7 +333,7 @@ func (m model) Init() tea.Cmd {
 // queryTheme asks the terminal for its background color; the answer arrives
 // as terminalBackgroundChanged.
 func (m model) queryTheme() tea.Cmd {
-	if !m.themeAuto || m.themeQuery == nil || editorRunning.Load() {
+	if !m.themeAuto || m.themeNotify || m.themeQuery == nil || editorRunning.Load() {
 		return nil
 	}
 	query := m.themeQuery
@@ -462,6 +466,10 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case terminalBackgroundChanged:
 		if m.themeAuto {
 			m.lightTheme = bool(msg)
+		}
+	case terminalThemeNotifications:
+		if m.themeAuto {
+			m.themeNotify = bool(msg)
 		}
 	case loadedUnchanged:
 		m.loading = false

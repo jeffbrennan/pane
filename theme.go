@@ -8,13 +8,15 @@ import (
 )
 
 type themeTracking struct {
-	input      io.Reader
-	query      func()
-	setHandler func(func(bool))
-	close      func()
+	input            io.Reader
+	query            func()
+	setHandler       func(func(bool))
+	setNotifyHandler func(func())
+	close            func()
 }
 
 type terminalBackgroundChanged bool
+type terminalThemeNotifications bool
 
 const (
 	darkAddedBackground   = "\x1b[48;2;30;55;40m"

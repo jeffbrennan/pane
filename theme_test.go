@@ -130,4 +130,10 @@ func TestThemeAndRepositoryRefreshCadence(t *testing.T) {
 	if m.queryThemeOnTick() != nil {
 		t.Fatal("blurred terminal should not be queried")
 	}
+	m.blurred, m.ticks = false, 10
+	notified, _ := m.Update(terminalThemeNotifications(true))
+	m = notified.(model)
+	if !m.themeNotify || m.queryThemeOnTick() != nil {
+		t.Fatal("confirmed terminal notifications should replace polling")
+	}
 }

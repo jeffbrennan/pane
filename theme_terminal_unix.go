@@ -13,7 +13,10 @@ import (
 
 type themeInput struct {
 	*os.File
-	handler func(bool)
+	handler       func(bool)
+	notifyHandler func()
+	notified      bool
+	pending       []byte
 }
 
 func startThemeTracking() themeTracking {
@@ -23,10 +26,15 @@ func startThemeTracking() themeTracking {
 	}
 	input := &themeInput{File: tty}
 	return themeTracking{
-		input:      input,
-		query:      func() { _, _ = tty.WriteString("\x1b]11;?\x1b\\") },
-		setHandler: func(handler func(bool)) { input.handler = handler },
-		close:      func() { _ = tty.Close() },
+		input: input,
+		query: func() {
+			_, _ = tty.WriteString("\x1b]11;?\x1b\\")
+			// DECRQM: if mode 2031 is supported, enabling it replaces polling.
+			_, _ = tty.WriteString("\x1b[?2031$p")
+		},
+		setHandler:       func(handler func(bool)) { input.handler = handler },
+		setNotifyHandler: func(handler func()) { input.notifyHandler = handler },
+		close:            func() { _ = tty.Close() },
 	}
 }
 
@@ -35,7 +43,8 @@ func (input *themeInput) Read(p []byte) (int, error) {
 	if n == 0 || err != nil {
 		return n, err
 	}
-	data := append([]byte(nil), p[:n]...)
+	data := append(input.pending, p[:n]...)
+	input.pending = nil
 	prefix := []byte("\x1b]11;rgb:")
 	for {
 		start := bytes.Index(data, prefix)
@@ -93,7 +102,58 @@ func (input *themeInput) Read(p []byte) (int, error) {
 			break
 		}
 	}
+	data = input.stripNotifications(data)
 	return copy(p, data), nil
+}
+
+func (input *themeInput) stripNotifications(data []byte) []byte {
+	sequences := [][]byte{[]byte("\x1b[?997;"), []byte("\x1b[?2031;")}
+	for {
+		start, prefix := -1, []byte(nil)
+		for _, candidate := range sequences {
+			if index := bytes.Index(data, candidate); index >= 0 && (start < 0 || index < start) {
+				start, prefix = index, candidate
+			}
+		}
+		if start < 0 {
+			break
+		}
+		end := -1
+		if bytes.Equal(prefix, sequences[0]) {
+			if index := bytes.IndexByte(data[start+len(prefix):], 'n'); index >= 0 {
+				end = start + len(prefix) + index + 1
+				light := data[start+len(prefix)] == '2'
+				if input.handler != nil {
+					input.handler(light)
+				}
+			}
+		} else {
+			if index := bytes.Index(data[start+len(prefix):], []byte("$y")); index >= 0 {
+				end = start + len(prefix) + index + 2
+				if data[start+len(prefix)] != '0' && !input.notified {
+					input.notified = true
+					_, _ = input.WriteString("\x1b[?2031h")
+					if input.notifyHandler != nil {
+						input.notifyHandler()
+					}
+				}
+			}
+		}
+		if end < 0 {
+			break
+		}
+		data = append(data[:start], data[end:]...)
+	}
+	for _, prefix := range sequences {
+		for length := 1; length < len(prefix) && length <= len(data); length++ {
+			if bytes.HasSuffix(data, prefix[:length]) {
+				input.pending = append(input.pending[:0], data[len(data)-length:]...)
+				data = data[:len(data)-length]
+				return data
+			}
+		}
+	}
+	return data
 }
 
 func terminalLightBackground() (bool, bool) {
