@@ -28,8 +28,10 @@ type pickerState struct {
 // collecting it walks every diff row. Model copies share it, and it is
 // collected again when the rows are rebuilt.
 type pickerCache struct {
-	rows    []row
-	entries []fileEntry
+	rows      []row
+	entries   []fileEntry
+	items     []pickerItem
+	itemQuery string
 	// total counts the items of the unfiltered, unfolded tree.
 	total int
 }
@@ -163,11 +165,23 @@ func (m *model) openPicker() {
 }
 
 func (m model) pickerItems() []pickerItem {
-	return pickerTree(filterFiles(m.fileEntries(), m.picker.query), m.picker.collapsed)
+	entries := m.fileEntries()
+	cache := m.picker.cache
+	if cache != nil && cache.items != nil && cache.itemQuery == m.picker.query {
+		return cache.items
+	}
+	items := pickerTree(filterFiles(entries, m.picker.query), m.picker.collapsed)
+	if cache != nil {
+		cache.items, cache.itemQuery = items, m.picker.query
+	}
+	return items
 }
 
 func (m *model) resetPickerSearch() {
 	m.picker.collapsed = nil
+	if m.picker.cache != nil {
+		m.picker.cache.items = nil
+	}
 	m.picker.selected = 0
 	m.picker.offset = 0
 	for i, item := range m.pickerItems() {
@@ -186,6 +200,9 @@ func (m *model) setPickerDirectory(item pickerItem, collapsed bool) {
 		m.picker.collapsed = make(map[string]bool)
 	}
 	m.picker.collapsed[item.path] = collapsed
+	if m.picker.cache != nil {
+		m.picker.cache.items = nil
+	}
 }
 
 func (m *model) handlePickerKey(key string, runes []rune) bool {
@@ -365,7 +382,7 @@ func (m *model) revealPickerSelection() {
 func (m model) showFilesDialog(lines []string) {
 	entries := m.fileEntries()
 	matches := filterFiles(entries, m.picker.query)
-	items := pickerTree(matches, m.picker.collapsed)
+	items := m.pickerItems()
 	selected := min(m.picker.selected, max(0, len(items)-1))
 	if m.width < 20 || len(lines) < 8 {
 		status := "file: /" + clean(m.picker.query)

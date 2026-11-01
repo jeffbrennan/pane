@@ -94,6 +94,19 @@ func TestPerf(t *testing.T) {
 				}
 			}
 		})
+		var gitCommands atomic.Int64
+		repo.commandHook = func([]string) { gitCommands.Add(1) }
+		if _, err := repo.commitChangesWithoutSyntax(revision); err != nil {
+			t.Fatal(err)
+		}
+		recordPerf(t, scenario, "open_git_commands", gitCommands.Load())
+		gitCommands.Store(0)
+		idleModel := model{screen: "commit"}
+		for i := 0; i < 120; i++ {
+			next, _ := idleModel.update(tick{})
+			idleModel = next.(model)
+		}
+		recordPerf(t, scenario, "idle_git_commands", gitCommands.Load())
 	} else {
 		for i := 0; i < 500; i++ {
 			changes = append(changes, change{path: fmt.Sprintf("file-%04d.txt", i), diff: "@@ -0,0 +1,100 @@\n" + strings.Repeat("+a representative line of text\n", 100)})
@@ -128,6 +141,25 @@ func TestPerf(t *testing.T) {
 	measurePerf(t, scenario, "resize_height_ns", func() { _, _ = m.Update(tea.WindowSizeMsg{Width: 160, Height: 51}) })
 	measurePerf(t, scenario, "resize_width_ns", func() { _, _ = m.Update(tea.WindowSizeMsg{Width: 150, Height: 50}) })
 	measurePerf(t, scenario, "resize_width_apply_ns", func() { _, _ = m.Update(resizeRebuild{request: m.resizeRequest}) })
+	entries := view.fileEntries()
+	measurePerf(t, scenario, "picker_entries_ns", func() {
+		view.picker.cache = nil
+		view.fileEntries()
+	})
+	measurePerf(t, scenario, "picker_filter_ns", func() { filterFiles(entries, "") })
+	measurePerf(t, scenario, "picker_tree_ns", func() { pickerTree(entries, nil) })
+	measurePerf(t, scenario, "picker_open_ns", func() { _, _ = view.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")}) })
+	picker := view
+	picker.modal = "files"
+	picker.picker = pickerState{cache: &pickerCache{}}
+	measurePerf(t, scenario, "picker_key_ns", func() { picker.handlePickerKey("j", nil) })
+	measurePerf(t, scenario, "picker_render_ns", func() { _ = picker.View() })
+	measurePerf(t, scenario, "wrap_toggle_ns", func() { _, _ = view.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("w")}) })
+	measurePerf(t, scenario, "jump_file_ns", func() { _, _ = view.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("J")}) })
+	measurePerf(t, scenario, "jump_end_ns", func() { _, _ = view.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")}) })
+	runtime.GC()
+	runtime.ReadMemStats(&memory)
+	recordPerf(t, scenario, "heap_after_first_screen_bytes", int64(memory.HeapAlloc))
 	recordPerf(t, scenario, "rows", int64(len(view.rows)))
 	recordPerf(t, scenario, "row_bytes", int64(unsafe.Sizeof(row{})))
 	idle := model{screen: "commit"}
@@ -143,6 +175,38 @@ func TestPerf(t *testing.T) {
 	recordPerf(t, scenario, "idle_refreshes_per_minute", refreshes)
 	measureSyntaxPerf(t)
 	measureRefreshPerf(t)
+	measureSyntheticScenarios(t)
+}
+
+func measureSyntheticScenarios(t *testing.T) {
+	scenarios := map[string][]change{
+		"huge-file": func() []change {
+			return []change{{path: "huge.txt", diff: "@@ -0,0 +1,100000 @@\n" + strings.Repeat("+a line in a very large file\n", 100000)}}
+		}(),
+		"long-lines": func() []change {
+			changes := make([]change, 100)
+			for i := range changes {
+				changes[i] = change{path: fmt.Sprintf("minified-%02d.js", i), diff: "@@ -0,0 +1 @@\n+" + strings.Repeat("abcdefghij", 2000)}
+			}
+			return changes
+		}(),
+		"many-small": func() []change {
+			changes := make([]change, 25)
+			for i := range changes {
+				changes[i] = change{path: fmt.Sprintf("small-%02d.go", i), diff: "@@ -0,0 +1,10 @@\n" + strings.Repeat("+var value = 1\n", 10)}
+			}
+			return changes
+		}(),
+	}
+	for name, changes := range scenarios {
+		m := model{width: 160, height: 50, wrap: true, snapshot: snapshot{unstaged: changes}}
+		m.rebuild()
+		measurePerf(t, "synthetic-"+name, "build_ns", func() { m.rebuild() })
+		measurePerf(t, "synthetic-"+name, "view_ns", func() { _ = m.View() })
+		measurePerf(t, "synthetic-"+name, "search_miss_ns", func() { _, _ = m.findMatch("unlikelymissingpattern", -1, 1) })
+		measurePerf(t, "synthetic-"+name, "wrap_toggle_ns", func() { _, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("w")}) })
+		recordPerf(t, "synthetic-"+name, "rows", int64(len(m.rows)))
+	}
 }
 
 func measureRefreshPerf(t *testing.T) {
