@@ -9,3 +9,4 @@ many-small	../bun	6673b8ebf2d60de2bbb9ce39a4e95b65560a4d0a
 range	../bun	HEAD	HEAD~100..HEAD
 base	../bun	HEAD	-b main
 history	../bun	HEAD	-
+hot	../bun	HEAD	hot
