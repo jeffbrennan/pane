@@ -38,6 +38,26 @@ func baseFixture(t *testing.T) (repository, string) {
 	return r, base
 }
 
+// drainBase runs the commands a base refresh queues, including the stream the
+// UI follows asynchronously.
+func drainBase(t *testing.T, m model, cmd tea.Cmd) model {
+	t.Helper()
+	for steps := 0; cmd != nil && steps < 10000; steps++ {
+		msg := cmd()
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			for _, sub := range batch {
+				if sub != nil {
+					m = drainBase(t, m, sub)
+				}
+			}
+			return m
+		}
+		updated, next := m.Update(msg)
+		m, cmd = updated.(model), next
+	}
+	return m
+}
+
 func TestBaseReviewStartupAndContents(t *testing.T) {
 	r, base := baseFixture(t)
 	for _, args := range [][]string{{"--base", "review-base"}, {"-b", "review-base"}, {"review-base..."}} {
@@ -50,8 +70,7 @@ func TestBaseReviewStartupAndContents(t *testing.T) {
 		if cmd == nil {
 			t.Fatal("base review did not load")
 		}
-		updated, _ = updated.(model).Update(cmd())
-		m = updated.(model)
+		m = drainBase(t, updated.(model), cmd)
 		view := m.View()
 		for _, want := range []string{"review-base…working tree", shortHash(base), "commit change", "second commit", "staged change", "working change", "untracked change"} {
 			if !strings.Contains(view, want) {
@@ -78,8 +97,7 @@ func TestBaseReviewTracksMovingBase(t *testing.T) {
 	}
 	m.width, m.height = 100, 25
 	updated, cmd := m.Update(load(r, m.generation, nil)())
-	updated, _ = updated.(model).Update(cmd())
-	m = updated.(model)
+	m = drainBase(t, updated.(model), cmd)
 	if m.base.hash != base {
 		t.Fatal("incorrect initial merge base")
 	}
@@ -94,8 +112,7 @@ func TestBaseReviewTracksMovingBase(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("unchanged status did not check base reference")
 	}
-	updated, _ = updated.(model).Update(cmd())
-	m = updated.(model)
+	m = drainBase(t, updated.(model), cmd)
 	if m.base.hash != head || strings.Contains(m.View(), "commit change") || !strings.Contains(m.View(), "working change") {
 		t.Fatalf("base move not reflected: %q", m.View())
 	}
@@ -109,8 +126,7 @@ func TestBaseReviewContextAndRefresh(t *testing.T) {
 	}
 	m.width, m.height = 80, 20
 	updated, cmd := m.Update(load(r, m.generation, nil)())
-	updated, _ = updated.(model).Update(cmd())
-	m = updated.(model)
+	m = drainBase(t, updated.(model), cmd)
 	context, err := r.fullContext(contextKey{path: "file", commit: base, base: true}, "", "")
 	if err != nil || !strings.Contains(context, "-base") || !strings.Contains(context, "+working change") {
 		t.Fatalf("base context: %q %v", context, err)
@@ -120,8 +136,7 @@ func TestBaseReviewContextAndRefresh(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("updated worktree did not request base refresh")
 	}
-	updated, _ = updated.(model).Update(cmd())
-	m = updated.(model)
+	m = drainBase(t, updated.(model), cmd)
 	if !strings.Contains(m.View(), "updated change") {
 		t.Fatalf("updated diff missing: %q", m.View())
 	}

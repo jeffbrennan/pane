@@ -23,11 +23,14 @@ and optional pane arguments. Missing repositories are skipped.
 
 ## Current large-commit results
 
-Measured against a 9,195-file, 1.5M-row commit:
+Measured against a 9,195-file, 1.5M-row commit, except the base review row,
+which uses a 36,008-file, 271 MB working-tree diff:
 
 | Metric | Result | Initial target | Status |
 |---|---|---|---|
-| First diff content | ~116 ms | < 150 ms | met |
+| First diff content, commit | ~116 ms | < 150 ms | met |
+| First diff content, base review | ~359 ms (was ~4.40 s) | < 150 ms | improved, above target |
+| Peak RSS, base review | ~681 MB (was 1.99 GB) | — | improved |
 | Full commit build | ~63 ms (was ~161 ms) | — | improved |
 | Picker key / render | < 1 µs / ~1.4 ms | < 8 ms combined | met |
 | Search miss | ~12.2 ms | < 16 ms | met |
@@ -43,6 +46,11 @@ splices only the lines whose wrapping changes, so it touches roughly 8% of the
 rows in files that need any rewrap; the rest are moved without being rebuilt.
 Rows carry a small capacity margin so neighbouring widths reuse the existing
 backing array instead of allocating a new one.
+
+Base review uses the same stream as commits, so it paints after its first
+screenful instead of after the whole diff. Its 359 ms is dominated by the
+`--name-status` pass over 36,008 paths (~180 ms) before the first chunk can be
+matched to paths; the patch bytes are ready much earlier.
 
 `resize_width_apply_ns` measures the debounced rebuild that follows
 `tea.WindowSizeMsg`, so it reflects the work a user waits for after resizing.

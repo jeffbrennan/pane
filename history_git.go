@@ -296,13 +296,32 @@ func parseCommitPaths(out []byte) ([]string, map[string]string, error) {
 }
 
 func (r repository) commitFileDiff(hash, path, oldPath, diff string, ok bool) (string, error) {
-	if !ok {
-		args := append([]string{"show", "--first-parent", "--format="}, r.diffOptions()...)
-		args = append(args, "--src-prefix=a/", "--dst-prefix=b/", hash, "--", path)
-		if oldPath != "" {
-			args = append(args, oldPath)
+	return r.revisionFileDiff(commitPatchPrefix, hash, path, oldPath, diff, ok)
+}
+
+func (r repository) baseFileDiff(hash, path, oldPath, diff string, ok bool) (string, error) {
+	return r.revisionFileDiff(basePatchPrefix, hash, path, oldPath, diff, ok)
+}
+
+var (
+	commitPatchPrefix = []string{"show", "--first-parent", "--format="}
+	basePatchPrefix   = []string{"diff"}
+)
+
+func (r repository) revisionFileDiff(prefix []string, hash, path, oldPath, diff string, ok bool) (string, error) {
+	args := func(withPrefix bool) []string {
+		full := append(append([]string{}, prefix...), r.diffOptions()...)
+		if withPrefix {
+			full = append(full, "--src-prefix=a/", "--dst-prefix=b/")
 		}
-		out, err := r.commandStdout(args...)
+		full = append(full, hash, "--", path)
+		if oldPath != "" {
+			full = append(full, oldPath)
+		}
+		return full
+	}
+	if !ok {
+		out, err := r.commandStdout(args(true)...)
 		if err != nil {
 			return "", gitError(out, err)
 		}
@@ -313,12 +332,7 @@ func (r repository) commitFileDiff(hash, path, oldPath, diff string, ok bool) (s
 		if r.ignoreSpace {
 			original := r
 			original.ignoreSpace = false
-			args := append([]string{"show", "--first-parent", "--format="}, original.diffOptions()...)
-			args = append(args, hash, "--", path)
-			if oldPath != "" {
-				args = append(args, oldPath)
-			}
-			out, err := original.commandStdout(args...)
+			out, err := original.commandStdout(args(false)...)
 			if err != nil {
 				return "", gitError(out, err)
 			}

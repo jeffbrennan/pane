@@ -86,7 +86,7 @@ func (m *model) appendCommitChanges(changes []change, done bool) {
 		return
 	}
 	view := m.commitModel()
-	changes = view.applySyntaxDemand(contextKey{commit: m.history.current.hash}, changes)
+	changes = view.applySyntaxDemand(contextKey{commit: view.contextCommit, staged: view.staged, base: view.contextBase}, changes)
 	if len(view.contextFiles) == 0 && len(view.collapsedFiles) == 0 {
 		parts := make([][]row, len(changes))
 		parallelEach(len(changes), func(i int) {
@@ -179,12 +179,20 @@ type commitStreamLoaded struct {
 }
 
 func startCommitStream(repo repository, hash string, request, height int) tea.Cmd {
+	return startStream(repo, hash, request, height, repo.streamCommit)
+}
+
+func startBaseStream(repo repository, hash string, request, height int) tea.Cmd {
+	return startStream(repo, hash, request, height, repo.streamBase)
+}
+
+func startStream(repo repository, hash string, request, height int, open func(context.Context, string, int) <-chan commitChunk) tea.Cmd {
 	return func() tea.Msg {
 		ctx := repo.context
 		if ctx == nil {
 			ctx = context.Background()
 		}
-		stream := repo.streamCommit(ctx, hash, max(height, startupSyntaxLines))
+		stream := open(ctx, hash, max(height, startupSyntaxLines))
 		return waitCommitStream(stream, request)()
 	}
 }
@@ -796,6 +804,10 @@ func (m model) commitModel() model {
 	if m.screen == "base" {
 		view.viewTitle = clean(m.base.revision) + "…working tree"
 		view.viewBadge = styleDim + shortHash(m.base.hash) + " · read-only" + styleReset
+		if m.history.streamActive && len(m.history.streamPaths) > 0 {
+			view.viewBadge = styleDim + shortHash(m.base.hash) + fmt.Sprintf(" · loading %d/%d files", m.history.streamLoaded, len(m.history.streamPaths)) + styleReset
+			view.searchProgress = "loading"
+		}
 	}
 	view.viewHints = keyHints("esc", "back", "?", "help")
 	view.message = ""

@@ -570,9 +570,15 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.changed {
 			m.base.hash, m.base.initialized = msg.hash, true
-			m.history.changes = msg.changes
+			m.history.changes, m.history.rows = nil, nil
 			m.contextFiles = nil
-			m.rebuildCommit()
+			m.history.streamPaths, m.history.streamLoaded, m.history.streamGutter = nil, 0, 0
+			m.history.streamError, m.history.streamEndPending = "", false
+			m.history.streamActive = true
+			m.picker.pendingPath = ""
+			m.history.pos, m.history.horizontal, m.history.viewTop = 0, 0, 0
+			repo := m.startCommitLoad()
+			return m, startBaseStream(repo, msg.hash, m.base.request, m.height)
 		}
 	case completed:
 		m.busy = false
@@ -750,7 +756,11 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.history.commitLoadingVisible = true
 		}
 	case commitStreamLoaded:
-		if m.screen != "commit" || !m.history.streamActive || msg.request != m.history.request {
+		request := m.history.request
+		if m.screen == "base" {
+			request = m.base.request
+		}
+		if (m.screen != "commit" && m.screen != "base") || !m.history.streamActive || msg.request != request {
 			break
 		}
 		chunk := msg.chunk

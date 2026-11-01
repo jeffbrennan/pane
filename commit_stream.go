@@ -27,6 +27,55 @@ type commitChunk struct {
 // streamCommit sends complete file sections as soon as a screenful is ready.
 // The caller must cancel ctx when it stops receiving.
 func (r repository) streamCommit(ctx context.Context, hash string, firstLines int) <-chan commitChunk {
+	patch := append([]string{"show", "--first-parent", "--format="}, r.diffOptions()...)
+	patch = append(patch, "--src-prefix=a/", "--dst-prefix=b/", hash, "--")
+	status := []string{"show", "--first-parent", "--format=", "--name-status", "-M", "-z", hash, "--"}
+	return r.streamPatch(ctx, status, patch, firstLines, func(path, oldPath, diff string, ok bool) (string, error) {
+		return r.commitFileDiff(hash, path, oldPath, diff, ok)
+	})
+}
+
+// streamBase is streamCommit for a merge base, which diffs the working tree
+// against the base instead of showing a commit. Untracked files are not part of
+// that diff, so they join the final chunk.
+func (r repository) streamBase(ctx context.Context, hash string, firstLines int) <-chan commitChunk {
+	patch := append([]string{"diff"}, r.diffOptions()...)
+	patch = append(patch, "--src-prefix=a/", "--dst-prefix=b/", hash, "--")
+	status := []string{"diff", "--name-status", "-M", "-z", hash, "--"}
+	source := r.streamPatch(ctx, status, patch, firstLines, func(path, oldPath, diff string, ok bool) (string, error) {
+		return r.baseFileDiff(hash, path, oldPath, diff, ok)
+	})
+	out := make(chan commitChunk, 1)
+	go func() {
+		defer close(out)
+		for chunk := range source {
+			if !chunk.done {
+				select {
+				case out <- chunk:
+				case <-ctx.Done():
+					return
+				}
+				continue
+			}
+			untracked, err := r.untrackedChanges()
+			if chunk.err == nil {
+				chunk.err = err
+			}
+			chunk.changes = append(chunk.changes, untracked...)
+			select {
+			case out <- chunk:
+			case <-ctx.Done():
+			}
+			return
+		}
+	}()
+	return out
+}
+
+// streamPatch reads statusArgs to learn every path, then sends the patch from
+// patchArgs one file at a time. Fallback resolves files the patch reader did
+// not recognise.
+func (r repository) streamPatch(ctx context.Context, statusArgs, patchArgs []string, firstLines int, fallback func(path, oldPath, diff string, ok bool) (string, error)) <-chan commitChunk {
 	out := make(chan commitChunk, 1)
 	go func() {
 		defer close(out)
@@ -39,12 +88,10 @@ func (r repository) streamCommit(ctx context.Context, hash string, firstLines in
 		}
 		status := make(chan statusResult, 1)
 		go func() {
-			data, err := r.commandStdout("show", "--first-parent", "--format=", "--name-status", "-M", "-z", hash, "--")
+			data, err := r.commandStdout(statusArgs...)
 			status <- statusResult{data, err}
 		}()
-		args := append([]string{"show", "--first-parent", "--format="}, r.diffOptions()...)
-		args = append(args, "--src-prefix=a/", "--dst-prefix=b/", hash, "--")
-		cmd := r.gitCommand(args...)
+		cmd := r.gitCommand(patchArgs...)
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 		pipe, err := cmd.StdoutPipe()
@@ -101,7 +148,7 @@ func (r repository) streamCommit(ctx context.Context, hash string, firstLines in
 			}
 		}
 		add := func(path, diff string, found bool) error {
-			diff, err := r.commitFileDiff(hash, path, oldPaths[path], diff, found)
+			diff, err := fallback(path, oldPaths[path], diff, found)
 			if err != nil {
 				return err
 			}

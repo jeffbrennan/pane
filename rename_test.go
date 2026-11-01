@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -157,7 +158,16 @@ func TestHistoryAndChangesIgnoreRenameLimitWarning(t *testing.T) {
 	}
 	for name, load := range map[string]func() ([]change, error){
 		"commit": func() ([]change, error) { return r.commitChangesWithoutSyntax("HEAD") },
-		"base":   func() ([]change, error) { return r.baseChanges("HEAD~1") },
+		"base": func() ([]change, error) {
+			var loaded []change
+			for chunk := range r.streamBase(context.Background(), "HEAD~1", 200) {
+				if chunk.err != nil {
+					return nil, chunk.err
+				}
+				loaded = append(loaded, chunk.changes...)
+			}
+			return loaded, nil
+		},
 	} {
 		changes, err := load()
 		if err != nil || len(changes) != 8 {
