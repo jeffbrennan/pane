@@ -82,7 +82,12 @@ func run(binary, repo, revision, scenario, paneArgs string, idle, settle time.Du
 		return err
 	}
 	arguments := []string{revision}
-	if paneArgs != "" {
+	switch paneArgs {
+	case "":
+	case "-":
+		// Open pane with no arguments, which lands on history in a clean tree.
+		arguments = nil
+	default:
 		arguments = strings.Fields(paneArgs)
 	}
 	cmd := exec.Command(binary, arguments...)

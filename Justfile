@@ -22,7 +22,7 @@ pgo:
     if [ -f default.pgo ]; then go tool pprof -proto default.pgo .scratch/session.pprof > .scratch/merged.pprof && mv .scratch/merged.pprof default.pgo; else cp .scratch/session.pprof default.pgo; fi
 
 fmt:
-    gofmt -w *.go perf/firstpaint/*.go perf/diff/*.go
+    gofmt -w *.go perf/firstpaint/*.go perf/diff/*.go perf/check/*.go
 
 lint:
     go vet ./...
@@ -58,11 +58,28 @@ perf-external:
         fi
         PANE_PERF=1 PANE_PERF_SCENARIO="$name" PANE_PERF_REPO="$repo" PANE_PERF_COMMIT="$revision" PANE_PERF_LOG=.scratch/perf-log.tsv PANE_PERF_PROFILES=.scratch/profiles go test -run '^TestPerf$' -count=1 -v .
         if [ -n "${extra:-}" ]; then
-            go run ./perf/firstpaint -scenario "$name" -repo "$repo" -args "$extra" -idle "${PANE_PERF_IDLE:-60s}" -log .scratch/perf-log.tsv
+            go run ./perf/firstpaint -scenario "$name" -repo "$repo" -args "$extra" -idle "${PANE_PERF_IDLE:-60s}" -key "${PANE_PERF_KEY:-}" -after "${PANE_PERF_AFTER:-}" -content "${PANE_PERF_CONTENT:-}" -log .scratch/perf-log.tsv
         else
-            go run ./perf/firstpaint -scenario "$name" -repo "$repo" -revision "$revision" -idle "${PANE_PERF_IDLE:-60s}" -log .scratch/perf-log.tsv
+            go run ./perf/firstpaint -scenario "$name" -repo "$repo" -revision "$revision" -idle "${PANE_PERF_IDLE:-60s}" -key "${PANE_PERF_KEY:-}" -after "${PANE_PERF_AFTER:-}" -content "${PANE_PERF_CONTENT:-}" -log .scratch/perf-log.tsv
         fi
     done < perf/scenarios.txt
 
 perf-diff:
     go run ./perf/diff .scratch/perf-log.tsv
+
+perf-check:
+    #!/usr/bin/env bash
+    set -eu
+    mkdir -p .scratch
+    export PANE_PERF_RUN="perf-check-$(date -u +%Y%m%dT%H%M%S)-$$"
+    PANE_PERF=1 PANE_PERF_LOG=.scratch/perf-check.tsv go test -run '^TestPerf$' -count=1 .
+    go run ./perf/check -baseline perf/baseline.tsv -log .scratch/perf-check.tsv
+
+perf-baseline:
+    #!/usr/bin/env bash
+    set -eu
+    mkdir -p .scratch
+    rm -f .scratch/perf-baseline.tsv
+    export PANE_PERF_RUN="baseline-$(date -u +%Y%m%dT%H%M%S)-$$"
+    PANE_PERF=1 PANE_PERF_LOG=.scratch/perf-baseline.tsv go test -run '^TestPerf$' -count=1 .
+    awk -F'\t' 'BEGIN { OFS = "\t"; print "# Synthetic performance baseline. Update with: just perf-baseline" } { print $3, $4, $5 }' .scratch/perf-baseline.tsv | sort -u > perf/baseline.tsv

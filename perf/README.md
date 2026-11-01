@@ -19,7 +19,27 @@ just perf-external
 ```
 
 Each line contains a tab-separated scenario name, repository path, revision,
-and optional pane arguments. Missing repositories are skipped.
+and optional pane arguments. Missing repositories are skipped. Passing `-` as
+the pane arguments opens pane with no arguments, which lands on history in a
+clean tree.
+
+`perf-diff` labels every row `noise`, `improved`, or `regressed` using plan
+14's rule (5%, or 2 ms for durations under 40 ms). It omits `idle_cpu_ns` and
+`idle_terminal_bytes` when the two runs observed idle time for different
+lengths or for less than 30 s, and says so.
+
+## Regression gate
+
+```sh
+just perf-check
+just perf-baseline
+```
+
+`just perf-check` runs the synthetic scenarios and fails when any metric is
+more than twice its value in `perf/baseline.tsv`. Durations also have to grow
+by at least a millisecond, so microsecond noise cannot fail the gate.
+`just perf-baseline` rewrites the checked-in baseline after an intentional
+change.
 
 ## Current large-commit results
 
