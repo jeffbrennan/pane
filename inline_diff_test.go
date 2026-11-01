@@ -14,7 +14,8 @@ func TestInlineChanges(t *testing.T) {
 		word  string
 		color string
 	}{{rows[1], "world", "\x1b[48;2;100;38;43m"}, {rows[2], "there", "\x1b[48;2;42;83;52m"}} {
-		if len(tt.row.inline) != 1 || tt.row.text[tt.row.inline[0].start:tt.row.inline[0].end] != tt.word {
+		inline := tt.row.inlineSpans()
+		if len(inline) != 1 || tt.row.text[inline[0].start:inline[0].end] != tt.word {
 			t.Fatalf("incorrect inline ranges: %#v", tt.row)
 		}
 		if rendered := m.renderDiffRow(tt.row, false); !strings.Contains(rendered, tt.color+tt.word) {
@@ -29,7 +30,7 @@ func TestInlineChangesSkipUnpairedAndUnrelatedLines(t *testing.T) {
 		"@@ -1 +1 @@\n-completely different\n+unrelated text\n",
 	} {
 		for _, r := range buildRows([]change{{path: "file.txt", diff: diff}}, 80, true) {
-			if len(r.inline) > 0 {
+			if len(r.inlineSpans()) > 0 {
 				t.Fatalf("unexpected inline highlight: %#v", r)
 			}
 		}
@@ -40,7 +41,7 @@ func TestInlineChangesWrapAndScroll(t *testing.T) {
 	diff := "@@ -1 +1 @@\n-hello beautiful world\n+hello beautiful earth\n"
 	rows := buildRows([]change{{path: "file.txt", diff: diff}}, 20, true)
 	for _, r := range rows {
-		if r.kind == '+' && strings.Contains(r.text, "earth") && len(r.inline) == 0 {
+		if r.kind == '+' && strings.Contains(r.text, "earth") && len(r.inlineSpans()) == 0 {
 			t.Fatal("wrapped change lost inline highlighting")
 		}
 	}

@@ -253,7 +253,7 @@ func TestSkippedFilesHighlightNearViewport(t *testing.T) {
 	}
 	highlighted := func(m model, path string) bool {
 		for _, r := range m.history.rows {
-			if r.path == path && r.kind == '+' && len(r.syntax) == 0 {
+			if r.path == path && r.kind == '+' && len(r.syntaxSpans()) == 0 {
 				return false
 			}
 		}

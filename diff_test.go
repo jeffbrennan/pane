@@ -28,9 +28,9 @@ func TestUnifiedDiffPresentation(t *testing.T) {
 	}
 }
 
-func TestRowSizeExcludesGutterWidth(t *testing.T) {
-	if size := unsafe.Sizeof(row{}); size > 168 {
-		t.Fatalf("row size %d exceeds 168 bytes", size)
+func TestRowSize(t *testing.T) {
+	if size := unsafe.Sizeof(row{}); size > 120 {
+		t.Fatalf("row size %d exceeds 120 bytes", size)
 	}
 }
 

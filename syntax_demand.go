@@ -261,7 +261,7 @@ func highlightRows(rows []row, path string, commitIndex int, syntaxDiff, display
 		if ok && lineSyntax.text == text.String() {
 			byteOffset := 0
 			for j := i; j < end; j++ {
-				rows[j].syntax = clipSyntax(lineSyntax.spans, byteOffset, byteOffset+len(rows[j].text))
+				rows[j].setSyntaxSpans(clipSyntax(lineSyntax.spans, byteOffset, byteOffset+len(rows[j].text)))
 				byteOffset += len(rows[j].text)
 			}
 		}

@@ -58,9 +58,9 @@ func TestRenameHighlightWrapAndRendering(t *testing.T) {
 			newPath = true
 		}
 		if newPath {
-			added.WriteString(highlightedText(r.text, r.inline))
+			added.WriteString(highlightedText(r.text, r.inlineSpans()))
 		} else {
-			removed.WriteString(highlightedText(r.text, r.inline))
+			removed.WriteString(highlightedText(r.text, r.inlineSpans()))
 		}
 	}
 	if removed.String() != "old" || added.String() != "new" {
@@ -84,7 +84,7 @@ func TestRenameHighlightWrapAndRendering(t *testing.T) {
 			t.Fatalf("wrong highlights in light=%v: old=%q new=%q", light, oldView.String(), newView.String())
 		}
 	}
-	if pinned := m.fileHeaderAt(len(m.rows) - 1); pinned == nil || !pinned.renameAdded || highlightedText(pinned.text, pinned.inline) != "new" {
+	if pinned := m.fileHeaderAt(len(m.rows) - 1); pinned == nil || !pinned.renameAdded || highlightedText(pinned.text, pinned.inlineSpans()) != "new" {
 		t.Fatalf("pinned highlight: %#v", pinned)
 	}
 }

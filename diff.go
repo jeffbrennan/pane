@@ -167,11 +167,12 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 			byteOffset := 0
 			for _, part := range wrapLine(text, max(1, width-5)) {
 				header.text, header.offset = " "+part, offset
-				header.inline = clipSyntax(spans, byteOffset, byteOffset+len(part))
-				for i := range header.inline {
-					header.inline[i].start++
-					header.inline[i].end++
+				inline := clipSyntax(spans, byteOffset, byteOffset+len(part))
+				for i := range inline {
+					inline[i].start++
+					inline[i].end++
 				}
+				header.setInlineSpans(inline)
 				if offset > 0 {
 					header.kind = 'F'
 				}
@@ -271,7 +272,8 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 			if syntaxOK && lineSyntax.text == text {
 				spans = clipSyntax(lineSyntax.spans, byteOffset, byteOffset+len(part))
 			}
-			rows = append(rows, row{path: c.path, line: i, offset: offset, target: target, sourceLine: number, text: part, kind: kind, syntax: spans, inline: clipSyntax(inline[i], byteOffset, byteOffset+len(part))})
+			inlineSpans := clipSyntax(inline[i], byteOffset, byteOffset+len(part))
+			rows = append(rows, row{path: c.path, line: i, offset: offset, target: target, sourceLine: number, text: part, kind: kind, spans: newRowSpans(spans, inlineSpans), syntaxPresent: spans != nil})
 			byteOffset += len(part)
 			for _, r := range part {
 				offset += runewidth.RuneWidth(r)

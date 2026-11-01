@@ -85,8 +85,8 @@ func assertCommentRows(t *testing.T, changes []change, texts ...string) {
 		for _, r := range rows {
 			if r.text == text {
 				found = true
-				if len(r.syntax) == 0 || r.syntax[0].color != "\x1b[90m" {
-					t.Errorf("%q not highlighted as comment: %#v", text, r.syntax)
+				if len(r.syntaxSpans()) == 0 || r.syntaxSpans()[0].color != "\x1b[90m" {
+					t.Errorf("%q not highlighted as comment: %#v", text, r.syntaxSpans())
 				}
 			}
 		}
@@ -126,7 +126,7 @@ func TestSyntaxFallbackForMissingContextAndOtherLanguages(t *testing.T) {
 	diff := "@@ -5 +5 @@\n-old\n+new\n"
 	for _, c := range []change{{path: "file.go", diff: diff, syntaxDiff: diff}, {path: "file.py", diff: diff, syntaxDiff: diff}, {path: "file.txt", diff: "@@ -0,0 +1 @@\n+plain text\n", syntaxDiff: "@@ -0,0 +1 @@\n+plain text\n"}} {
 		for _, r := range buildRows([]change{c}, 80, true) {
-			if r.syntax != nil {
+			if r.syntaxSpans() != nil {
 				t.Fatalf("unexpected syntax for %s: %#v", c.path, r)
 			}
 		}
@@ -177,7 +177,7 @@ func TestDataEngineeringSyntax(t *testing.T) {
 			}
 			diff := "@@ -0,0 +1 @@\n+" + test.text + "\n"
 			rows := buildRows([]change{{path: test.path, diff: diff, syntaxDiff: diff}}, 80, true)
-			if len(rows) < 2 || len(rows[1].syntax) == 0 {
+			if len(rows) < 2 || len(rows[1].syntaxSpans()) == 0 {
 				t.Fatalf("missing highlighting: %#v", rows)
 			}
 		})
@@ -229,13 +229,13 @@ func TestPythonSyntaxTokensAndExtensions(t *testing.T) {
 			color string
 		}{{1, "def", "\x1b[35m"}, {1, "greet", "\x1b[34m"}, {2, "hello", "\x1b[32m"}, {3, "# comment", "\x1b[90m"}} {
 			found := false
-			for _, span := range rows[test.row].syntax {
+			for _, span := range rows[test.row].syntaxSpans() {
 				if span.color == test.color && strings.Contains(rows[test.row].text[span.start:span.end], test.text) {
 					found = true
 				}
 			}
 			if !found {
-				t.Errorf("%s: missing highlighted %q in %#v", path, test.text, rows[test.row].syntax)
+				t.Errorf("%s: missing highlighted %q in %#v", path, test.text, rows[test.row].syntaxSpans())
 			}
 		}
 	}
@@ -284,7 +284,7 @@ func TestUntrackedPythonSyntax(t *testing.T) {
 		t.Fatal(err)
 	}
 	rows := buildRows(s.unstaged, 80, true)
-	if len(rows) < 2 || len(rows[1].syntax) == 0 || rows[1].syntax[0].color != "\x1b[35m" {
+	if len(rows) < 2 || len(rows[1].syntaxSpans()) == 0 || rows[1].syntaxSpans()[0].color != "\x1b[35m" {
 		t.Fatalf("untracked Python file missing keyword highlighting: %#v", rows)
 	}
 }
@@ -297,8 +297,8 @@ func assertStringRows(t *testing.T, changes []change, texts ...string) {
 		for _, r := range rows {
 			if r.text == text {
 				found = true
-				if len(r.syntax) == 0 || r.syntax[0].color != "\x1b[32m" {
-					t.Errorf("%q not highlighted as string: %#v", text, r.syntax)
+				if len(r.syntaxSpans()) == 0 || r.syntaxSpans()[0].color != "\x1b[32m" {
+					t.Errorf("%q not highlighted as string: %#v", text, r.syntaxSpans())
 				}
 			}
 		}

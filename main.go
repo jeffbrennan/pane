@@ -15,24 +15,6 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-type row struct {
-	path         string
-	oldPath      string
-	renameAdded  bool
-	submodule    bool
-	line         int
-	offset       int
-	target       int
-	sourceLine   int
-	text         string
-	kind         byte
-	deletedLines int
-	headerIndex  int
-	syntax       []syntaxSpan
-	inline       []syntaxSpan
-	commitIndex  int
-}
-
 type loaded struct {
 	snapshot   snapshot
 	err        error
@@ -1625,6 +1607,7 @@ func rowGutter(r row, width int) string {
 func (m model) renderDiffRowWithGutter(r row, active bool, gutter string) string {
 	margin := diffMargin(m.width)
 	text := r.text
+	syntax, inline := r.syntaxSpans(), r.inlineSpans()
 	contentWidth := max(0, m.width-margin)
 	if r.kind == 'f' || r.kind == 'F' {
 		text = fit(text, contentWidth)
@@ -1653,7 +1636,7 @@ func (m model) renderDiffRowWithGutter(r row, active bool, gutter string) string
 			color = renameHeaderLight
 		}
 	}
-	if (r.kind == 'f' || r.kind == 'F') && len(r.inline) > 0 && strings.HasPrefix(text, gutter) {
+	if (r.kind == 'f' || r.kind == 'F') && len(inline) > 0 && strings.HasPrefix(text, gutter) {
 		highlight := "\x1b[48;2;100;38;43m"
 		if r.renameAdded {
 			highlight = "\x1b[48;2;42;83;52m"
@@ -1664,9 +1647,9 @@ func (m model) renderDiffRowWithGutter(r row, active bool, gutter string) string
 				highlight = "\x1b[48;2;175;220;181m"
 			}
 		}
-		text = color + gutter + renderSyntaxWithHighlight(text[len(gutter):], nil, r.inline, 0, query, color, m.lightTheme, highlight) + "\x1b[0m"
+		text = color + gutter + renderSyntaxWithHighlight(text[len(gutter):], nil, inline, 0, query, color, m.lightTheme, highlight) + "\x1b[0m"
 		color = ""
-	} else if (r.syntax != nil || r.kind == '+' || r.kind == '-' || r.kind == 'd') && strings.HasPrefix(text, gutter) {
+	} else if (syntax != nil || r.kind == '+' || r.kind == '-' || r.kind == 'd') && strings.HasPrefix(text, gutter) {
 		visible := text[len(gutter):]
 		start := 0
 		if !m.wrap {
@@ -1689,7 +1672,7 @@ func (m model) renderDiffRowWithGutter(r row, active bool, gutter string) string
 		if background != "" {
 			padding = strings.Repeat(" ", max(0, contentWidth-stringWidth(gutter+visible)))
 		}
-		text = background + gutter + renderSyntax(visible, r.syntax, r.inline, start, query, background, m.lightTheme) + padding + "\x1b[0m"
+		text = background + gutter + renderSyntax(visible, syntax, inline, start, query, background, m.lightTheme) + padding + "\x1b[0m"
 		color = ""
 	} else if query != "" && strings.HasPrefix(text, gutter) {
 		text = gutter + highlightMatches(text[len(gutter):], query)
