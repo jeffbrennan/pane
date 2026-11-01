@@ -117,6 +117,7 @@ func TestThemeAndRepositoryRefreshCadence(t *testing.T) {
 		t.Fatalf("got %d theme queries in 5 seconds", queries)
 	}
 	queries = 0
+	m.screen = ""
 	for i := 1; i <= 120; i++ {
 		m.ticks = i
 		if cmd := m.queryThemeOnTick(); cmd != nil {

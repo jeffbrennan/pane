@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -22,12 +23,13 @@ func main() {
 	repo := flag.String("repo", ".", "repository to open")
 	revision := flag.String("revision", "HEAD", "commit to open")
 	idle := flag.Duration("idle", time.Minute, "time to observe after first paint")
+	settle := flag.Duration("settle", 2*time.Second, "wait for background loading before the idle window")
 	logPath := flag.String("log", "", "append metrics to this TSV file")
 	content := flag.String("content", os.Getenv("PANE_PERF_CONTENT"), "first diff text to wait for")
 	key := flag.String("key", "", "key to send after the title appears")
 	after := flag.String("after", "", "wait for this text before sending the key")
 	flag.Parse()
-	if err := run(*binary, *repo, *revision, *idle, *logPath, *content, *key, *after); err != nil {
+	if err := run(*binary, *repo, *revision, *idle, *settle, *logPath, *content, *key, *after); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -69,9 +71,9 @@ func (output *terminalOutput) feed(data []byte, terminal io.Writer) (bool, bool,
 	return painted, found, ready
 }
 
-func run(binary, repo, revision string, idle time.Duration, logPath, content, key, after string) error {
-	if idle < 0 {
-		return fmt.Errorf("idle duration cannot be negative")
+func run(binary, repo, revision string, idle, settle time.Duration, logPath, content, key, after string) error {
+	if idle < 0 || settle < 0 {
+		return fmt.Errorf("idle and settle durations cannot be negative")
 	}
 	binary, err := filepath.Abs(binary)
 	if err != nil {
@@ -129,17 +131,17 @@ func run(binary, repo, revision string, idle time.Duration, logPath, content, ke
 		return fmt.Errorf("timed out waiting for the title")
 	}
 	if key != "" {
-		if after != "" {
-			select {
-			case <-ready:
-			case <-readDone:
-				return fmt.Errorf("pane exited before the requested key point")
-			case <-time.After(30 * time.Second):
-				return fmt.Errorf("timed out waiting for %q", after)
-			}
-		}
 		if _, err := io.WriteString(terminal, key); err != nil {
 			return err
+		}
+	}
+	if after != "" {
+		select {
+		case <-ready:
+		case <-readDone:
+			return fmt.Errorf("pane exited before the requested key point")
+		case <-time.After(30 * time.Second):
+			return fmt.Errorf("timed out waiting for %q", after)
 		}
 	}
 	var firstContent time.Time
@@ -152,9 +154,12 @@ func run(binary, repo, revision string, idle time.Duration, logPath, content, ke
 			return fmt.Errorf("timed out waiting for content %q", content)
 		}
 	}
+	time.Sleep(settle)
 	bytesAtPaint := outputBytes.Load()
+	cpuAtPaint := processCPU(cmd.Process.Pid)
 	time.Sleep(idle)
 	idleBytes := outputBytes.Load() - bytesAtPaint
+	idleCPU := processCPU(cmd.Process.Pid) - cpuAtPaint
 	if _, err := io.WriteString(terminal, "\x03"); err != nil {
 		return err
 	}
@@ -170,7 +175,7 @@ func run(binary, repo, revision string, idle time.Duration, logPath, content, ke
 		<-wait
 		return fmt.Errorf("pane did not exit")
 	}
-	metrics := map[string]int64{"first_paint_ns": first.Sub(start).Nanoseconds(), "idle_terminal_bytes": idleBytes, "idle_duration_ns": idle.Nanoseconds()}
+	metrics := map[string]int64{"first_paint_ns": first.Sub(start).Nanoseconds(), "idle_terminal_bytes": idleBytes, "idle_duration_ns": idle.Nanoseconds(), "idle_cpu_ns": idleCPU}
 	if !firstContent.IsZero() {
 		metrics["first_content_ns"] = firstContent.Sub(start).Nanoseconds()
 	}
@@ -191,6 +196,24 @@ func run(binary, repo, revision string, idle time.Duration, logPath, content, ke
 		}
 	}
 	return nil
+}
+
+func processCPU(pid int) int64 {
+	out, err := exec.Command("ps", "-o", "time=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return 0
+	}
+	value := strings.TrimSpace(string(out))
+	fields := strings.Split(value, ":")
+	var seconds float64
+	for _, field := range fields {
+		part, err := strconv.ParseFloat(field, 64)
+		if err != nil {
+			return 0
+		}
+		seconds = seconds*60 + part
+	}
+	return int64(seconds * float64(time.Second))
 }
 
 func appendMetric(path, metric string, value int64) error {

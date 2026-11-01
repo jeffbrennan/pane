@@ -345,8 +345,12 @@ func (m model) queryTheme() tea.Cmd {
 	}
 }
 
+func (m model) readOnlyDiff() bool {
+	return m.screen == "commit" || m.screen == "sequence" || m.screen == "stashes" || (m.screen == "history" && m.history.path != "")
+}
+
 func (m model) queryThemeOnTick() tea.Cmd {
-	if m.blurred || m.ticks%10 != 0 {
+	if m.blurred || (!m.readOnlyDiff() && m.ticks%10 != 0) {
 		return nil
 	}
 	return m.queryTheme()
@@ -456,7 +460,13 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if (m.screen == "" || m.screen == "base" || (m.screen == "history" && m.history.path == "")) && m.ticks%interval == 0 {
 			m, cmd = m.refresh()
 		}
-		return m, tea.Batch(cmd, nextTick(), m.queryThemeOnTick())
+		next := nextTick()
+		if m.readOnlyDiff() {
+			// Redrawing an unchanged read-only diff twice a second is pure idle
+			// cost; five seconds still feeds terminals without theme pushes.
+			next = tea.Tick(5*time.Second, func(time.Time) tea.Msg { return tick{} })
+		}
+		return m, tea.Batch(cmd, next, m.queryThemeOnTick())
 	case tea.BlurMsg:
 		m.blurred = true
 	case tea.FocusMsg:
