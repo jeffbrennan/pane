@@ -758,6 +758,11 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if chunk.done {
 			m.history.streamActive, m.history.loading, m.history.streamEndPending = false, false, false
 			m.picker.cache = nil
+			if len(m.history.rows) > 500000 {
+				// The streamed build peaks above what the rows retain; return
+				// that capacity to the OS once the diff is complete.
+				debug.FreeOSMemory()
+			}
 			if chunk.err != nil {
 				m.history.streamError = "Commit load: " + chunk.err.Error()
 			}
