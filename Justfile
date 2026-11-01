@@ -40,7 +40,7 @@ perf:
     set -eu
     mkdir -p .scratch
     export PANE_PERF_RUN="$(date -u +%Y%m%dT%H%M%S)-$$"
-    PANE_PERF=1 PANE_PERF_LOG=.scratch/perf-log.tsv PANE_PERF_PROFILES=.scratch/profiles go test -run '^TestPerf$' -count=1 -v ./internal/ui
+    PANE_PERF=1 PANE_PERF_LOG="$PWD/.scratch/perf-log.tsv" PANE_PERF_PROFILES="$PWD/.scratch/profiles" go test -run '^TestPerf$' -count=1 -v ./internal/ui
     go build -o .scratch/perf-pane .
     go run ./perf/firstpaint -repo "${PANE_PERF_REPO:-.}" -revision "${PANE_PERF_COMMIT:-HEAD}" -idle "${PANE_PERF_IDLE:-60s}" -content "${PANE_PERF_CONTENT:-}" -key "${PANE_PERF_KEY:-}" -after "${PANE_PERF_AFTER:-}" -wait "${PANE_PERF_WAIT:-read-only}" -log .scratch/perf-log.tsv
 
@@ -56,7 +56,7 @@ perf-external:
             echo "skip $name: $repo is not available"
             continue
         fi
-        PANE_PERF=1 PANE_PERF_SCENARIO="$name" PANE_PERF_REPO="$repo" PANE_PERF_COMMIT="$revision" PANE_PERF_LOG=.scratch/perf-log.tsv PANE_PERF_PROFILES=.scratch/profiles go test -run '^TestPerf$' -count=1 -v ./internal/ui
+        PANE_PERF=1 PANE_PERF_SCENARIO="$name" PANE_PERF_REPO="$repo" PANE_PERF_COMMIT="$revision" PANE_PERF_LOG="$PWD/.scratch/perf-log.tsv" PANE_PERF_PROFILES="$PWD/.scratch/profiles" go test -run '^TestPerf$' -count=1 -v ./internal/ui
         content="${content:-${PANE_PERF_CONTENT:-}}"
         if [ -n "${extra:-}" ]; then
             go run ./perf/firstpaint -scenario "$name" -repo "$repo" -args "$extra" -idle "${PANE_PERF_IDLE:-60s}" -key "${PANE_PERF_KEY:-}" -after "${PANE_PERF_AFTER:-}" -content "$content" -wait "${wait:-read-only}" -log .scratch/perf-log.tsv
@@ -103,7 +103,7 @@ perf-check:
     set -eu
     mkdir -p .scratch
     export PANE_PERF_RUN="perf-check-$(date -u +%Y%m%dT%H%M%S)-$$"
-    PANE_PERF=1 PANE_PERF_LOG=.scratch/perf-check.tsv go test -run '^TestPerf$' -count=1 ./internal/ui
+    PANE_PERF=1 PANE_PERF_LOG="$PWD/.scratch/perf-check.tsv" go test -run '^TestPerf$' -count=1 ./internal/ui
     go run ./perf/check -baseline perf/baseline.tsv -log .scratch/perf-check.tsv
 
 perf-baseline:
@@ -112,5 +112,5 @@ perf-baseline:
     mkdir -p .scratch
     rm -f .scratch/perf-baseline.tsv
     export PANE_PERF_RUN="baseline-$(date -u +%Y%m%dT%H%M%S)-$$"
-    PANE_PERF=1 PANE_PERF_LOG=.scratch/perf-baseline.tsv go test -run '^TestPerf$' -count=1 ./internal/ui
+    PANE_PERF=1 PANE_PERF_LOG="$PWD/.scratch/perf-baseline.tsv" go test -run '^TestPerf$' -count=1 ./internal/ui
     awk -F'\t' 'BEGIN { OFS = "\t"; print "# Synthetic performance baseline. Update with: just perf-baseline" } { print $3, $4, $5 }' .scratch/perf-baseline.tsv | sort -u > perf/baseline.tsv
