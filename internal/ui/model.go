@@ -194,7 +194,7 @@ func initialModel(repo git.Repo, args []string) (model, error) {
 		return m, nil
 	}
 	if strings.Contains(args[0], "..") {
-		out, err := repo.Command("rev-list", fmt.Sprintf("--max-count=%d", maxSequenceCommits+1), "--end-of-options", args[0], "--")
+		out, err := repo.Command("rev-list", fmt.Sprintf("--max-count=%d", maxSequenceCommits+1), "--reverse", "--end-of-options", args[0], "--")
 		if err != nil {
 			return model{}, fmt.Errorf("invalid commit range %q: %w", args[0], git.CommandError(out, err))
 		}

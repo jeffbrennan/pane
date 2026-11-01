@@ -109,7 +109,7 @@ func TestHistoryVisualSelectionOpensSequence(t *testing.T) {
 	m = updated.(model)
 	updated, cmd := m.handleHistoryKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(model)
-	if m.screen != "sequence" || len(m.sequence.commits) != 2 || m.sequence.commits[0].Hash != "aaaa" || m.sequence.commits[1].Hash != "bbbb" {
+	if m.screen != "sequence" || len(m.sequence.commits) != 2 || m.sequence.commits[0].Hash != "bbbb" || m.sequence.commits[1].Hash != "aaaa" {
 		t.Fatalf("sequence: screen=%q commits=%#v", m.screen, m.sequence.commits)
 	}
 	if cmd == nil {

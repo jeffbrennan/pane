@@ -168,7 +168,9 @@ func (m model) sequenceIdentity() string {
 	if len(m.sequence.commits) == 0 {
 		return ""
 	}
-	return "range:" + m.sequence.commits[0].Hash + ".." + m.sequence.commits[len(m.sequence.commits)-1].Hash
+	// Key viewed marks by (newest, oldest) so reversing the review order keeps
+	// existing marks and the key has the same shape as a Git range.
+	return "range:" + m.sequence.commits[len(m.sequence.commits)-1].Hash + ".." + m.sequence.commits[0].Hash
 }
 
 func (m *model) rebuildSequence() {

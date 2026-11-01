@@ -654,7 +654,12 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			lo, hi = max(0, lo), min(hi, len(matches)-1)
 			m.history.visualActive = false
-			next, err := newSequenceModel(m.repo, append([]git.CommitInfo(nil), matches[lo:hi+1]...))
+			selected := append([]git.CommitInfo(nil), matches[lo:hi+1]...)
+			// Review in the order the commits were written, as GitHub does.
+			for i, j := 0, len(selected)-1; i < j; i, j = i+1, j-1 {
+				selected[i], selected[j] = selected[j], selected[i]
+			}
+			next, err := newSequenceModel(m.repo, selected)
 			if err != nil {
 				m.flash = err.Error()
 				break

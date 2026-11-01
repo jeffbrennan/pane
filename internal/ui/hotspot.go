@@ -734,7 +734,7 @@ func (m model) hotspotSequence(path string) tea.Cmd {
 	repo, request := m.repo, m.hotspots.request
 	since, author := m.hotspots.since, m.hotspots.author
 	return func() tea.Msg {
-		args := []string{"log", "-z", "--format=%H"}
+		args := []string{"log", "-z", "--reverse", "--format=%H"}
 		if since != "" {
 			args = append(args, "--since="+since)
 		}
