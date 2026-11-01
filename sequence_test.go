@@ -313,3 +313,33 @@ func TestSequenceSingleCommitStartsOneLoad(t *testing.T) {
 		t.Fatalf("single commit started multiple loads: %d", len(batch))
 	}
 }
+
+func TestSequenceSearchProgressAndNewMatches(t *testing.T) {
+	m := model{screen: "sequence", width: 100, height: 12, search: searchState{query: "needle", direction: 1}, sequence: sequenceState{
+		commits: []commitInfo{{hash: "one"}, {hash: "two"}},
+		changes: [][]change{{{path: "first", diff: "@@ -1 +1 @@\n-old\n+other\n"}}, nil},
+		states:  []sequenceLoadState{sequenceReady, sequenceLoading}, errors: make([]string, 2), loading: true, request: 1,
+	}}
+	m.rebuildSequence()
+	if view := plain(m.View()); !strings.Contains(view, "searching 1/2 loaded") {
+		t.Fatalf("missing search progress: %q", view)
+	}
+	updated, _ := m.Update(sequenceLoaded{index: 1, request: 1, commit: commitInfo{hash: "two"}, changes: []change{{path: "second", diff: "@@ -1 +1 @@\n-old\n+needle\n"}}})
+	m = updated.(model)
+	if !rowMatches(m.rows[m.pos], "needle") || strings.Contains(plain(m.View()), "searching 2/2 loaded") {
+		t.Fatalf("new match not selected or loading did not end: %#v", m.rows[m.pos])
+	}
+}
+
+func TestSequenceDraftFindsMatchesAsTheyLoad(t *testing.T) {
+	m := model{screen: "sequence", width: 100, height: 12, modal: "search", search: searchState{draft: "needle", draftDirection: 1}, sequence: sequenceState{
+		commits: []commitInfo{{hash: "one"}, {hash: "two"}},
+		changes: make([][]change, 2), states: []sequenceLoadState{sequenceLoading, sequenceLoading}, errors: make([]string, 2), loading: true, request: 1,
+	}}
+	m.rebuildSequence()
+	updated, _ := m.Update(sequenceLoaded{index: 0, request: 1, commit: commitInfo{hash: "one"}, changes: []change{{path: "first", diff: "@@ -1 +1 @@\n-old\n+needle\n"}}})
+	m = updated.(model)
+	if !rowMatches(m.rows[m.pos], "needle") || !strings.Contains(plain(m.View()), "searching 1/2 loaded") {
+		t.Fatalf("draft search not updated: row=%#v view=%q", m.rows[m.pos], plain(m.View()))
+	}
+}

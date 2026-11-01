@@ -22,7 +22,7 @@ pgo:
     if [ -f default.pgo ]; then go tool pprof -proto default.pgo .scratch/session.pprof > .scratch/merged.pprof && mv .scratch/merged.pprof default.pgo; else cp .scratch/session.pprof default.pgo; fi
 
 fmt:
-    gofmt -w *.go perf/firstpaint/*.go perf/diff/*.go perf/check/*.go
+    gofmt -w .
 
 lint:
     go vet ./...
