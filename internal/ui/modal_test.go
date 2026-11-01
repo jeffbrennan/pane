@@ -20,12 +20,8 @@ func TestCommitDialogCenteredAndEditable(t *testing.T) {
 		t.Fatalf("unwanted stage-all help: %q", view)
 	}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	if !updated.(model).inputNormal {
-		t.Fatal("escape did not enter normal mode")
-	}
-	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if updated.(model).modal != "" {
-		t.Fatal("escape in normal mode did not dismiss dialog")
+		t.Fatal("escape did not dismiss dialog")
 	}
 }
 

@@ -74,8 +74,6 @@ type model struct {
 	modal, input, message string
 	inputCursor           int
 	inputBody             string
-	inputNormal           bool
-	inputPending          string
 	amendHash             string
 	commitEditorPath      string
 	errorText             string

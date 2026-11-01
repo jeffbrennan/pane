@@ -118,17 +118,12 @@ var shortcutSections = []struct {
 		{"q", "Quit"},
 	}},
 	{"Commit input", []shortcut{
-		{"ctrl-g", "Write message in external editor"},
-		{"esc / i / a", "Normal mode / insert before or after cursor"},
-		{"h / l, w / b, 0 / $", "Normal mode: move in subject"},
-		{"x / dw / dd / D", "Normal mode: delete character, word, or line"},
-		{"I / A", "Insert at start / end"},
-		{"← / →, ctrl-b / ctrl-f", "Move cursor"},
-		{"alt-b / alt-f", "Move by word"},
+		{"← / →, ctrl-b / ctrl-f, alt-b / alt-f", "Move by character or word"},
 		{"home / end, ctrl-a / ctrl-e", "Start / end of subject"},
-		{"ctrl-w / alt-backspace", "Delete previous word"},
-		{"ctrl-u / ctrl-k", "Delete to start / end"},
+		{"ctrl-w / alt-backspace, ctrl-u / ctrl-k", "Delete previous word, to start, or to end"},
 		{"backspace / delete, ctrl-d", "Delete character"},
+		{"ctrl-g", "Write message in external editor"},
+		{"↵ / esc", "Commit / cancel"},
 	}},
 }
 
@@ -254,13 +249,10 @@ func (m model) showCommitDialog(lines []string) {
 		}
 	}
 	body = append(body, "")
-	mode, hint := "INSERT", keyHints("↵", "commit", "ctrl-g", "editor", "esc", "normal")
-	if m.inputNormal {
-		mode, hint = "NORMAL", keyHints("i/a", "insert", "ctrl-g", "editor", "esc", "cancel")
-	}
-	info := mode
+	hint := keyHints("↵", "commit", "ctrl-g", "editor", "esc", "cancel")
+	info := ""
 	if scope := m.commitScope(); scope != "" && m.amendHash == "" {
-		info += " · " + scope
+		info = scope
 	}
 	title := "Commit changes"
 	if m.amendHash != "" {

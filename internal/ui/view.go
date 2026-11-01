@@ -164,11 +164,7 @@ func (m model) View() string {
 	case "commit":
 		status, hints = "", ""
 		if m.width < 24 || m.height < 9 {
-			mode := "INSERT"
-			if m.inputNormal {
-				mode = "NORMAL"
-			}
-			status = prompt("Commit message ["+mode+"]: ", m.input)
+			status = prompt("Commit message: ", m.input)
 		}
 	case "help", "files":
 		status, hints = "", ""

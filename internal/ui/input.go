@@ -3,7 +3,6 @@ package ui
 import (
 	"unicode"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
@@ -56,60 +55,6 @@ func previousInputWord(runes []rune, pos int) int {
 		}
 	}
 	return pos
-}
-
-func (m *model) handleCommitNormal(key tea.KeyMsg) {
-	if key.Paste {
-		return
-	}
-	runes := []rune(m.input)
-	pos := max(0, min(m.inputCursor, max(0, len(runes)-1)))
-	command := key.String()
-	if m.inputPending != "" {
-		command = m.inputPending + command
-		m.inputPending = ""
-	}
-	switch command {
-	case "i":
-		m.inputNormal = false
-	case "a":
-		m.inputNormal = false
-		pos = min(len(runes), pos+1)
-	case "I":
-		m.inputNormal = false
-		pos = 0
-	case "A":
-		m.inputNormal = false
-		pos = len(runes)
-	case "h", "left":
-		pos = max(0, pos-1)
-	case "l", "right":
-		pos = min(max(0, len(runes)-1), pos+1)
-	case "0", "home":
-		pos = 0
-	case "$", "end":
-		pos = max(0, len(runes)-1)
-	case "w":
-		pos = min(max(0, len(runes)-1), nextInputWord(runes, pos))
-	case "b":
-		pos = previousInputWord(runes, pos)
-	case "d":
-		m.inputPending = "d"
-	case "x", "dw", "dd", "D":
-		end := min(len(runes), pos+1)
-		switch command {
-		case "dw":
-			end = nextInputWord(runes, pos)
-		case "dd":
-			pos, end = 0, len(runes)
-		case "D":
-			end = len(runes)
-		}
-		m.input = string(runes[:pos]) + string(runes[end:])
-		pos = min(pos, max(0, len([]rune(m.input))-1))
-		m.message = ""
-	}
-	m.inputCursor = pos
 }
 
 // editLine applies a single-line editing key using a rune-indexed cursor.

@@ -614,7 +614,6 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.inputBody = "\n" + m.inputBody
 		}
 		m.inputCursor = len([]rune(m.input))
-		m.inputNormal, m.inputPending = false, ""
 		m.recentCommits, m.recentCommitLoading, m.recentCommitError = nil, false, false
 		m.recentCommitRequest++
 		return m, nil

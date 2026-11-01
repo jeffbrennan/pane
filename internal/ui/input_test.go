@@ -61,29 +61,22 @@ func TestPastedCommitMessage(t *testing.T) {
 	}
 }
 
-func TestCommitVimModes(t *testing.T) {
+func TestCommitInputEditsLikeEveryOtherInput(t *testing.T) {
 	m := model{width: 70, height: 20, modal: "commit"}
 	m = keys(t, m, "o", "n", "e", " ", "t", "w", "o")
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	m = updated.(model)
-	if !m.inputNormal || m.inputCursor != 6 || !strings.Contains(m.View(), "NORMAL") {
-		t.Fatalf("normal mode: %#v", m)
+	if m.input != "one two" || m.inputCursor != 7 {
+		t.Fatalf("typing: %q at %d", m.input, m.inputCursor)
 	}
-	m = keys(t, m, "b", "d", "w")
-	if m.input != "one " || m.inputCursor != 3 {
+	m = keys(t, m, "ctrl+w")
+	if m.input != "one " || m.inputCursor != 4 {
 		t.Fatalf("delete word: %q at %d", m.input, m.inputCursor)
 	}
-	m = keys(t, m, "0", "a", "X")
-	if m.inputNormal || m.input != "oXne " || m.inputCursor != 2 || !strings.Contains(m.View(), "INSERT") {
-		t.Fatalf("insert after: %q at %d", m.input, m.inputCursor)
+	m = keys(t, m, "home", "X", "end", "Y")
+	if m.input != "Xone Y" || m.inputCursor != 6 {
+		t.Fatalf("move and insert: %q at %d", m.input, m.inputCursor)
 	}
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	m = keys(t, updated.(model), "d", "d")
-	if m.input != "" || m.inputCursor != 0 || !m.inputNormal {
-		t.Fatalf("delete line: %#v", m)
-	}
-	m = keys(t, m, "A", "z")
-	if m.input != "z" || m.inputNormal {
-		t.Fatalf("append to empty subject: %#v", m)
+	m = keys(t, m, "backspace", "backspace")
+	if m.input != "Xone" || m.inputCursor != 4 {
+		t.Fatalf("delete character: %q at %d", m.input, m.inputCursor)
 	}
 }

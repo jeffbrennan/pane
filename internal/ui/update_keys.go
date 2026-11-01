@@ -148,8 +148,6 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.input = ""
 			m.inputCursor = 0
 			m.inputBody = ""
-			m.inputNormal = false
-			m.inputPending = ""
 			m.amendHash = ""
 			m.message = ""
 			m.recentCommits = nil
@@ -332,15 +330,6 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.modal == "commit" && key.String() == "esc" && !m.inputNormal {
-		m.inputNormal = true
-		m.inputCursor = max(0, m.inputCursor-1)
-		return m, nil
-	}
-	if m.modal == "commit" && key.String() == "esc" && m.inputPending != "" {
-		m.inputPending = ""
-		return m, nil
-	}
 	if key.String() == "esc" || key.String() == "ctrl+c" {
 		m.modal = ""
 		return m, nil
@@ -348,10 +337,6 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.modal == "commit" {
 		if key.String() == "ctrl+g" {
 			return m.openCommitEditor()
-		}
-		if m.inputNormal && key.String() != "enter" {
-			m.handleCommitNormal(key)
-			return m, nil
 		}
 		switch key.String() {
 		case "enter":
