@@ -51,10 +51,10 @@ func (r Repo) FullContexts(changes []Change, key Context) []FullContextResult {
 		for i, index := range indexes {
 			paths[i] = changes[index].Path
 		}
-		out, err := r.Command(r.FullContextArgs(key, paths)...)
+		out, err := r.Command(r.fullContextArgs(key, paths)...)
 		var patches map[string]string
 		if err == nil {
-			patches = SplitPatch(string(out))
+			patches = splitPatch(string(out))
 		}
 		var fallback []int
 		for _, index := range indexes {

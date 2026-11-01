@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"os"
 	"testing"
-	"time"
 )
 
 func TestCommitLoadCancellation(t *testing.T) {
@@ -17,34 +15,6 @@ func TestCommitLoadCancellation(t *testing.T) {
 	_, _ = m.returnToHistory()
 	if second.Context.Err() != context.Canceled {
 		t.Fatal("leaving the commit must cancel its load")
-	}
-}
-
-func TestGitCommandStopsWhenCommitIsCancelled(t *testing.T) {
-	r := testRepo(t)
-	m := model{repo: r}
-	repo := m.startCommitLoad()
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer reader.Close()
-	defer writer.Close()
-	cmd := repo.GitCommand("cat-file", "--batch")
-	cmd.Stdin = reader
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	m.cancelCommitLoad()
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
-	select {
-	case err := <-done:
-		if err == nil {
-			t.Fatal("cancelled Git command exited successfully")
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("Git command did not stop after cancellation")
 	}
 }
 

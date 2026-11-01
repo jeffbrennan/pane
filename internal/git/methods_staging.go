@@ -25,7 +25,7 @@ func (r Repo) StageHunk(c Change, patch string, staged bool) error {
 	if staged {
 		args = append(args, "--reverse")
 	}
-	if err := r.ApplyPatch(patch, args...); err != nil {
+	if err := r.applyPatch(patch, args...); err != nil {
 		return fmt.Errorf("could not apply hunk; refresh and try again: %w", err)
 	}
 	return nil

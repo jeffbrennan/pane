@@ -75,7 +75,7 @@ func (r Repo) worktreeBranches() map[string]string {
 
 // worktreeGitDir resolves a worktree's git directory, following the .git file
 // that links a secondary worktree to the common repository.
-func WorktreeGitDir(path string) string {
+func worktreeGitDir(path string) string {
 	dotGit := filepath.Join(path, ".git")
 	info, err := os.Stat(dotGit)
 	if err == nil && info.IsDir() {
@@ -107,7 +107,7 @@ func (r Repo) StatusCount(path string) (int, time.Time, error) {
 		return 0, time.Time{}, err
 	}
 	var activity time.Time
-	if gitDir := WorktreeGitDir(path); gitDir != "" {
+	if gitDir := worktreeGitDir(path); gitDir != "" {
 		if info, err := os.Stat(filepath.Join(gitDir, "index")); err == nil {
 			activity = info.ModTime()
 		}
@@ -138,7 +138,7 @@ func (r Repo) StatusCount(path string) (int, time.Time, error) {
 	return count, activity, nil
 }
 
-func CommonWorktreeDir(entries []WorktreeEntry) string {
+func commonWorktreeDir(entries []WorktreeEntry) string {
 	if len(entries) < 2 {
 		return ""
 	}
@@ -156,7 +156,7 @@ func CommonWorktreeDir(entries []WorktreeEntry) string {
 }
 
 func WorktreeDisplayPath(entries []WorktreeEntry, path string) string {
-	if common := CommonWorktreeDir(entries); common != "" && strings.HasPrefix(path, common+string(filepath.Separator)) {
+	if common := commonWorktreeDir(entries); common != "" && strings.HasPrefix(path, common+string(filepath.Separator)) {
 		return strings.TrimPrefix(path, common+string(filepath.Separator))
 	}
 	return path
@@ -164,7 +164,7 @@ func WorktreeDisplayPath(entries []WorktreeEntry, path string) string {
 
 func WorktreePathFor(entries []WorktreeEntry, root, branch string) string {
 	slug := strings.ReplaceAll(branch, "/", "-")
-	if common := CommonWorktreeDir(entries); common != "" {
+	if common := commonWorktreeDir(entries); common != "" {
 		return filepath.Join(common, slug)
 	}
 	return filepath.Join(filepath.Dir(root), filepath.Base(root)+"-"+slug)

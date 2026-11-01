@@ -41,7 +41,7 @@ func (s *hotSpotReader) start() error {
 	if s.cmd != nil || s.done {
 		return nil
 	}
-	cmd := s.repo.GitCommand(s.args...)
+	cmd := s.repo.gitCommand(s.args...)
 	cmd.Stderr = &s.stderr
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -369,7 +369,7 @@ func parseHotCommitFields(hash, timestamp, author string, fields []string) (HotC
 		return HotCacheCommit{}, fmt.Errorf("unexpected Git hotspot timestamp")
 	}
 	commit := HotCacheCommit{Hash: hash, Time: seconds, Author: author}
-	byPath := make(map[string]*HotCacheChange)
+	byPath := make(map[string]*hotCacheChange)
 	for i := 0; i < len(fields); i++ {
 		line := strings.TrimPrefix(fields[i], "\n")
 		if line == "" {
@@ -394,7 +394,7 @@ func parseHotCommitFields(hash, timestamp, author string, fields []string) (HotC
 		}
 		change := byPath[path]
 		if change == nil {
-			change = &HotCacheChange{Path: path}
+			change = &hotCacheChange{Path: path}
 			byPath[path] = change
 		}
 		change.Added += added

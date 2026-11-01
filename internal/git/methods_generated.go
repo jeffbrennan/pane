@@ -21,7 +21,7 @@ func (r Repo) GeneratedPaths(paths []string) map[string]bool {
 		return generated
 	}
 	input := strings.Join(candidates, "\x00") + "\x00"
-	out, err := r.CommandInput(strings.NewReader(input), "check-attr", "-z", "--stdin", "linguist-generated", "diff")
+	out, err := r.commandInput(strings.NewReader(input), "check-attr", "-z", "--stdin", "linguist-generated", "diff")
 	if err != nil {
 		return generated
 	}

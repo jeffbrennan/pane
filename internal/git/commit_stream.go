@@ -32,7 +32,7 @@ func (r Repo) StreamCommit(ctx context.Context, hash string, firstLines int) <-c
 	patch = append(patch, "--src-prefix=a/", "--dst-prefix=b/", hash, "--")
 	status := []string{"show", "--first-parent", "--format=", "--name-status", "-M", "-z", hash, "--"}
 	source := r.streamPatch(ctx, status, patch, firstLines, func(path, oldPath, diff string, ok bool) (string, error) {
-		return r.CommitFileDiff(hash, path, oldPath, diff, ok)
+		return r.commitFileDiff(hash, path, oldPath, diff, ok)
 	})
 	out := make(chan CommitChunk, 1)
 	go func() {
@@ -75,7 +75,7 @@ func (r Repo) StreamBase(ctx context.Context, hash string, firstLines int) <-cha
 	patch = append(patch, "--src-prefix=a/", "--dst-prefix=b/", hash, "--")
 	status := []string{"diff", "--name-status", "-M", "-z", hash, "--"}
 	source := r.streamPatch(ctx, status, patch, firstLines, func(path, oldPath, diff string, ok bool) (string, error) {
-		return r.BaseFileDiff(hash, path, oldPath, diff, ok)
+		return r.baseFileDiff(hash, path, oldPath, diff, ok)
 	})
 	out := make(chan CommitChunk, 1)
 	go func() {
@@ -89,7 +89,7 @@ func (r Repo) StreamBase(ctx context.Context, hash string, firstLines int) <-cha
 				}
 				continue
 			}
-			untracked, err := r.UntrackedChanges()
+			untracked, err := r.untrackedChanges()
 			if chunk.Err == nil {
 				chunk.Err = err
 			}
@@ -123,7 +123,7 @@ func (r Repo) streamPatch(ctx context.Context, statusArgs, patchArgs []string, f
 			data, err := r.CommandStdout(statusArgs...)
 			status <- statusResult{data, err}
 		}()
-		cmd := r.GitCommand(patchArgs...)
+		cmd := r.gitCommand(patchArgs...)
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 		pipe, err := cmd.StdoutPipe()
@@ -198,7 +198,7 @@ func (r Repo) streamPatch(ctx context.Context, statusArgs, patchArgs []string, f
 			}
 			return nil
 		}
-		reader := NewPatchReader(pipe)
+		reader := newPatchReader(pipe)
 		for {
 			path, section, readErr := reader.Next()
 			if readErr != nil {
@@ -235,7 +235,7 @@ func (r Repo) streamPatch(ctx context.Context, statusArgs, patchArgs []string, f
 	return out
 }
 
-func NewPatchReader(reader io.Reader) *patchReader {
+func newPatchReader(reader io.Reader) *patchReader {
 	return &patchReader{reader: bufio.NewReader(reader)}
 }
 

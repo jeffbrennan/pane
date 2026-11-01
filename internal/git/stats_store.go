@@ -76,7 +76,7 @@ func (s *StatsStore) Fill(commits []CommitInfo) {
 
 // put records counts for commits and appends new ones to the cache file.
 // Write failures only cost a recomputation on the next launch.
-func (s *StatsStore) Put(commits []CommitInfo) {
+func (s *StatsStore) put(commits []CommitInfo) {
 	if s == nil {
 		return
 	}

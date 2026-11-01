@@ -46,7 +46,7 @@ func (r Repo) StashChanges(hash string) ([]Change, error) {
 }
 
 func (r Repo) StashPush() (string, error) {
-	_, entries, err := r.Status()
+	_, entries, err := r.status()
 	if err != nil {
 		return "", err
 	}

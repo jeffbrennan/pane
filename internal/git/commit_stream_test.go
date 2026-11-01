@@ -1,4 +1,4 @@
-package main
+package git
 
 import (
 	"context"
@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 	"testing/iotest"
-
-	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func TestPatchReaderMatchesSplitPatch(t *testing.T) {
@@ -23,9 +21,9 @@ func TestPatchReaderMatchesSplitPatch(t *testing.T) {
 		"Submodule space name contains modified content\nSubmodule space name abc1234..def5678:\n  > subject\n" +
 		"Submodule new module 0000000...abcdef0 (new submodule)\n" +
 		"diff --git a/one b/one\n@@ -1 +1 @@\n-again\n+final"
-	want := git.SplitPatch(patch)
+	want := splitPatch(patch)
 	for _, reader := range []io.Reader{strings.NewReader(patch), iotest.OneByteReader(strings.NewReader(patch)), iotest.HalfReader(strings.NewReader(patch))} {
-		stream := git.NewPatchReader(reader)
+		stream := newPatchReader(reader)
 		got := make(map[string]string)
 		for {
 			path, section, err := stream.Next()
@@ -50,18 +48,17 @@ func TestStreamShape(t *testing.T) {
 	if dir == "" || os.Getenv("PANE_PERF") != "1" {
 		t.Skip("set PANE_PERF=1 and PANE_PERF_REPO")
 	}
-	repo := git.Repo{Root: dir}
+	repo := Repo{Root: dir}
 	revision := os.Getenv("PANE_PERF_COMMIT")
 	if revision == "" {
 		revision = "HEAD"
 	}
-	for chunk := range repo.StreamCommit(context.Background(), revision, git.StartupSyntaxLines) {
-		lines, width := 0, 0
+	for chunk := range repo.StreamCommit(context.Background(), revision, StartupSyntaxLines) {
+		lines := 0
 		for _, c := range chunk.Changes {
 			lines += strings.Count(c.Diff, "\n")
-			width = max(width, lineNumberWidth(strings.Split(c.Diff, "\n")))
 		}
-		t.Logf("loaded=%d files=%d lines=%d width=%d done=%t", chunk.Loaded, len(chunk.Changes), lines, width, chunk.Done)
+		t.Logf("loaded=%d files=%d lines=%d done=%t", chunk.Loaded, len(chunk.Changes), lines, chunk.Done)
 		if chunk.Err != nil {
 			t.Fatal(chunk.Err)
 		}
@@ -83,7 +80,7 @@ func TestStreamCommitMatchesCompleteLoad(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	var got []git.Change
+	var got []Change
 	chunks := 0
 	for chunk := range r.StreamCommit(ctx, "HEAD", 20) {
 		if chunk.Err != nil {
@@ -95,7 +92,7 @@ func TestStreamCommitMatchesCompleteLoad(t *testing.T) {
 	if chunks < 2 {
 		t.Fatal("expected an early chunk")
 	}
-	byPath := make(map[string]git.Change)
+	byPath := make(map[string]Change)
 	for _, c := range got {
 		c.SyntaxSkipped = false
 		byPath[c.Path] = c

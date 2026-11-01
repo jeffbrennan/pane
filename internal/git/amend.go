@@ -26,7 +26,7 @@ func (r Repo) AmendMessage(hash, message string) (string, error) {
 		}
 		urls = append(urls, strings.Split(strings.TrimSuffix(string(pushURLs), "\n"), "\n")...)
 		for _, url := range urls {
-			if err := r.VerifyUnpublished(hash, remote, url); err != nil {
+			if err := r.verifyUnpublished(hash, remote, url); err != nil {
 				return "", err
 			}
 		}
@@ -35,14 +35,14 @@ func (r Repo) AmendMessage(hash, message string) (string, error) {
 	if err != nil || strings.TrimSpace(string(out)) != hash {
 		return "", fmt.Errorf("HEAD changed; refresh history and try again")
 	}
-	out, err = r.CommandInput(strings.NewReader(message), "commit", "--amend", "--only", "--file=-")
+	out, err = r.commandInput(strings.NewReader(message), "commit", "--amend", "--only", "--file=-")
 	if err != nil {
 		return "", GitError(out, err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
 
-func (r Repo) VerifyUnpublished(hash, remote, url string) error {
+func (r Repo) verifyUnpublished(hash, remote, url string) error {
 	refs, err := r.Command("ls-remote", "--refs", "--heads", "--tags", url)
 	if err != nil {
 		return fmt.Errorf("cannot verify remote %q: %w", remote, GitError(refs, err))

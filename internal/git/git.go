@@ -69,7 +69,7 @@ func OpenRepository() (Repo, error) {
 	settings := make(chan Repo, 1)
 	go func() {
 		out, _ := exec.Command("git", "config", "--get-regexp", `^(core\.untrackedcache|status\.showuntrackedfiles)$`).Output()
-		settings <- StatusSettings(string(out))
+		settings <- statusSettings(string(out))
 	}()
 	cmd := exec.Command("git", "rev-parse", "--show-toplevel", "--git-common-dir")
 	out, err := cmd.Output()
@@ -94,7 +94,7 @@ func OpenRepository() (Repo, error) {
 
 // statusSettings reads core.UntrackedCache and status.showUntrackedFiles
 // from git config --get-regexp output.
-func StatusSettings(config string) Repo {
+func statusSettings(config string) Repo {
 	r := Repo{UntrackedCache: true}
 	for _, line := range strings.Split(config, "\n") {
 		key, value, _ := strings.Cut(line, " ")
@@ -114,11 +114,11 @@ func StatusSettings(config string) Repo {
 }
 
 func (r Repo) Command(args ...string) ([]byte, error) {
-	return r.CommandInput(nil, args...)
+	return r.commandInput(nil, args...)
 }
 
 func (r Repo) CommandStdout(args ...string) ([]byte, error) {
-	cmd := r.GitCommand(args...)
+	cmd := r.gitCommand(args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -128,13 +128,13 @@ func (r Repo) CommandStdout(args ...string) ([]byte, error) {
 	return out, nil
 }
 
-func (r Repo) CommandInput(input io.Reader, args ...string) ([]byte, error) {
-	cmd := r.GitCommand(args...)
+func (r Repo) commandInput(input io.Reader, args ...string) ([]byte, error) {
+	cmd := r.gitCommand(args...)
 	cmd.Stdin = input
 	return cmd.CombinedOutput()
 }
 
-func (r Repo) GitCommand(args ...string) *exec.Cmd {
+func (r Repo) gitCommand(args ...string) *exec.Cmd {
 	if r.CommandHook != nil {
 		r.CommandHook(args)
 	}
@@ -162,10 +162,10 @@ func (r Repo) GitCommand(args ...string) *exec.Cmd {
 	return cmd
 }
 
-func (r Repo) ApplyPatch(patch string, args ...string) error {
+func (r Repo) applyPatch(patch string, args ...string) error {
 	args = append([]string{"apply"}, args...)
 	args = append(args, "--whitespace=nowarn", "-")
-	out, err := r.CommandInput(strings.NewReader(patch), args...)
+	out, err := r.commandInput(strings.NewReader(patch), args...)
 	if err != nil {
 		return GitError(out, err)
 	}
@@ -244,13 +244,13 @@ func (r Repo) diffsForChanges(input []Change, staged bool) ([]Change, error) {
 	if err != nil {
 		return nil, GitError(out, err)
 	}
-	patches := SplitPatch(string(out))
+	patches := splitPatch(string(out))
 	changes, err := parallelDiffs(paths, func(path string) (string, error) {
 		if diff, ok := patches[path]; ok {
 			return diff, nil
 		}
 		c := byPath[path]
-		return r.DiffPaths(c.Path, c.OldPath, staged)
+		return r.diffPaths(c.Path, c.OldPath, staged)
 	})
 	for i := range changes {
 		changes[i].OldPath = input[i].OldPath
@@ -260,7 +260,7 @@ func (r Repo) diffsForChanges(input []Change, staged bool) ([]Change, error) {
 
 // splitPatch divides a multi-file patch at its "diff" headers. Paths that Git
 // quoted, and combined conflict diffs, are omitted so callers can load them individually.
-func SplitPatch(patch string) map[string]string {
+func splitPatch(patch string) map[string]string {
 	patches := map[string]string{}
 	var path string
 	start := 0
@@ -354,10 +354,10 @@ func parallelDiffs(paths []string, load func(string) (string, error)) ([]Change,
 }
 
 func (r Repo) Diff(path string, staged bool) (string, error) {
-	return r.DiffPaths(path, "", staged)
+	return r.diffPaths(path, "", staged)
 }
 
-func (r Repo) DiffPaths(path, oldPath string, staged bool) (string, error) {
+func (r Repo) diffPaths(path, oldPath string, staged bool) (string, error) {
 	args := append([]string{"diff"}, r.diffOptions()...)
 	args = append(args, "--src-prefix=a/", "--dst-prefix=b/")
 	if staged {
@@ -375,7 +375,7 @@ func (r Repo) DiffPaths(path, oldPath string, staged bool) (string, error) {
 		if r.IgnoreSpace {
 			original := r
 			original.IgnoreSpace = false
-			unfiltered, err := original.DiffPaths(path, oldPath, staged)
+			unfiltered, err := original.diffPaths(path, oldPath, staged)
 			if err != nil {
 				return "", err
 			}
@@ -462,7 +462,7 @@ func (r Repo) Commit(message string) (string, error) {
 			return "", GitError(out, err)
 		}
 	}
-	out, err = r.CommandInput(strings.NewReader(message), "commit", "--file=-")
+	out, err = r.commandInput(strings.NewReader(message), "commit", "--file=-")
 	if err != nil {
 		return "", GitError(out, err)
 	}

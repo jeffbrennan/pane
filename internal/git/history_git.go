@@ -19,7 +19,7 @@ type CommitInfo struct {
 	StatsLoaded                                 bool
 }
 
-const historyPage = 200
+const HistoryPage = 200
 
 func (r Repo) ResolveCommit(revision string) (CommitInfo, error) {
 	if revision == "" {
@@ -75,10 +75,10 @@ func (r Repo) History(skip, limit int) ([]CommitInfo, error) {
 }
 
 func (r Repo) HistoryWithDate(skip, limit int, dateFormat string) ([]CommitInfo, error) {
-	return r.HistoryWithPath(skip, limit, dateFormat, "")
+	return r.historyWithPath(skip, limit, dateFormat, "")
 }
 
-func (r Repo) HistoryWithPath(skip, limit int, dateFormat, path string) ([]CommitInfo, error) {
+func (r Repo) historyWithPath(skip, limit int, dateFormat, path string) ([]CommitInfo, error) {
 	out, err := r.Command("rev-parse", "--verify", "--quiet", "HEAD")
 	if err != nil {
 		if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 1 {
@@ -162,7 +162,7 @@ func (r Repo) HistoryStats(hashes []string) ([]CommitInfo, error) {
 	}
 	commits, err := parseHistory(out, true)
 	if err == nil {
-		r.Stats.Put(commits)
+		r.Stats.put(commits)
 	}
 	return commits, err
 }
@@ -239,7 +239,7 @@ func (r Repo) CommitChangesFirstScreen(hash, focus string) ([]Change, error) {
 		}
 	}
 	end, shown := start, 0
-	for ; end < len(changes) && shown < startupSyntaxLines; end++ {
+	for ; end < len(changes) && shown < StartupSyntaxLines; end++ {
 		shown += strings.Count(changes[end].Diff, "\n")
 	}
 	first := changes[start:end]
@@ -280,7 +280,7 @@ func (r Repo) CommitChangesWithoutSyntax(hash string) ([]Change, error) {
 	if err != nil {
 		return nil, GitError(patch, err)
 	}
-	patches := SplitPatch(string(patch))
+	patches := splitPatch(string(patch))
 	paths, oldPaths, err := parseCommitPaths(out)
 	if err != nil {
 		return nil, err
@@ -291,7 +291,7 @@ func (r Repo) CommitChangesWithoutSyntax(hash string) ([]Change, error) {
 			return "", r.Context.Err()
 		}
 		diff, ok := patches[path]
-		return r.CommitFileDiff(hash, path, oldPaths[path], diff, ok)
+		return r.commitFileDiff(hash, path, oldPaths[path], diff, ok)
 	})
 	for i := range changes {
 		changes[i].OldPath = oldPaths[changes[i].Path]
@@ -325,11 +325,11 @@ func parseCommitPaths(out []byte) ([]string, map[string]string, error) {
 	return paths, oldPaths, nil
 }
 
-func (r Repo) CommitFileDiff(hash, path, oldPath, diff string, ok bool) (string, error) {
+func (r Repo) commitFileDiff(hash, path, oldPath, diff string, ok bool) (string, error) {
 	return r.revisionFileDiff(commitPatchPrefix, hash, path, oldPath, diff, ok)
 }
 
-func (r Repo) BaseFileDiff(hash, path, oldPath, diff string, ok bool) (string, error) {
+func (r Repo) baseFileDiff(hash, path, oldPath, diff string, ok bool) (string, error) {
 	return r.revisionFileDiff(basePatchPrefix, hash, path, oldPath, diff, ok)
 }
 

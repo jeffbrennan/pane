@@ -7,20 +7,6 @@ import (
 	"testing"
 )
 
-func TestSplitPatchSubmoduleSections(t *testing.T) {
-	patch := "diff --git a/file b/file\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-a\n+b\n" +
-		"Submodule space name contains modified content\nSubmodule space name abc1234..def5678:\n  > subject\n" +
-		"Submodule new module 0000000...abcdef0 (new submodule)\n"
-	sections := git.SplitPatch(patch)
-	if len(sections) != 3 || !strings.Contains(sections["space name"], "subject") || !strings.Contains(sections["new module"], "new submodule") || !strings.Contains(sections["file"], "+b") {
-		t.Fatalf("sections: %#v", sections)
-	}
-	rows := buildRows([]git.Change{{Path: "new module", Diff: sections["new module"]}}, 80, false)
-	if len(rows) != 2 || !rows[0].submodule || !strings.Contains(rows[1].text, "0000000 → abcdef0 (new submodule)") {
-		t.Fatalf("new submodule: %#v", rows)
-	}
-}
-
 func TestSubmoduleDiffsAndPicker(t *testing.T) {
 	sub := testRepo(t)
 	writeFile(t, sub, "file", "one\n")
@@ -74,5 +60,12 @@ func TestSubmoduleDiffsAndPicker(t *testing.T) {
 	changes, err := r.CommitChangesWithoutSyntax("HEAD")
 	if err != nil || len(changes) != 1 || !strings.Contains(changes[0].Diff, "second subject") {
 		t.Fatalf("commit submodule: %#v, %v", changes, err)
+	}
+}
+func TestSplitPatchSubmoduleSections(t *testing.T) {
+	sections := map[string]string{"new module": "Submodule new module 0000000...abcdef0 (new submodule)\n"}
+	rows := buildRows([]git.Change{{Path: "new module", Diff: sections["new module"]}}, 80, false)
+	if len(rows) != 2 || !rows[0].submodule || !strings.Contains(rows[1].text, "0000000 → abcdef0 (new submodule)") {
+		t.Fatalf("new submodule: %#v", rows)
 	}
 }

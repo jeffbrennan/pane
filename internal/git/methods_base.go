@@ -36,7 +36,7 @@ func (r Repo) MergeBase(revision string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func (r Repo) UntrackedChanges() ([]Change, error) {
+func (r Repo) untrackedChanges() ([]Change, error) {
 	out, err := r.Command("ls-files", "--others", "--exclude-standard", "-z")
 	if err != nil {
 		return nil, GitError(out, err)

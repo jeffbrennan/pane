@@ -10,14 +10,14 @@ func (r Repo) FullContext(key Context, base, oldPath string) (string, error) {
 	if oldPath != "" {
 		paths = append(paths, oldPath)
 	}
-	out, err := r.Command(r.FullContextArgs(key, paths)...)
+	out, err := r.Command(r.fullContextArgs(key, paths)...)
 	if err != nil {
 		return "", GitError(out, err)
 	}
 	return string(out), nil
 }
 
-func (r Repo) FullContextArgs(key Context, paths []string) []string {
+func (r Repo) fullContextArgs(key Context, paths []string) []string {
 	args := append([]string{"diff"}, r.diffOptions()...)
 	args = append(args, "--unified=1000000")
 	if key.Base {

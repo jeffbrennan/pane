@@ -27,7 +27,7 @@ func syntaxBudgetEnd(changes []Change) int {
 		}
 		files++
 		lines += strings.Count(c.Diff, "\n")
-		if files > syntaxBudgetFiles || lines > syntaxBudgetLines {
+		if files > SyntaxBudgetFiles || lines > SyntaxBudgetLines {
 			return i
 		}
 	}
@@ -50,8 +50,8 @@ func highlightable(c Change) bool {
 // the viewport (see syntaxDemand), so a huge one neither spawns Git once per
 // file nor tokenizes for seconds.
 const (
-	syntaxBudgetFiles = 20
-	syntaxBudgetLines = 5000
+	SyntaxBudgetFiles = 20
+	SyntaxBudgetLines = 5000
 )
 
 // SyntaxDiffs loads the full-context diffs that highlighting tokenizes. It

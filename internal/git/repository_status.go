@@ -13,7 +13,7 @@ type BranchStatus struct {
 	Available            bool
 }
 
-func ParseBranchStatus(out []byte) BranchStatus {
+func parseBranchStatus(out []byte) BranchStatus {
 	status := BranchStatus{Available: true}
 	for _, record := range bytes.Split(out, []byte{0}) {
 		line := string(record)

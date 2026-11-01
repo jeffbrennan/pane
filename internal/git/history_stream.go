@@ -59,7 +59,7 @@ func (s *HistoryStream) start() error {
 	} else {
 		args = append(args, "--")
 	}
-	cmd := s.repo.GitCommand(args...)
+	cmd := s.repo.gitCommand(args...)
 	cmd.Stderr = &s.stderr
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -195,9 +195,9 @@ func (s *HistoryStream) NextPage(limit int) ([]CommitInfo, error) {
 
 // Reaped reports whether the stream's Git process has exited and been waited
 // on.
-func (s *HistoryStream) Reaped() bool {
+func (s *HistoryStream) reaped() bool {
 	return s.cmd == nil || s.cmd.ProcessState != nil
 }
 
 // Running reports whether the stream has started a Git process.
-func (s *HistoryStream) Running() bool { return s.cmd != nil }
+func (s *HistoryStream) running() bool { return s.cmd != nil }

@@ -31,5 +31,5 @@ func (r Repo) Discard(request DiscardRequest) error {
 		}
 		return nil
 	}
-	return r.ApplyPatch(request.Patch, "--reverse")
+	return r.applyPatch(request.Patch, "--reverse")
 }
