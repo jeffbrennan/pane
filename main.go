@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-isatty"
@@ -1199,19 +1200,23 @@ func wrapLine(s string, width int) []string {
 		return []string{""}
 	}
 	var parts []string
-	var b strings.Builder
-	w := 0
-	for _, r := range s {
+	start, w := 0, 0
+	for index, r := range s {
+		if r == utf8.RuneError {
+			if _, size := utf8.DecodeRuneInString(s[index:]); size == 1 {
+				// Normalize malformed bytes before slicing so each renders as a replacement rune.
+				return wrapLine(strings.Map(func(r rune) rune { return r }, s), width)
+			}
+		}
 		rw := runewidth.RuneWidth(r)
 		if w > 0 && w+rw > width {
-			parts = append(parts, b.String())
-			b.Reset()
+			parts = append(parts, s[start:index])
+			start = index
 			w = 0
 		}
-		b.WriteRune(r)
 		w += rw
 	}
-	return append(parts, b.String())
+	return append(parts, s[start:])
 }
 
 func (m *model) clamp() { m.pos = max(0, min(m.pos, len(m.rows)-1)) }
