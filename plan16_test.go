@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func evalPath(t *testing.T, path string) string {
@@ -342,5 +344,35 @@ func TestHistoryDecoratesOtherWorktreeHeads(t *testing.T) {
 		history: historyState{commits: commits}, worktreeHeads: heads}
 	if view := m.View(); !strings.Contains(view, "⌂ side") {
 		t.Fatalf("missing worktree decoration: %q", view)
+	}
+}
+
+func TestBranchAndWorktreeScreensRender(t *testing.T) {
+	r := testRepo(t)
+	writeFile(t, r, "file.txt", "one\n")
+	if _, err := r.commit("initial"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.command("branch", "side"); err != nil {
+		t.Fatal(err)
+	}
+	worktree := filepath.Join(t.TempDir(), "wt")
+	if _, err := r.command("worktree", "add", worktree, "side"); err != nil {
+		t.Fatal(err)
+	}
+	m := model{width: 120, height: 20, repo: r}
+	updated, cmd := m.openBranches()
+	m = updated.(model)
+	m, _ = applyBatch(t, m, cmd)
+	view := m.View()
+	if !strings.Contains(view, "branches") || !strings.Contains(view, "main") || !strings.Contains(view, "side") {
+		t.Fatalf("branch view: %q", view)
+	}
+	updated, cmd = m.handleBranchKey(tea.KeyMsg{Type: tea.KeyTab})
+	m = updated.(model)
+	m, _ = applyBatch(t, m, cmd)
+	view = m.View()
+	if m.screen != "worktrees" || !strings.Contains(view, "worktrees") || !strings.Contains(view, "side") {
+		t.Fatalf("worktree view: %q", view)
 	}
 }
