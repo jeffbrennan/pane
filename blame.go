@@ -1,10 +1,6 @@
 package main
 
 import (
-	"fmt"
-	"strconv"
-	"strings"
-
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -67,22 +63,9 @@ func (m model) startBlame() (tea.Model, tea.Cmd) {
 	jumps := append([]jumpLocation(nil), view.jumps...)
 	jumpIndex := view.jumpIndex
 	return m, func() tea.Msg {
-		out, err := repo.Command("blame", "-L", fmt.Sprintf("%d,%d", line, line), "--porcelain", hash+"^", "--", oldPath)
+		blamed, final, err := repo.Blame(hash, oldPath, line)
 		if err != nil {
-			// A root commit has no parent to blame.
-			out, err = repo.Command("blame", "-L", fmt.Sprintf("%d,%d", line, line), "--porcelain", hash, "--", oldPath)
-		}
-		if err != nil {
-			return blameLoaded{err: gitError(out, err)}
-		}
-		fields := strings.Fields(strings.SplitN(string(out), "\n", 2)[0])
-		if len(fields) < 3 {
-			return blameLoaded{err: fmt.Errorf("unexpected git blame output")}
-		}
-		blamed := strings.TrimPrefix(fields[0], "^")
-		final, err := strconv.Atoi(fields[2])
-		if err != nil {
-			final = line
+			return blameLoaded{err: err}
 		}
 		commit, err := repo.ResolveCommit(blamed)
 		if err != nil {
