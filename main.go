@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"runtime/pprof"
 	"runtime/trace"
 	"strings"
@@ -114,6 +115,11 @@ type model struct {
 }
 
 func main() {
+	if debug.SetMemoryLimit(-1) > 1<<40 {
+		// Large diffs otherwise let the runtime grow the heap well past what
+		// the rows need; 1 GiB keeps collection responsive without thrashing.
+		debug.SetMemoryLimit(1 << 30)
+	}
 	repo, err := openRepository()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

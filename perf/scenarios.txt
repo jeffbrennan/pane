@@ -1,0 +1,8 @@
+# External commit scenarios for PANE_PERF_REPO. Lines: name<TAB>repository<TAB>revision
+# The synthetic scenarios in perf_test.go run without these.
+huge-commit	../bun	a47a315
+# huge-file	../bun	<commit touching a large generated file>
+# long-lines	../bun	<commit with minified JavaScript>
+# range	../bun	HEAD~100..HEAD
+# base	../bun	-b main
+# history	../bun	HEAD

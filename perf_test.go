@@ -155,6 +155,21 @@ func TestPerf(t *testing.T) {
 	measurePerf(t, scenario, "picker_key_ns", func() { picker.handlePickerKey("j", nil) })
 	measurePerf(t, scenario, "picker_render_ns", func() { _ = picker.View() })
 	measurePerf(t, scenario, "wrap_toggle_ns", func() { _, _ = view.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("w")}) })
+	measurePerf(t, scenario, "whitespace_toggle_ns", func() {
+		toggle := view
+		toggle.repo.ignoreSpace = false
+		_, _ = toggle.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("W")})
+	})
+	if len(changes) > 0 {
+		c := changes[0]
+		key := contextKey{commit: view.history.current.hash, path: c.path}
+		demand := view
+		demand.syntaxDemand = &syntaxDemand{loaded: make(map[contextKey]demandSyntax), pending: make(map[contextKey]bool)}
+		measurePerf(t, scenario, "syntax_demand_apply_ns", func() {
+			demand.syntaxDemand.loaded = make(map[contextKey]demandSyntax)
+			demand.applySyntaxDemandLoaded(syntaxDemandLoaded{results: []demandResult{{key: key, diff: c.diff, syntaxDiff: c.diff}}})
+		})
+	}
 	measurePerf(t, scenario, "jump_file_ns", func() { _, _ = view.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("J")}) })
 	measurePerf(t, scenario, "jump_end_ns", func() { _, _ = view.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")}) })
 	runtime.GC()
@@ -176,6 +191,42 @@ func TestPerf(t *testing.T) {
 	measureSyntaxPerf(t)
 	measureRefreshPerf(t)
 	measureSyntheticScenarios(t)
+	measureViewScenarios(t)
+}
+
+func measureViewScenarios(t *testing.T) {
+	changes := make([]change, 25)
+	for i := range changes {
+		changes[i] = change{path: fmt.Sprintf("file-%02d.go", i), diff: "@@ -0,0 +1,10 @@\n" + strings.Repeat("+var value = 1\n", 10)}
+	}
+	rangeModel := model{width: 160, height: 50, wrap: true, screen: "sequence"}
+	rangeModel.sequence.commits = make([]commitInfo, 100)
+	rangeModel.sequence.changes = make([][]change, 100)
+	rangeModel.sequence.states = make([]sequenceLoadState, 100)
+	for i := range rangeModel.sequence.commits {
+		rangeModel.sequence.commits[i] = commitInfo{hash: fmt.Sprintf("%08x", i)}
+		rangeModel.sequence.states[i] = sequenceReady
+		rangeModel.sequence.changes[i] = changes
+	}
+	rangeModel.rebuildSequence()
+	measurePerf(t, "synthetic-range", "rebuild_ns", rangeModel.rebuildSequence)
+	measurePerf(t, "synthetic-range", "view_ns", func() { _ = rangeModel.View() })
+	recordPerf(t, "synthetic-range", "commits", int64(len(rangeModel.sequence.commits)))
+
+	baseModel := model{width: 160, height: 50, wrap: true, screen: "base", history: historyState{changes: changes, current: commitInfo{hash: "base"}}}
+	baseModel.rebuildCommit()
+	measurePerf(t, "synthetic-base", "build_ns", baseModel.rebuildCommit)
+	measurePerf(t, "synthetic-base", "view_ns", func() { _ = baseModel.View() })
+
+	historyModel := model{width: 160, height: 50, screen: "history"}
+	historyModel.history.commits = make([]commitInfo, 500)
+	for i := range historyModel.history.commits {
+		historyModel.history.commits[i] = commitInfo{hash: fmt.Sprintf("%08x", i), subject: fmt.Sprintf("commit %d", i)}
+	}
+	measurePerf(t, "synthetic-history", "view_ns", func() { _ = historyModel.View() })
+	historyModel.history.filter = "commit 4"
+	measurePerf(t, "synthetic-history", "filtered_view_ns", func() { _ = historyModel.View() })
+	recordPerf(t, "synthetic-history", "commits", 500)
 }
 
 func measureSyntheticScenarios(t *testing.T) {
