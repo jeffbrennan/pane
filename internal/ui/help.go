@@ -85,7 +85,7 @@ var shortcutSections = []shortcutSection{
 		{"ctrl-e / ctrl-y", "Scroll the diff viewport"},
 		{"} / {", "Next / previous group"},
 		{"J / K", "Next / previous file"},
-		{") / (", "Next / previous commit in the list"},
+		{") / (", "Next / previous commit in history or a range"},
 		{"]c / [c", "Next / previous change"},
 		{"gH / gM / gL", "Top / middle / bottom of screen"},
 		{"zt / zz / zb", "Align the active line"},

@@ -348,3 +348,53 @@ func TestSequenceDraftFindsMatchesAsTheyLoad(t *testing.T) {
 		t.Fatalf("draft search not updated: row=%#v view=%q", m.rows[m.pos], plain(m.View()))
 	}
 }
+
+func sequenceJumpFixture(states ...sequenceLoadState) model {
+	m := model{width: 100, height: 12, wrap: true, screen: "sequence", sequence: sequenceState{
+		commits: []git.CommitInfo{{Hash: "11111111", Subject: "one"}, {Hash: "22222222", Subject: "two"}, {Hash: "33333333", Subject: "three"}},
+		changes: [][]git.Change{{longFile("one.go")}, {longFile("two.go")}, {longFile("three.go")}},
+		states:  states, errors: make([]string, 3),
+	}}
+	m.rebuildSequence()
+	return m
+}
+
+func TestSequenceParenJumpsBetweenCommits(t *testing.T) {
+	m := sequenceJumpFixture(sequenceReady, sequenceReady, sequenceReady)
+	if m.rows[m.pos].commitIndex != 0 {
+		t.Fatalf("did not start on the first commit: %#v", m.rows[m.pos])
+	}
+	m = keys(t, m, ")")
+	if m.rows[m.pos].commitIndex != 1 || m.viewTop != m.pos {
+		t.Fatalf(") did not put commit 2 at the top: pos=%d top=%d row=%#v", m.pos, m.viewTop, m.rows[m.pos])
+	}
+	m = keys(t, m, "2", ")")
+	if m.rows[m.pos].commitIndex != 2 || m.viewTop != m.pos {
+		t.Fatalf("2) did not reach commit 3: pos=%d top=%d row=%#v", m.pos, m.viewTop, m.rows[m.pos])
+	}
+	m = keys(t, m, ")")
+	if m.flash != "last commit in range" || m.rows[m.pos].commitIndex != 2 {
+		t.Fatalf("past the last commit: flash=%q row=%#v", m.flash, m.rows[m.pos])
+	}
+	m = keys(t, m, "(", "(")
+	if m.rows[m.pos].commitIndex != 0 {
+		t.Fatalf("( did not walk back to commit 1: %#v", m.rows[m.pos])
+	}
+	m = keys(t, m, "(")
+	if m.flash != "first commit in range" || m.rows[m.pos].commitIndex != 0 {
+		t.Fatalf("before the first commit: flash=%q row=%#v", m.flash, m.rows[m.pos])
+	}
+}
+
+func TestSequenceParenWaitsForAnUnloadedCommit(t *testing.T) {
+	m := sequenceJumpFixture(sequenceReady, sequencePending, sequenceReady)
+	m = keys(t, m, ")")
+	if !m.sequence.jumpPending || m.sequence.jumpCommit != 1 || m.rows[m.pos].commitIndex != 0 {
+		t.Fatalf("jump did not wait for the commit: %#v %#v", m.sequence, m.rows[m.pos])
+	}
+	updated, _ := m.Update(sequenceLoaded{index: 1, request: m.sequence.request, commit: git.CommitInfo{Hash: "22222222", Subject: "two"}, changes: []git.Change{longFile("two.go")}})
+	m = updated.(model)
+	if m.sequence.jumpPending || m.rows[m.pos].commitIndex != 1 || m.viewTop != m.pos {
+		t.Fatalf("jump did not land once the commit loaded: %#v pos=%d top=%d", m.sequence, m.pos, m.viewTop)
+	}
+}
