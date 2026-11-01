@@ -42,7 +42,7 @@ perf:
     export PANE_PERF_RUN="$(date -u +%Y%m%dT%H%M%S)-$$"
     PANE_PERF=1 PANE_PERF_LOG=.scratch/perf-log.tsv PANE_PERF_PROFILES=.scratch/profiles go test -run '^TestPerf$' -count=1 -v .
     go build -o .scratch/perf-pane .
-    go run ./perf/firstpaint -repo "${PANE_PERF_REPO:-.}" -revision "${PANE_PERF_COMMIT:-HEAD}" -idle "${PANE_PERF_IDLE:-60s}" -content "${PANE_PERF_CONTENT:-}" -key "${PANE_PERF_KEY:-}" -after "${PANE_PERF_AFTER:-}" -log .scratch/perf-log.tsv
+    go run ./perf/firstpaint -repo "${PANE_PERF_REPO:-.}" -revision "${PANE_PERF_COMMIT:-HEAD}" -idle "${PANE_PERF_IDLE:-60s}" -content "${PANE_PERF_CONTENT:-}" -key "${PANE_PERF_KEY:-}" -after "${PANE_PERF_AFTER:-}" -wait "${PANE_PERF_WAIT:-read-only}" -log .scratch/perf-log.tsv
 
 perf-external:
     #!/usr/bin/env bash
@@ -50,7 +50,7 @@ perf-external:
     mkdir -p .scratch .scratch/profiles
     export PANE_PERF_RUN="$(date -u +%Y%m%dT%H%M%S)-$$"
     go build -o .scratch/perf-pane .
-    while IFS=$'\t' read -r name repo revision extra; do
+    while IFS=$'\t' read -r name repo revision extra wait; do
         case "$name" in ''|'#'*) continue ;; esac
         if [ ! -d "$repo" ]; then
             echo "skip $name: $repo is not available"
@@ -58,9 +58,9 @@ perf-external:
         fi
         PANE_PERF=1 PANE_PERF_SCENARIO="$name" PANE_PERF_REPO="$repo" PANE_PERF_COMMIT="$revision" PANE_PERF_LOG=.scratch/perf-log.tsv PANE_PERF_PROFILES=.scratch/profiles go test -run '^TestPerf$' -count=1 -v .
         if [ -n "${extra:-}" ]; then
-            go run ./perf/firstpaint -scenario "$name" -repo "$repo" -args "$extra" -idle "${PANE_PERF_IDLE:-60s}" -key "${PANE_PERF_KEY:-}" -after "${PANE_PERF_AFTER:-}" -content "${PANE_PERF_CONTENT:-}" -log .scratch/perf-log.tsv
+            go run ./perf/firstpaint -scenario "$name" -repo "$repo" -args "$extra" -idle "${PANE_PERF_IDLE:-60s}" -key "${PANE_PERF_KEY:-}" -after "${PANE_PERF_AFTER:-}" -content "${PANE_PERF_CONTENT:-}" -wait "${wait:-read-only}" -log .scratch/perf-log.tsv
         else
-            go run ./perf/firstpaint -scenario "$name" -repo "$repo" -revision "$revision" -idle "${PANE_PERF_IDLE:-60s}" -key "${PANE_PERF_KEY:-}" -after "${PANE_PERF_AFTER:-}" -content "${PANE_PERF_CONTENT:-}" -log .scratch/perf-log.tsv
+            go run ./perf/firstpaint -scenario "$name" -repo "$repo" -revision "$revision" -idle "${PANE_PERF_IDLE:-60s}" -key "${PANE_PERF_KEY:-}" -after "${PANE_PERF_AFTER:-}" -content "${PANE_PERF_CONTENT:-}" -wait "${wait:-read-only}" -log .scratch/perf-log.tsv
         fi
     done < perf/scenarios.txt
 
@@ -73,6 +73,21 @@ perf-multi:
     set -eu
     go build -o .scratch/perf-pane .
     go run ./perf/firstpaint -binary .scratch/perf-pane -instances "${PANE_PERF_INSTANCES:-3}" -worktrees "${PANE_PERF_WORKTREES:?set PANE_PERF_WORKTREES}" -idle "${PANE_PERF_IDLE:-60s}" -log .scratch/perf-log.tsv
+
+# A dirty-tree scenario in a throwaway worktree, so the repo is not modified.
+perf-dirty:
+    #!/usr/bin/env bash
+    set -eu
+    repo="${PANE_PERF_REPO:-../bun}"
+    files="${PANE_PERF_DIRTY_FILES:-300}"
+    go build -o .scratch/perf-pane .
+    worktree="$(mktemp -d "${TMPDIR:-/tmp}/pane-dirty.XXXXXX")"
+    trap 'git -C "$repo" worktree remove --force "$worktree" >/dev/null 2>&1 || true' EXIT
+    git -C "$repo" worktree add -q --detach "$worktree" HEAD
+    git -C "$worktree" ls-files -z | tr '\0' '\n' | head -n "$files" | while IFS= read -r path; do
+        printf '\n// perf dirty tree\n' >> "$worktree/$path"
+    done
+    go run ./perf/firstpaint -binary .scratch/perf-pane -scenario dirty-tree -repo "$worktree" -args - -wait "unstaged|staged|clean" -idle "${PANE_PERF_IDLE:-60s}" -log .scratch/perf-log.tsv
 
 perf-check:
     #!/usr/bin/env bash

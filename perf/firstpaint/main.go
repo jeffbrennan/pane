@@ -30,6 +30,7 @@ func main() {
 	worktrees := flag.String("worktrees", "", "comma-separated worktree paths, or a directory of worktrees")
 	logPath := flag.String("log", "", "append metrics to this TSV file")
 	content := flag.String("content", os.Getenv("PANE_PERF_CONTENT"), "first diff text to wait for")
+	wait := flag.String("wait", "read-only", "text (or |-separated alternatives) that marks the first painted frame")
 	key := flag.String("key", "", "key to send after the title appears")
 	after := flag.String("after", "", "wait for this text before sending the key")
 	flag.Parse()
@@ -40,7 +41,7 @@ func main() {
 		}
 		return
 	}
-	if err := run(*binary, *repo, *revision, *scenario, *args, *idle, *settle, *logPath, *content, *key, *after); err != nil {
+	if err := run(*binary, *repo, *revision, *scenario, *args, *idle, *settle, *logPath, *content, *key, *after, *wait); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -49,6 +50,7 @@ func main() {
 type terminalOutput struct {
 	tail    []byte
 	painted bool
+	waits   []string
 	content string
 	found   bool
 	after   string
@@ -64,7 +66,7 @@ func (output *terminalOutput) feed(data []byte, terminal io.Writer) (bool, bool,
 			_, _ = io.WriteString(terminal, "\x1b[1;1R")
 		case bytes.HasSuffix(output.tail, []byte("\x1b]11;?\x1b\\")):
 			_, _ = io.WriteString(terminal, "\x1b]11;rgb:0000/0000/0000\x1b\\")
-		case !output.painted && bytes.HasSuffix(output.tail, []byte("read-only")):
+		case !output.painted && matchesAnySuffix(output.tail, output.waits):
 			output.painted, painted = true, true
 		}
 		if output.content != "" && !output.found && bytes.HasSuffix(output.tail, []byte(output.content)) {
@@ -82,7 +84,19 @@ func (output *terminalOutput) feed(data []byte, terminal io.Writer) (bool, bool,
 	return painted, found, ready
 }
 
-func run(binary, repo, revision, scenario, paneArgs string, idle, settle time.Duration, logPath, content, key, after string) error {
+func matchesAnySuffix(data []byte, suffixes []string) bool {
+	if len(suffixes) == 0 {
+		suffixes = []string{"read-only"}
+	}
+	for _, suffix := range suffixes {
+		if suffix != "" && bytes.HasSuffix(data, []byte(suffix)) {
+			return true
+		}
+	}
+	return false
+}
+
+func run(binary, repo, revision, scenario, paneArgs string, idle, settle time.Duration, logPath, content, key, after, waitText string) error {
 	if idle < 0 || settle < 0 {
 		return fmt.Errorf("idle and settle durations cannot be negative")
 	}
@@ -120,7 +134,7 @@ func run(binary, repo, revision, scenario, paneArgs string, idle, settle time.Du
 	readDone := make(chan struct{})
 	go func() {
 		defer close(readDone)
-		output := terminalOutput{content: content, after: after}
+		output := terminalOutput{content: content, after: after, waits: strings.Split(waitText, "|")}
 		buffer := make([]byte, 8192)
 		for {
 			n, err := terminal.Read(buffer)
