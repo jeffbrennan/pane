@@ -11,6 +11,7 @@ import (
 
 func hotFixture(t *testing.T) repository {
 	t.Helper()
+	t.Setenv("HOME", t.TempDir())
 	r := testRepo(t)
 	old := time.Now().Add(-400 * 24 * time.Hour).Format(time.RFC3339)
 	t.Setenv("GIT_AUTHOR_DATE", old)

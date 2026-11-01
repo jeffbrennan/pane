@@ -98,7 +98,7 @@ func (r repository) hotspots(since, author string) ([]hotFile, map[string]*hotAu
 			return nil, nil, err
 		}
 		commits = fresh
-		cutoff = oldestHotCommit(commits, now)
+		cutoff = oldestHotCommit(commits)
 	}
 	commits = pruneHotCommits(commits, cutoff)
 	paths := make([]string, 0, len(commits))
@@ -264,15 +264,12 @@ func advanceHotCutoff(cache hotCache, since string, now time.Time) int64 {
 	return max(0, cutoff)
 }
 
-func oldestHotCommit(commits []hotCacheCommit, now time.Time) int64 {
+func oldestHotCommit(commits []hotCacheCommit) int64 {
 	oldest := int64(0)
 	for _, commit := range commits {
 		if oldest == 0 || commit.Time < oldest {
 			oldest = commit.Time
 		}
-	}
-	if oldest == 0 {
-		return now.Unix()
 	}
 	return oldest
 }
