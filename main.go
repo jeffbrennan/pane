@@ -1510,6 +1510,9 @@ func (m *model) rebuildRows(previous func(path string) ([]row, bool)) {
 	}
 	m.gutterWidth = gutterWidth
 	m.previousChanges = nil
+	if m.contextCommit != "" && !m.contextBase {
+		rows = markMovedBlocks(rows)
+	}
 	m.applyViewed(rows, changes)
 	rows = m.insertNoteRows(rows)
 	rows = m.localContextRows(rows, changes)
@@ -2297,6 +2300,9 @@ func (m model) renderDiffRowWithGutter(r row, active bool, gutter string) string
 	case 'n':
 		color = styleDim
 	}
+	if r.isMoved() {
+		color = styleDim
+	}
 	if (r.kind == 'f' || r.kind == 'F') && len(inline) > 0 && strings.HasPrefix(text, gutter) {
 		highlight := "\x1b[48;2;100;38;43m"
 		if r.renameAdded {
@@ -2310,7 +2316,7 @@ func (m model) renderDiffRowWithGutter(r row, active bool, gutter string) string
 		}
 		text = color + gutter + renderSyntaxWithHighlight(text[len(gutter):], nil, inline, 0, query, color, m.lightTheme, highlight) + "\x1b[0m"
 		color = ""
-	} else if (syntax != nil || r.kind == '+' || r.kind == '-' || r.kind == 'd') && strings.HasPrefix(text, gutter) {
+	} else if (syntax != nil || r.kind == '+' || r.kind == '-' || r.kind == 'd') && !r.isMoved() && strings.HasPrefix(text, gutter) {
 		visible := text[len(gutter):]
 		start := 0
 		if !m.wrap {

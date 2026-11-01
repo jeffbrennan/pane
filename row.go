@@ -24,6 +24,7 @@ type wideRowIndexes struct {
 	line, header     int
 	generatedAdded   int
 	generatedDeleted int
+	moved            bool
 }
 
 // The sentinel preserves full native-int values, including MinInt32 itself.
@@ -70,6 +71,19 @@ func (r *row) setGeneratedCounts(added, deleted int) {
 		wide = *old
 	}
 	wide.generatedAdded, wide.generatedDeleted = added, deleted
+	r.spans = newRowSpans(r.syntaxSpans(), r.inlineSpans(), &wide)
+}
+
+func (r row) isMoved() bool {
+	return r.spans != nil && r.spans.wide != nil && r.spans.wide.moved
+}
+
+func (r *row) setMoved() {
+	wide := wideRowIndexes{}
+	if old := r.wideIndexes(); old != nil {
+		wide = *old
+	}
+	wide.moved = true
 	r.spans = newRowSpans(r.syntaxSpans(), r.inlineSpans(), &wide)
 }
 
