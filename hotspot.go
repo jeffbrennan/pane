@@ -65,32 +65,86 @@ type hotspotSequenceLoaded struct {
 
 func hotSinceDefault() string { return "1.year" }
 
-// hotspots runs one streamed git log over the window and folds numstat into
-// per-file and per-author churn.
+// hotspots folds per-commit numstat into per-file and per-author churn. The
+// cache keeps each commit's numstat, so a later launch with a moved HEAD reads
+// only the commits after the cached tip.
 func (r repository) hotspots(since, author string) ([]hotFile, map[string]*hotAuthor, error) {
 	head := ""
 	if out, err := r.command("rev-parse", "--verify", "--quiet", "HEAD"); err == nil {
 		head = strings.TrimSpace(string(out))
 	}
+	now := time.Now()
 	cachePath := hotCachePath(r.root, since, author)
-	if files, authors, ok := readHotCache(cachePath, head); ok {
-		return files, authors, nil
+	cache, cached := readHotCache(cachePath, since, author)
+	var commits []hotCacheCommit
+	cutoff := int64(0)
+	loaded := false
+	if cached && head != "" && cache.Head == head {
+		cutoff = advanceHotCutoff(cache, since, now)
+		commits = pruneHotCommits(cache.Commits, cutoff)
+		loaded = true
+	} else if cached && cache.Head != "" && head != "" && r.isAncestor(cache.Head, head) {
+		cutoff = advanceHotCutoff(cache, since, now)
+		fresh, err := r.hotCommits(since, author, cache.Head+".."+head)
+		if err == nil {
+			commits = pruneHotCommits(cache.Commits, cutoff)
+			commits = append(commits, pruneHotCommits(fresh, cutoff)...)
+			loaded = true
+		}
 	}
-	args := []string{"log", "--numstat", "-M", "-z", "--format=%x00%H%x00%at%x00%aN"}
+	if !loaded {
+		fresh, err := r.hotCommits(since, author, "")
+		if err != nil {
+			return nil, nil, err
+		}
+		commits = fresh
+		cutoff = oldestHotCommit(commits, now)
+	}
+	commits = pruneHotCommits(commits, cutoff)
+	paths := make([]string, 0, len(commits))
+	seen := make(map[string]bool)
+	for _, commit := range commits {
+		for _, change := range commit.Changes {
+			if !seen[change.Path] {
+				seen[change.Path] = true
+				paths = append(paths, change.Path)
+			}
+		}
+	}
+	generated := r.generatedPaths(paths)
+	files, authors := aggregateHotspots(commits, generated, cutoff, now)
+	writeHotCache(cachePath, head, since, author, cutoff, now.Unix(), commits)
+	return files, authors, nil
+}
+
+func (r repository) isAncestor(ancestor, descendant string) bool {
+	_, err := r.command("merge-base", "--is-ancestor", ancestor, descendant)
+	return err == nil
+}
+
+// hotCommits reads numstat for a revision range, or for the whole window when
+// revisionRange is empty.
+func (r repository) hotCommits(since, author, revisionRange string) ([]hotCacheCommit, error) {
+	args := []string{"log", "--numstat", "-M", "-z", "--format=%x00%H%x00%ct%x00%aN"}
 	if since != "" {
 		args = append(args, "--since="+since)
 	}
 	if author != "" {
 		args = append(args, "--author="+author)
 	}
+	if revisionRange != "" {
+		args = append(args, revisionRange)
+	}
 	args = append(args, "--")
 	out, err := r.commandStdout(args...)
 	if err != nil {
-		return nil, nil, gitError(out, err)
+		return nil, gitError(out, err)
 	}
-	files := make(map[string]*hotFile)
-	authors := make(map[string]*hotAuthor)
-	now := time.Now()
+	return parseHotCommits(out), nil
+}
+
+func parseHotCommits(out []byte) []hotCacheCommit {
+	var commits []hotCacheCommit
 	fields := bytes.Split(out, []byte{0})
 	for i := 0; i < len(fields); {
 		if len(fields[i]) != 0 {
@@ -101,18 +155,9 @@ func (r repository) hotspots(since, author string) ([]hotFile, map[string]*hotAu
 			break
 		}
 		seconds, _ := strconv.ParseInt(string(fields[i+2]), 10, 64)
-		authorName := string(fields[i+3])
+		commit := hotCacheCommit{Hash: string(fields[i+1]), Time: seconds, Author: string(fields[i+3])}
 		i += 4
-		when := time.Unix(seconds, 0)
-		age := max(0, now.Sub(when).Seconds())
-		weight := math.Pow(0.5, age/hotHalfLife.Seconds())
-		author := authors[authorName]
-		if author == nil {
-			author = &hotAuthor{name: authorName, dirs: make(map[string]int)}
-			authors[authorName] = author
-		}
-		author.commits++
-		seen := make(map[string]bool)
+		byPath := make(map[string]*hotCacheChange)
 		for i < len(fields) && len(fields[i]) != 0 {
 			line := strings.TrimPrefix(string(fields[i]), "\n")
 			i++
@@ -137,43 +182,113 @@ func (r repository) hotspots(since, author string) ([]hotFile, map[string]*hotAu
 			if addErr != nil || delErr != nil {
 				continue
 			}
-			file := files[path]
-			if file == nil {
-				file = &hotFile{path: path, authors: make(map[string]int)}
-				files[path] = file
+			change := byPath[path]
+			if change == nil {
+				change = &hotCacheChange{Path: path}
+				byPath[path] = change
 			}
-			file.added += added
-			file.deleted += deleted
-			file.score += float64(added+deleted) * weight
+			change.Added += added
+			change.Deleted += deleted
+		}
+		for _, change := range byPath {
+			commit.Changes = append(commit.Changes, *change)
+		}
+		sort.Slice(commit.Changes, func(i, j int) bool { return commit.Changes[i].Path < commit.Changes[j].Path })
+		commits = append(commits, commit)
+	}
+	return commits
+}
+
+func aggregateHotspots(commits []hotCacheCommit, generated map[string]bool, cutoff int64, now time.Time) ([]hotFile, map[string]*hotAuthor) {
+	files := make(map[string]*hotFile)
+	authors := make(map[string]*hotAuthor)
+	for _, commit := range commits {
+		if commit.Time < cutoff {
+			continue
+		}
+		when := time.Unix(commit.Time, 0)
+		age := max(0, now.Sub(when).Seconds())
+		weight := math.Pow(0.5, age/hotHalfLife.Seconds())
+		author := authors[commit.Author]
+		if author == nil {
+			author = &hotAuthor{name: commit.Author, dirs: make(map[string]int)}
+			authors[commit.Author] = author
+		}
+		author.commits++
+		for _, change := range commit.Changes {
+			if generated[change.Path] {
+				continue
+			}
+			file := files[change.Path]
+			if file == nil {
+				file = &hotFile{path: change.Path, authors: make(map[string]int)}
+				files[change.Path] = file
+			}
+			file.added += change.Added
+			file.deleted += change.Deleted
+			file.score += float64(change.Added+change.Deleted) * weight
 			if when.After(file.last) {
 				file.last = when
 			}
-			file.authors[authorName] += added + deleted
-			author.churn += added + deleted
-			if dir := topDir(path); dir != "" {
+			file.authors[commit.Author] += change.Added + change.Deleted
+			file.commits++
+			author.churn += change.Added + change.Deleted
+			if dir := topDir(change.Path); dir != "" {
 				author.dirs[dir]++
 			}
-			if !seen[path] {
-				file.commits++
-				seen[path] = true
-			}
 		}
 	}
-	paths := make([]string, 0, len(files))
-	for path := range files {
-		paths = append(paths, path)
-	}
-	generated := r.generatedPaths(paths)
 	result := make([]hotFile, 0, len(files))
 	for _, file := range files {
-		if generated[file.path] {
-			continue
-		}
 		result = append(result, *file)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].score > result[j].score })
-	writeHotCache(cachePath, head, since, author, result, authors)
-	return result, authors, nil
+	return result, authors
+}
+
+func pruneHotCommits(commits []hotCacheCommit, cutoff int64) []hotCacheCommit {
+	pruned := commits[:0]
+	for _, commit := range commits {
+		if commit.Time >= cutoff {
+			pruned = append(pruned, commit)
+		}
+	}
+	return pruned
+}
+
+func advanceHotCutoff(cache hotCache, since string, now time.Time) int64 {
+	cutoff := cache.Cutoff
+	if relativeSince(since) && cache.CachedAt > 0 {
+		cutoff += now.Unix() - cache.CachedAt
+	}
+	return max(0, cutoff)
+}
+
+func oldestHotCommit(commits []hotCacheCommit, now time.Time) int64 {
+	oldest := int64(0)
+	for _, commit := range commits {
+		if oldest == 0 || commit.Time < oldest {
+			oldest = commit.Time
+		}
+	}
+	if oldest == 0 {
+		return now.Unix()
+	}
+	return oldest
+}
+
+// relativeSince reports whether Git's window is relative to now, so the cached
+// cutoff should advance by the time that passed.
+func relativeSince(since string) bool {
+	if since == "" || strings.ContainsAny(since, "-/:") {
+		return false
+	}
+	for _, r := range since {
+		if r >= '0' && r <= '9' {
+			return true
+		}
+	}
+	return false
 }
 
 func topDir(path string) string {
@@ -183,29 +298,29 @@ func topDir(path string) string {
 	return "."
 }
 
+const hotCacheVersion = 1
+
 type hotCache struct {
-	Head    string           `json:"head"`
-	Since   string           `json:"since"`
+	Version  int              `json:"version"`
+	Head     string           `json:"head"`
+	Since    string           `json:"since"`
+	Author   string           `json:"author"`
+	Cutoff   int64            `json:"cutoff"`
+	CachedAt int64            `json:"cached_at"`
+	Commits  []hotCacheCommit `json:"commits"`
+}
+
+type hotCacheCommit struct {
+	Hash    string           `json:"hash"`
+	Time    int64            `json:"time"`
 	Author  string           `json:"author"`
-	Files   []hotCacheFile   `json:"files"`
-	Authors []hotCacheAuthor `json:"authors"`
+	Changes []hotCacheChange `json:"changes"`
 }
 
-type hotCacheFile struct {
-	Path    string         `json:"path"`
-	Added   int            `json:"added"`
-	Deleted int            `json:"deleted"`
-	Commits int            `json:"commits"`
-	Score   float64        `json:"score"`
-	Last    int64          `json:"last"`
-	Authors map[string]int `json:"authors"`
-}
-
-type hotCacheAuthor struct {
-	Name    string         `json:"name"`
-	Commits int            `json:"commits"`
-	Churn   int            `json:"churn"`
-	Dirs    map[string]int `json:"dirs"`
+type hotCacheChange struct {
+	Path    string `json:"path"`
+	Added   int    `json:"added"`
+	Deleted int    `json:"deleted"`
 }
 
 func hotCachePath(root, since, author string) string {
@@ -217,40 +332,26 @@ func hotCachePath(root, since, author string) string {
 	return filepath.Join(dir, "pane", "hot-"+hex.EncodeToString(sum[:8]))
 }
 
-func readHotCache(path, head string) ([]hotFile, map[string]*hotAuthor, bool) {
-	if path == "" || head == "" {
-		return nil, nil, false
+func readHotCache(path, since, author string) (hotCache, bool) {
+	if path == "" {
+		return hotCache{}, false
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, nil, false
+		return hotCache{}, false
 	}
 	var cache hotCache
-	if err := json.Unmarshal(data, &cache); err != nil || cache.Head != head {
-		return nil, nil, false
+	if err := json.Unmarshal(data, &cache); err != nil || cache.Version != hotCacheVersion || cache.Since != since || cache.Author != author {
+		return hotCache{}, false
 	}
-	files := make([]hotFile, len(cache.Files))
-	for i, file := range cache.Files {
-		files[i] = hotFile{path: file.Path, added: file.Added, deleted: file.Deleted, commits: file.Commits, score: file.Score, last: time.Unix(file.Last, 0), authors: file.Authors}
-	}
-	authors := make(map[string]*hotAuthor, len(cache.Authors))
-	for _, author := range cache.Authors {
-		authors[author.Name] = &hotAuthor{name: author.Name, commits: author.Commits, churn: author.Churn, dirs: author.Dirs}
-	}
-	return files, authors, true
+	return cache, true
 }
 
-func writeHotCache(path, head, since, author string, files []hotFile, authors map[string]*hotAuthor) {
+func writeHotCache(path, head, since, author string, cutoff, cachedAt int64, commits []hotCacheCommit) {
 	if path == "" {
 		return
 	}
-	cache := hotCache{Head: head, Since: since, Author: author}
-	for _, file := range files {
-		cache.Files = append(cache.Files, hotCacheFile{Path: file.path, Added: file.added, Deleted: file.deleted, Commits: file.commits, Score: file.score, Last: file.last.Unix(), Authors: file.authors})
-	}
-	for _, item := range authors {
-		cache.Authors = append(cache.Authors, hotCacheAuthor{Name: item.name, Commits: item.commits, Churn: item.churn, Dirs: item.dirs})
-	}
+	cache := hotCache{Version: hotCacheVersion, Head: head, Since: since, Author: author, Cutoff: cutoff, CachedAt: cachedAt, Commits: commits}
 	data, err := json.Marshal(cache)
 	if err != nil {
 		return

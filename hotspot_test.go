@@ -199,3 +199,77 @@ func TestHotspotFileHistoryKeepsWindow(t *testing.T) {
 		t.Fatalf("file history: %#v", m.history)
 	}
 }
+
+func TestHotspotCacheLoadsOnlyNewCommitsAfterHeadMoves(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	r := hotFixture(t)
+	if _, _, err := r.hotspots("2.year", ""); err != nil {
+		t.Fatal(err)
+	}
+	tip, err := r.command("rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, r, "later.txt", "later\n")
+	if _, err := r.commit("later change"); err != nil {
+		t.Fatal(err)
+	}
+	head, err := r.command("rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logs [][]string
+	r.commandHook = func(args []string) {
+		if len(args) > 0 && args[0] == "log" {
+			logs = append(logs, append([]string(nil), args...))
+		}
+	}
+	files, _, err := r.hotspots("2.year", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("second launch ran %d git log commands: %v", len(logs), logs)
+	}
+	joined := strings.Join(logs[0], " ")
+	wantRange := strings.TrimSpace(string(tip)) + ".." + strings.TrimSpace(string(head))
+	if !strings.Contains(joined, "--numstat") || !strings.Contains(joined, wantRange) {
+		t.Fatalf("incremental log did not use the cached tip: %s", joined)
+	}
+	paths := map[string]bool{}
+	for _, file := range files {
+		paths[file.path] = true
+	}
+	if !paths["later.txt"] || !paths["recent.txt"] || !paths["old-big.txt"] {
+		t.Fatalf("merged files: %#v", paths)
+	}
+	for _, file := range files {
+		if file.path == "later.txt" && (file.added != 1 || file.commits != 1) {
+			t.Fatalf("new commit was not merged: %#v", file)
+		}
+	}
+}
+
+func TestHotspotCacheFallsBackWhenHistoryIsRewritten(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	r := hotFixture(t)
+	if _, _, err := r.hotspots("2.year", ""); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, r, "later.txt", "later\n")
+	if _, err := r.commit("later change"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.command("reset", "--hard", "HEAD~1"); err != nil {
+		t.Fatal(err)
+	}
+	files, _, err := r.hotspots("2.year", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		if file.path == "later.txt" {
+			t.Fatalf("rewritten history kept a commit that is no longer reachable: %#v", file)
+		}
+	}
+}
