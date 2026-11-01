@@ -21,6 +21,49 @@ type baseLoaded struct {
 	err     error
 }
 
+// defaultBase picks the upstream branch, then origin's default branch, for
+// `pane -b` with no revision.
+func (r repository) defaultBase() (string, error) {
+	if out, err := r.command("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"); err == nil {
+		if name := strings.TrimSpace(string(out)); name != "" && name != "@{upstream}" {
+			return name, nil
+		}
+	}
+	if out, err := r.command("symbolic-ref", "--short", "refs/remotes/origin/HEAD"); err == nil {
+		if name := strings.TrimSpace(string(out)); name != "" {
+			return name, nil
+		}
+	}
+	return "", fmt.Errorf("no upstream branch; pass a base revision, for example pane -b main")
+}
+
+// openBaseFrom starts a base review from a history commit to the working tree.
+func (m model) openBaseFrom(revision string) (tea.Model, tea.Cmd) {
+	hash, err := m.repo.mergeBase(revision)
+	if err != nil {
+		m.flash = "Base review: " + err.Error()
+		return m, nil
+	}
+	m.screen = "base"
+	m.base = baseState{revision: revision, hash: hash, initialized: true}
+	m.history.directCommit = true
+	m.history.changes, m.history.rows = nil, nil
+	m.history.request++
+	m.base.request++
+	m.startCommitLoad()
+	m.contextFiles = nil
+	m.history.streamPaths, m.history.streamLoaded, m.history.streamGutter = nil, 0, 0
+	m.history.streamError, m.history.streamEndPending = "", false
+	m.history.streamActive = true
+	m.history.loading = true
+	m.history.commitLoadingVisible = false
+	m.history.pos, m.history.horizontal, m.history.viewTop = 0, 0, 0
+	m.picker.pendingPath = ""
+	m.collapsedFiles, m.generatedHandled = nil, nil
+	repo := m.commitRepository()
+	return m, tea.Batch(startBaseStream(repo, hash, m.base.request, m.height), commitLoadingTimer(m.history.request))
+}
+
 func (r repository) mergeBase(revision string) (string, error) {
 	commit, err := r.resolveCommit(revision)
 	if err != nil {

@@ -39,6 +39,8 @@ type historyState struct {
 	positions                                           map[string]commitPosition
 	pendingPosition                                     *commitPosition
 	pendingStep                                         int
+	visualActive                                        bool
+	visualAnchor                                        int
 	expandedDeleted                                     map[string]bool
 	jumps                                               []jumpLocation
 	jumpIndex                                           int
@@ -507,6 +509,10 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	page := max(1, (m.historyAvailable()-1)/3)
 	switch key.String() {
 	case "esc", "q":
+		if m.history.visualActive {
+			m.history.visualActive = false
+			return m, nil
+		}
 		if m.history.path != "" {
 			return m.leaveFileHistory()
 		}
@@ -542,6 +548,11 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m, refreshCmd = m.refresh()
 		m, historyCmd = m.reloadHistory()
 		return m, tea.Batch(refreshCmd, historyCmd)
+	case "R":
+		if len(matches) == 0 || m.history.loading {
+			break
+		}
+		return m.openBaseFrom(matches[min(m.history.selected, len(matches)-1)].hash)
 	case "/":
 		m.history.searching = true
 		m.history.draft = m.history.filter
@@ -611,7 +622,27 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(matches) == 0 || m.history.loading {
 			break
 		}
+		if key.String() == "enter" && m.history.visualActive {
+			lo, hi := m.history.visualAnchor, min(m.history.selected, len(matches)-1)
+			if lo > hi {
+				lo, hi = hi, lo
+			}
+			lo, hi = max(0, lo), min(hi, len(matches)-1)
+			m.history.visualActive = false
+			next, err := newSequenceModel(m.repo, append([]commitInfo(nil), matches[lo:hi+1]...))
+			if err != nil {
+				m.flash = err.Error()
+				break
+			}
+			next.width, next.height, next.wrap = m.width, m.height, m.wrap
+			next.viewed = m.viewed
+			return next, next.Init()
+		}
 		return m.openCommit(matches[min(m.history.selected, len(matches)-1)])
+	case "V":
+		m.history.visualActive = !m.history.visualActive
+		m.history.visualAnchor = m.history.selected
+
 	}
 	return m, nil
 }
@@ -909,6 +940,11 @@ func (m model) historyView() string {
 		spacing = 1
 	}
 	offset, _ := m.historyViewport(len(matches))
+	visualLo, visualHi := -1, -1
+	if m.history.visualActive {
+		visualLo = max(0, min(m.history.visualAnchor, selected))
+		visualHi = min(len(matches)-1, max(m.history.visualAnchor, selected))
+	}
 	var content []string
 	if spacing > 0 && len(matches) > 0 {
 		content = append(content, "")
@@ -919,6 +955,8 @@ func (m model) historyView() string {
 		subject := styleDim + "  " + fit(clean(c.subject), max(0, m.width-2)) + styleReset
 		if i == selected {
 			subject = styleBold + m.accent() + "▸ " + styleReset + styleBold + fit(clean(c.subject), max(0, m.width-2)) + styleReset
+		} else if i >= visualLo && i <= visualHi {
+			subject = styleBold + m.accent() + "│ " + styleReset + styleBold + fit(clean(c.subject), max(0, m.width-2)) + styleReset
 		}
 		date := historyCommitTime(c.date, now)
 		meta := historyMetadata(c, date, m.width, i == selected, m.accent())
@@ -944,6 +982,12 @@ func (m model) historyView() string {
 		}
 	}
 	status, hints := "", keyHints("↵", "open", "/", "search", "?", "help")
+	if m.history.visualActive {
+		lo, hi := visualLo, visualHi
+		count := max(0, hi-lo+1)
+		status = fmt.Sprintf("%d commit(s) selected", count)
+		hints = keyHints("↵", "review", "esc", "cancel")
+	}
 	if m.history.searching {
 		status, hints = "/"+renderInput(m.history.draft, m.history.draftCursor, max(1, m.width-1)), keyHints("↵", "open", "esc", "cancel")
 	} else if m.history.filter != "" {

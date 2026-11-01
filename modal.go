@@ -62,6 +62,8 @@ var shortcutSections = []struct {
 		{"/", "Search commits"},
 		{"u", "Edit latest unpublished commit message"},
 		{"S", "Open stashes"},
+		{"R", "Review from this commit to the working tree"},
+		{"V", "Select a commit range to review"},
 		{"esc / q", "Back"},
 	}},
 	{"Stashes", []shortcut{

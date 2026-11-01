@@ -262,7 +262,7 @@ func initialModel(repo repository, args []string) (model, error) {
 	if len(args) == 3 && args[0] == "log" && args[1] == "--" {
 		return initialFileHistory(repo, args[2])
 	}
-	if len(args) > 2 || (len(args) == 2 && args[0] != "--base" && args[0] != "-b") || (len(args) == 1 && (args[0] == "--base" || args[0] == "-b")) {
+	if len(args) > 2 || (len(args) == 2 && args[0] != "--base" && args[0] != "-b") {
 		return model{}, fmt.Errorf("%s", fileHistoryUsage())
 	}
 	m := model{repo: repo, wrap: true, loading: true, startup: true, viewed: newViewedStore(repo.root)}
@@ -275,6 +275,12 @@ func initialModel(repo repository, args []string) (model, error) {
 		if base == "" || strings.HasPrefix(base, "-") {
 			return model{}, fmt.Errorf("invalid base %q", base)
 		}
+	} else if args[0] == "--base" || args[0] == "-b" {
+		upstream, err := repo.defaultBase()
+		if err != nil {
+			return model{}, err
+		}
+		base = upstream
 	} else if strings.HasSuffix(args[0], "...") && !strings.Contains(strings.TrimSuffix(args[0], "..."), "..") {
 		base = strings.TrimSuffix(args[0], "...")
 		if base == "" {

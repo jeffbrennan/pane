@@ -76,12 +76,23 @@ func initialSequence(repo repository, input io.Reader) (model, error) {
 	if len(commits) == 0 {
 		return model{}, fmt.Errorf("no commits in input; use git log --oneline | pane")
 	}
+	return newSequenceModel(repo, commits)
+}
+
+// newSequenceModel starts the multi-commit review for already parsed commits.
+func newSequenceModel(repo repository, commits []commitInfo) (model, error) {
+	if len(commits) == 0 {
+		return model{}, fmt.Errorf("no commits in input; use git log --oneline | pane")
+	}
+	if len(commits) > maxSequenceCommits {
+		return model{}, fmt.Errorf("commit input exceeds %d commits", maxSequenceCommits)
+	}
 	state := sequenceState{commits: commits, changes: make([][]change, len(commits)), states: make([]sequenceLoadState, len(commits)), errors: make([]string, len(commits)), loading: true, request: 1}
 	state.states[0] = sequenceLoading
 	state.states[len(commits)-1] = sequenceLoading
 	return model{
 		repo: repo, wrap: true, loading: true, startup: true, screen: "sequence",
-		sequence: state,
+		sequence: state, viewed: newViewedStore(repo.root),
 	}, nil
 }
 
