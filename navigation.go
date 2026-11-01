@@ -1,5 +1,7 @@
 package main
 
+import "strings"
+
 func (m *model) reveal() {
 	available := max(1, m.height-2)
 	top := m.viewportStart(available)
@@ -205,4 +207,117 @@ func (m *model) handleDiffNavigation(key string) bool {
 		return false
 	}
 	return true
+}
+
+func (m *model) clamp() { m.pos = max(0, min(m.pos, len(m.rows)-1)) }
+
+// lineStart returns the first row of the wrapped line containing row i.
+func (m model) lineStart(i int) int {
+	for i > 0 && i < len(m.rows) && m.rows[i].offset > 0 {
+		i--
+	}
+	return i
+}
+
+// lineRows converts a count of whole lines from the active line into a row
+// delta, so j and k step over wrapped continuation rows.
+func (m model) lineRows(n int) int {
+	if len(m.rows) == 0 {
+		return 0
+	}
+	pos := m.lineStart(m.pos)
+	for ; n > 0; n-- {
+		next := pos + 1
+		for next < len(m.rows) && m.rows[next].offset > 0 {
+			next++
+		}
+		if next >= len(m.rows) {
+			break
+		}
+		pos = next
+	}
+	for ; n < 0 && pos > 0; n++ {
+		pos = m.lineStart(pos - 1)
+	}
+	return pos - m.pos
+}
+
+// move moves the active row by n rows, landing on the start of a line.
+func (m *model) move(n int) {
+	visible := max(1, m.height-2)
+	top := m.viewportStart(visible)
+	wasVisible := m.pos >= top && m.pos < top+visible
+	from := m.pos
+	m.pos += n
+	m.clamp()
+	if start := m.lineStart(m.pos); start > from || n <= 0 {
+		m.pos = start
+	} else if next := m.pos + m.lineRows(1); next > m.pos {
+		// A downward move that would snap back to where it started skips to
+		// the next line instead.
+		m.pos = next
+	}
+	m.reveal()
+	if wasVisible {
+		if n > 0 {
+			m.viewTop = max(m.viewTop, top)
+		} else if n < 0 {
+			m.viewTop = min(m.viewTop, top)
+		}
+	}
+}
+
+func (m *model) paragraphJump(direction int) {
+	if len(m.rows) == 0 {
+		return
+	}
+	i := m.pos + direction
+	if paragraphBoundary(m.rows[m.pos]) {
+		for i >= 0 && i < len(m.rows) && paragraphBoundary(m.rows[i]) {
+			i += direction
+		}
+	}
+	for i >= 0 && i < len(m.rows) && !paragraphBoundary(m.rows[i]) {
+		i += direction
+	}
+	m.pos = max(0, min(i, len(m.rows)-1))
+	m.reveal()
+}
+
+func paragraphBoundary(r row) bool {
+	return r.kind == 'f' || (r.kind == '@' && strings.TrimSpace(r.text) == "···") || strings.TrimSpace(r.text) == ""
+}
+
+func diffMargin(width int) int {
+	if width < 3 {
+		return 1
+	}
+	return 2
+}
+
+func (m model) viewportStart(available int) int {
+	available = max(1, available)
+	top := max(0, min(m.viewTop, max(0, len(m.rows)-available)))
+	if m.pos < top {
+		top = m.pos
+	}
+	if m.pos >= top+available {
+		top = m.pos - available + 1
+	}
+	return max(0, min(top, max(0, len(m.rows)-available)))
+}
+
+func (m *model) jump(direction int) {
+	if len(m.rows) == 0 {
+		return
+	}
+	path := m.rows[m.pos].path
+	for i := m.pos + direction; i >= 0 && i < len(m.rows); i += direction {
+		if m.rows[i].kind == 'f' && (m.rows[i].path != path || (m.screen == "sequence" && m.rows[i].commitIndex != m.rows[m.pos].commitIndex)) {
+			m.pos = i
+			m.positionViewport("t")
+			return
+		}
+	}
+	m.reveal()
 }
