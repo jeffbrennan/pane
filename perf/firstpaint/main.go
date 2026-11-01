@@ -247,6 +247,13 @@ func runMulti(binary, repo, worktrees string, instances int, idle, settle time.D
 	if err != nil {
 		return err
 	}
+	gitLog, err := os.CreateTemp("", "pane-multi-git-*.log")
+	if err != nil {
+		return err
+	}
+	gitLogPath := gitLog.Name()
+	gitLog.Close()
+	defer os.Remove(gitLogPath)
 	type instance struct {
 		cmd      *exec.Cmd
 		terminal *os.File
@@ -265,6 +272,7 @@ func runMulti(binary, repo, worktrees string, instances int, idle, settle time.D
 	for i := 0; i < instances; i++ {
 		cmd := exec.Command(abs)
 		cmd.Dir = paths[i]
+		cmd.Env = append(os.Environ(), "PANE_PERF_GIT_LOG="+gitLogPath)
 		terminal, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: 160, Rows: 50})
 		if err != nil {
 			return err
@@ -310,13 +318,8 @@ func runMulti(binary, repo, worktrees string, instances int, idle, settle time.D
 		startBytes[i] = pane.bytes.Load()
 		startCPU[i] = processCPU(pane.cmd.Process.Pid)
 	}
-	var gitSamples, samples int
-	deadline := time.Now().Add(idle)
-	for time.Now().Before(deadline) {
-		gitSamples += countGitStatusProcesses()
-		samples++
-		time.Sleep(250 * time.Millisecond)
-	}
+	gitStart := countLines(gitLogPath)
+	time.Sleep(idle)
 	var totalBytes, totalCPU, totalRSS int64
 	for i, pane := range panes {
 		totalBytes += pane.bytes.Load() - startBytes[i]
@@ -346,17 +349,18 @@ func runMulti(binary, repo, worktrees string, instances int, idle, settle time.D
 			totalRSS += rss
 		}
 	}
+	gitCommands := countLines(gitLogPath) - gitStart
 	perMinute := int64(0)
-	if samples > 0 && idle > 0 {
-		perMinute = int64(float64(gitSamples) * 60 / idle.Seconds())
+	if idle > 0 {
+		perMinute = int64(float64(gitCommands) * 60 / idle.Seconds())
 	}
 	metrics := map[string]int64{
-		"multi_instances":             int64(len(panes)),
-		"multi_total_rss_bytes":       totalRSS,
-		"multi_total_cpu_ns":          totalCPU,
-		"multi_idle_terminal_bytes":   totalBytes,
-		"multi_git_processes_per_min": perMinute,
-		"multi_idle_duration_ns":      idle.Nanoseconds(),
+		"multi_instances":            int64(len(panes)),
+		"multi_total_rss_bytes":      totalRSS,
+		"multi_total_cpu_ns":         totalCPU,
+		"multi_idle_terminal_bytes":  totalBytes,
+		"multi_git_commands_per_min": perMinute,
+		"multi_idle_duration_ns":     idle.Nanoseconds(),
 	}
 	for name, value := range metrics {
 		fmt.Printf("multi %s %d\n", name, value)
@@ -393,12 +397,12 @@ func resolveWorktrees(repo, list string, instances int) []string {
 	return parts
 }
 
-func countGitStatusProcesses() int {
-	out, err := exec.Command("pgrep", "-f", "git status").Output()
+func countLines(path string) int {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return 0
 	}
-	return len(strings.Fields(strings.TrimSpace(string(out))))
+	return bytes.Count(data, []byte("\n"))
 }
 
 func appendMetric(path, scenario, metric string, value int64) error {

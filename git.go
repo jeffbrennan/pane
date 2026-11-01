@@ -138,6 +138,13 @@ func (r repository) gitCommand(args ...string) *exec.Cmd {
 	if r.commandHook != nil {
 		r.commandHook(args)
 	}
+	if path := os.Getenv("PANE_PERF_GIT_LOG"); path != "" {
+		// Perf harnesses count Git work without sampling process tables.
+		if file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600); err == nil {
+			fmt.Fprintln(file, strings.Join(args, " "))
+			file.Close()
+		}
+	}
 	ctx := r.context
 	if ctx == nil {
 		ctx = context.Background()

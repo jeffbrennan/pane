@@ -31,8 +31,7 @@ PANE_PERF_WORKTREES="../wt1,../wt2,../wt3" just perf-multi
 
 `PANE_PERF_WORKTREES` accepts a comma-separated list or a directory whose
 subdirectories are worktrees. The run leaves one pane focused, sends focus-out
-to the rest, and logs combined RSS, CPU, terminal bytes and the observed
-`git status` rate per minute under the `multi` scenario.
+to the rest, and logs combined RSS, CPU, terminal bytes and the observed Git command rate per minute under the `multi` scenario.
 
 `perf-diff` labels every row `noise`, `improved`, or `regressed` using plan
 14's rule (5%, or 2 ms for durations under 40 ms). It omits `idle_cpu_ns` and
