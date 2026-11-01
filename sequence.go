@@ -172,7 +172,7 @@ func (m *model) rebuildSequence() {
 	if hasSearchAnchor {
 		found := false
 		for i, r := range rows {
-			if r.commitIndex == searchAnchor.commitIndex && r.path == searchAnchor.path && r.kind == searchAnchor.kind && r.line == searchAnchor.line && r.offset == searchAnchor.offset {
+			if r.commitIndex == searchAnchor.commitIndex && r.path == searchAnchor.path && r.kind == searchAnchor.kind && r.lineNumber() == searchAnchor.lineNumber() && r.offset == searchAnchor.offset {
 				m.search.origin = i
 				found = true
 				break
@@ -194,7 +194,7 @@ func (m *model) rebuildSequence() {
 			if r.commitIndex != anchor.commitIndex || r.path != anchor.path || r.kind != anchor.kind {
 				continue
 			}
-			if r.line == anchor.line && r.offset <= anchor.offset {
+			if r.lineNumber() == anchor.lineNumber() && r.offset <= anchor.offset {
 				best = i
 			}
 		}

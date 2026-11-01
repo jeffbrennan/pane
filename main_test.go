@@ -21,7 +21,7 @@ func TestNavigationAndRefreshAnchor(t *testing.T) {
 	}
 	m.move(2)
 	m.rebuild()
-	if m.rows[m.pos].path != "one" || m.rows[m.pos].line != 2 {
+	if m.rows[m.pos].path != "one" || m.rows[m.pos].lineNumber() != 2 {
 		t.Fatal("refresh anchor")
 	}
 }
@@ -79,7 +79,7 @@ func TestWrappedActiveLineSurvivesRefreshAndResize(t *testing.T) {
 	updated, _ = m.Update(tea.WindowSizeMsg{Width: 20, Height: 10})
 	m = updated.(model)
 	got := m.rows[m.pos]
-	if got.line != original.line || got.offset > original.offset || (m.pos+1 < len(m.rows) && m.rows[m.pos+1].line == got.line && m.rows[m.pos+1].offset <= original.offset) {
+	if got.lineNumber() != original.lineNumber() || got.offset > original.offset || (m.pos+1 < len(m.rows) && m.rows[m.pos+1].lineNumber() == got.lineNumber() && m.rows[m.pos+1].offset <= original.offset) {
 		t.Fatalf("resize lost position: got %#v, original %#v", got, original)
 	}
 }
@@ -92,7 +92,7 @@ func TestCommitWrappedLineSurvivesResize(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 20, Height: 10})
 	m = updated.(model)
 	got := m.history.rows[m.history.pos]
-	if got.line != original.line || got.offset == 0 || got.offset > original.offset {
+	if got.lineNumber() != original.lineNumber() || got.offset == 0 || got.offset > original.offset {
 		t.Fatalf("commit resize lost position: %#v", got)
 	}
 }

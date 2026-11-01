@@ -124,7 +124,7 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 	rows := make([]row, 0, strings.Count(c.diff, "\n")+3)
 	oldSyntax, newSyntax := syntaxLinesFor(c.path, c.syntaxDiff, c.diff)
 	if separated {
-		rows = append(rows, row{path: c.path, line: -2, kind: 's'})
+		rows = append(rows, row{path: c.path, lineIndex: -2, kind: 's'})
 	}
 	deletedFile := strings.Contains(c.diff, "\ndeleted file mode ") && !strings.Contains(c.diff, "\nnew file mode ")
 	deletedLines := 0
@@ -144,7 +144,7 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 		name = displayPath(c.oldPath, shortPaths)
 	}
 	_, _, submodule := submoduleLine(strings.SplitN(c.diff, "\n", 2)[0])
-	header := row{path: c.path, oldPath: c.oldPath, line: -1, text: " " + name, kind: 'f', submodule: submodule}
+	header := row{path: c.path, oldPath: c.oldPath, lineIndex: -1, text: " " + name, kind: 'f', submodule: submodule}
 	if deletedFile && !expanded {
 		header.deletedLines = deletedLines
 	}
@@ -191,7 +191,7 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 				label += " · e expand"
 			}
 		}
-		rows = append(rows, row{path: c.path, line: 0, text: label, kind: '@'})
+		rows = append(rows, row{path: c.path, text: label, kind: '@'})
 		if !expanded {
 			return rows
 		}
@@ -205,7 +205,7 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 			oldLine, _ = strconv.Atoi(match[1])
 			newLine, _ = strconv.Atoi(match[3])
 			if hunks > 0 {
-				rows = append(rows, row{path: c.path, line: i, target: newLine, text: "  ···", kind: '@'})
+				rows = append(rows, (row{path: c.path, target: newLine, text: "  ···", kind: '@'}).withLineNumber(i))
 			}
 			hunks++
 			inHunk = true
@@ -237,7 +237,7 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 		}
 		kind := line[0]
 		if kind == '\\' {
-			rows = append(rows, row{path: c.path, line: i, target: max(1, newLine-1), text: "  " + clean(line[2:]), kind: '@'})
+			rows = append(rows, (row{path: c.path, target: max(1, newLine-1), text: "  " + clean(line[2:]), kind: '@'}).withLineNumber(i))
 			continue
 		}
 		if kind != ' ' && kind != '+' && kind != '-' {
@@ -273,7 +273,7 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 				spans = clipSyntax(lineSyntax.spans, byteOffset, byteOffset+len(part))
 			}
 			inlineSpans := clipSyntax(inline[i], byteOffset, byteOffset+len(part))
-			rows = append(rows, row{path: c.path, line: i, offset: offset, target: target, sourceLine: number, text: part, kind: kind, spans: newRowSpans(spans, inlineSpans), syntaxPresent: spans != nil})
+			rows = append(rows, (row{path: c.path, offset: offset, target: target, sourceLine: number, text: part, kind: kind, spans: newRowSpans(spans, inlineSpans, nil), syntaxPresent: spans != nil}).withLineNumber(i))
 			byteOffset += len(part)
 			for _, r := range part {
 				offset += runewidth.RuneWidth(r)
@@ -292,12 +292,12 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 			if (text == "New empty file" || text == "Deleted empty file") && containsBinary(metadata) {
 				continue
 			}
-			rows = append(rows, row{path: c.path, line: len(lines), text: "  " + text, kind: '@', submodule: submodule})
+			rows = append(rows, (row{path: c.path, text: "  " + text, kind: '@', submodule: submodule}).withLineNumber(len(lines)))
 		}
 	} else {
 		for _, text := range metadata {
 			if strings.HasPrefix(text, "old mode ") || strings.HasPrefix(text, "new mode ") {
-				rows = append(rows, row{path: c.path, line: len(lines), text: "  " + text, kind: '@'})
+				rows = append(rows, (row{path: c.path, text: "  " + text, kind: '@'}).withLineNumber(len(lines)))
 			}
 		}
 	}
@@ -313,7 +313,7 @@ func indexRowHeaders(rows []row) {
 		if rows[i].kind == 'f' {
 			headerIndex = i + 1
 		} else {
-			rows[i].headerIndex = headerIndex
+			rows[i].setHeaderRow(headerIndex)
 		}
 	}
 }

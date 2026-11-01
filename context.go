@@ -93,7 +93,7 @@ func (m model) localContextRows(rows []row, changes []change) []row {
 			}
 			if !show {
 				if gap == nil {
-					separator := row{path: path, line: r.line, target: r.target, text: "  ···", kind: '@'}
+					separator := (row{path: path, target: r.target, text: "  ···", kind: '@'}).withLineNumber(r.lineNumber())
 					gap = &separator
 				}
 				continue
@@ -133,7 +133,7 @@ func (m model) changeContext(key string) (tea.Model, tea.Cmd) {
 		m.collapsedFiles[fileKey] = true
 		m = m.inDiff(func(view *model) {
 			if view.rows[view.pos].kind != 'f' && view.rows[view.pos].kind != 'F' {
-				view.pos = max(0, view.rows[view.pos].headerIndex-1)
+				view.pos = max(0, view.rows[view.pos].headerRow()-1)
 			}
 		})
 		return m.rebuildContext(), nil

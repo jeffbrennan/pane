@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"math"
+	"strconv"
+	"testing"
+)
 
 func TestRowSpansAreSparseAndCopyOnWrite(t *testing.T) {
 	var original row
@@ -44,5 +48,74 @@ func TestHighlightRowsDoesNotModifyCopiedRows(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("missing added row")
+	}
+}
+
+func TestRowIndexBoundaries(t *testing.T) {
+	values := []int{math.MinInt32, math.MinInt32 + 1, -2, -1, 0, 1, math.MaxInt32}
+	if strconv.IntSize > 32 {
+		high := int64(math.MaxInt32) + 1
+		low := int64(math.MinInt32) - 1
+		values = append(values, int(low), int(high), int(high+12345))
+	}
+	for _, line := range values {
+		for _, header := range values {
+			var r row
+			r.setLineNumber(line)
+			r.setHeaderRow(header)
+			if gotLine, gotHeader := r.lineNumber(), r.headerRow(); gotLine != line || gotHeader != header {
+				t.Fatalf("line/header = %d/%d, want %d/%d", gotLine, gotHeader, line, header)
+			}
+			if line > math.MinInt32 && line <= math.MaxInt32 && header > math.MinInt32 && header <= math.MaxInt32 && r.spans != nil {
+				t.Fatal("compact indexes unexpectedly allocated overflow storage")
+			}
+		}
+	}
+}
+
+func TestWideRowIndexesSurviveSpanChangesAndCopies(t *testing.T) {
+	var original row
+	original.setLineNumber(math.MinInt32)
+	original.setHeaderRow(math.MinInt32)
+	original.setSyntaxSpans([]syntaxSpan{{start: 0, end: 1, color: "red"}})
+	original.setInlineSpans([]syntaxSpan{{start: 1, end: 2}})
+	copy := original
+	copy.setLineNumber(math.MinInt32 + 1)
+	copy.setHeaderRow(math.MaxInt32)
+	copy.setSyntaxSpans(nil)
+	if original.lineNumber() != math.MinInt32 || original.headerRow() != math.MinInt32 || len(original.syntaxSpans()) != 1 {
+		t.Fatal("updating the copy changed the original")
+	}
+	if copy.lineNumber() != math.MinInt32+1 || copy.headerRow() != math.MaxInt32 || copy.syntaxSpans() != nil || len(copy.inlineSpans()) != 1 {
+		t.Fatal("compact indexes or spans changed unexpectedly")
+	}
+	if copy.wideIndexes() != nil {
+		t.Fatal("unused overflow storage was retained")
+	}
+	if strconv.IntSize > 32 {
+		copy = original
+		low := int64(math.MinInt32) - 1
+		copy.setHeaderRow(int(low))
+		if original.headerRow() != math.MinInt32 || copy.headerRow() != int(low) || copy.lineNumber() != math.MinInt32 {
+			t.Fatal("overflow updates were not isolated")
+		}
+	}
+}
+
+func TestLargeSourceLinesAndOutOfRangeHeaders(t *testing.T) {
+	if strconv.IntSize <= 32 {
+		t.Skip("source line exceeds native int range")
+	}
+	large := int64(math.MaxInt32) + 1
+	diff := "@@ -0,0 +" + strconv.FormatInt(large, 10) + " @@\n+large line\n"
+	rows := buildRows([]change{{path: "file", diff: diff}}, 80, false)
+	m := model{width: 80, height: 10, gutterWidth: 10, rows: rows}
+	m.sourceLineJump(int(large))
+	if got := m.rows[m.pos]; got.sourceLine != int(large) || got.target != int(large) {
+		t.Fatalf("large source line was truncated: %#v", got)
+	}
+	m.rows[m.pos].setHeaderRow(int(large))
+	if m.fileHeaderAt(m.pos) != nil {
+		t.Fatal("out-of-range header should not refer to a visible row")
 	}
 }

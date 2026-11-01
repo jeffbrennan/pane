@@ -1144,7 +1144,7 @@ func (m *model) rebuild() {
 			if r.path != anchor.path {
 				continue
 			}
-			if r.line < anchor.line || (r.line == anchor.line && r.offset <= anchor.offset) {
+			if r.lineNumber() < anchor.lineNumber() || (r.lineNumber() == anchor.lineNumber() && r.offset <= anchor.offset) {
 				best = i
 				continue
 			}

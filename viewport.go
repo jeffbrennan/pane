@@ -4,7 +4,7 @@ func (m model) fileHeaderAt(index int) *row {
 	if index < 0 || index >= len(m.rows) || m.rows[index].kind == 'f' || m.rows[index].kind == 'F' {
 		return nil
 	}
-	header := m.rows[index].headerIndex - 1
+	header := m.rows[index].headerRow() - 1
 	if header >= 0 && header < index && m.rows[header].kind == 'f' {
 		if m.rows[header].oldPath != "" {
 			pinned := m.rows[header]

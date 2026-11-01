@@ -111,7 +111,7 @@ func (m *model) appendCommitChanges(changes []change, done bool) {
 			}
 		}
 		rows = slices.Grow(rows, total)
-		header := rows[len(rows)-1].headerIndex
+		header := rows[len(rows)-1].headerRow()
 		if rows[len(rows)-1].kind == 'f' {
 			header = len(rows)
 		}
@@ -120,7 +120,7 @@ func (m *model) appendCommitChanges(changes []change, done bool) {
 				if part[i].kind == 'f' {
 					header = len(rows) + i + 1
 				} else {
-					part[i].headerIndex = header
+					part[i].setHeaderRow(header)
 				}
 			}
 			rows = append(rows, part...)
@@ -136,15 +136,17 @@ func (m *model) appendCommitChanges(changes []change, done bool) {
 	}
 	rows := m.history.rows
 	last := rows[len(rows)-1]
-	header := last.headerIndex
+	header := last.headerRow()
 	if last.kind == 'f' {
 		header = len(rows)
 	}
-	rows = append(rows, row{path: changes[0].path, line: -2, kind: 's', headerIndex: header})
+	separator := row{path: changes[0].path, lineIndex: -2, kind: 's'}
+	separator.setHeaderRow(header)
+	rows = append(rows, separator)
 	offset := len(rows)
 	for i := range part {
-		if part[i].headerIndex > 0 {
-			part[i].headerIndex += offset
+		if header := part[i].headerRow(); header > 0 {
+			part[i].setHeaderRow(header + offset)
 		}
 	}
 	m.history.rows = append(rows, part...)

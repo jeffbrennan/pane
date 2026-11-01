@@ -247,7 +247,7 @@ func highlightRows(rows []row, path string, commitIndex int, syntaxDiff, display
 		}
 		// Wrapped continuations follow with the same diff line.
 		end := i + 1
-		for end < len(rows) && rows[end].path == path && int(rows[end].commitIndex) == commitIndex && rows[end].kind == r.kind && rows[end].line == r.line && rows[end].offset > 0 {
+		for end < len(rows) && rows[end].path == path && int(rows[end].commitIndex) == commitIndex && rows[end].kind == r.kind && rows[end].lineNumber() == r.lineNumber() && rows[end].offset > 0 {
 			end++
 		}
 		var text strings.Builder

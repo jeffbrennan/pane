@@ -13,7 +13,7 @@ func (m model) location() jumpLocation {
 	loc := jumpLocation{index: m.pos, top: m.viewTop}
 	if m.pos >= 0 && m.pos < len(m.rows) {
 		r := m.rows[m.pos]
-		loc.path, loc.text, loc.line, loc.target, loc.offset, loc.kind = r.path, r.text, r.line, r.target, r.offset, r.kind
+		loc.path, loc.text, loc.line, loc.target, loc.offset, loc.kind = r.path, r.text, r.lineNumber(), r.target, r.offset, r.kind
 	}
 	return loc
 }
