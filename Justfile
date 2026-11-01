@@ -42,7 +42,7 @@ perf:
     export PANE_PERF_RUN="$(date -u +%Y%m%dT%H%M%S)-$$"
     PANE_PERF=1 PANE_PERF_LOG=.scratch/perf-log.tsv PANE_PERF_PROFILES=.scratch/profiles go test -run '^TestPerf$' -count=1 -v .
     go build -o .scratch/perf-pane .
-    go run ./perf/firstpaint -repo "${PANE_PERF_REPO:-.}" -revision "${PANE_PERF_COMMIT:-HEAD}" -idle "${PANE_PERF_IDLE:-60s}" -log .scratch/perf-log.tsv
+    go run ./perf/firstpaint -repo "${PANE_PERF_REPO:-.}" -revision "${PANE_PERF_COMMIT:-HEAD}" -idle "${PANE_PERF_IDLE:-60s}" -content "${PANE_PERF_CONTENT:-}" -key "${PANE_PERF_KEY:-}" -after "${PANE_PERF_AFTER:-}" -log .scratch/perf-log.tsv
 
 perf-external:
     #!/usr/bin/env bash
