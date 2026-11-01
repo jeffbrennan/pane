@@ -58,6 +58,7 @@ type fileEntry struct {
 	oldPath        string
 	submodule      bool
 	viewed         bool
+	notes          int
 	row            int
 	added, deleted int
 }
@@ -79,6 +80,8 @@ func (m model) fileEntries() []fileEntry {
 			entries[len(entries)-1].added++
 		case r.kind == '-' || r.kind == 'd':
 			entries[len(entries)-1].deleted++
+		case r.kind == 'n':
+			entries[len(entries)-1].notes++
 		}
 	}
 	if m.contextCommit != "" && len(m.history.streamPaths) > 0 && (m.history.streamActive || m.history.streamError == "") {
@@ -493,6 +496,9 @@ func (m model) showFilesDialog(lines []string) {
 				mark = "✓ "
 			}
 			name += "  " + mark + clean(e.name)
+			if e.file.notes > 0 {
+				name += fmt.Sprintf(" ✎%d", e.file.notes)
+			}
 			if e.file.submodule {
 				name += " (submodule)"
 			}

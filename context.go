@@ -47,7 +47,7 @@ func (m model) foldContextFiles(rows []row) []row {
 		if r.kind == 'f' {
 			collapsed = m.collapsedFiles[contextKey{path: r.path, commit: m.contextCommit, staged: m.staged, base: m.contextBase}]
 		}
-		if !collapsed || r.kind == 'f' || r.kind == 'F' || r.kind == 's' || r.kind == 'm' || r.kind == 'M' {
+		if !collapsed || r.kind == 'f' || r.kind == 'F' || r.kind == 's' || r.kind == 'm' || r.kind == 'M' || r.kind == 'n' {
 			folded = append(folded, r)
 		}
 	}

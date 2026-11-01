@@ -103,6 +103,8 @@ type model struct {
 	generatedHandled      map[contextKey]bool
 	viewed                *viewedStore
 	viewIdentity          string
+	notes                 map[noteRef]string
+	noteTarget            noteRef
 	contextRequest        int
 	contextCommit         string
 	syntaxDemand          *syntaxDemand
@@ -952,6 +954,13 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return next, tea.Batch(cmd, more)
 		}
+		if msg.String() == "M" && m.pending == "" {
+			if cmd := m.copyNotes(); cmd != nil {
+				return m, cmd
+			}
+			m.flash = "No notes in this view"
+			return m, nil
+		}
 		if m.pending == "" && (msg.String() == "h" || msg.String() == "l") && m.onDiffFile() {
 			return m.changeContext(msg.String())
 		}
@@ -1060,6 +1069,8 @@ func (m *model) handleDiffTool(key string) bool {
 		m.openPicker()
 	case "e":
 		m.toggleDeletedFile()
+	case "m":
+		return m.startNote()
 	default:
 		return false
 	}
@@ -1067,6 +1078,9 @@ func (m *model) handleDiffTool(key string) bool {
 }
 
 func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.modal == "note" {
+		return m.handleNoteKey(key)
+	}
 	if m.modal == "stash-confirm" {
 		switch key.String() {
 		case "y":
@@ -1275,6 +1289,7 @@ func (m *model) rebuildRows(previous func(path string) ([]row, bool)) {
 	m.gutterWidth = gutterWidth
 	m.previousChanges = nil
 	m.applyViewed(rows, changes)
+	rows = m.insertNoteRows(rows)
 	rows = m.localContextRows(rows, changes)
 	rows = m.foldContextFiles(rows)
 	if m.contextCommit != "" && !m.contextBase {
@@ -1787,6 +1802,8 @@ func (m model) View() string {
 			prefix = "?"
 		}
 		status, hints = prefix+renderInput(m.search.draft, m.search.cursor, max(1, m.width-1)), keyHints("↵", "search", "esc", "cancel")
+	case "note":
+		status, hints = "Note: "+renderInput(m.input, m.inputCursor, max(1, m.width-8)), keyHints("↵", "save", "esc", "cancel")
 	case "commit":
 		status, hints = "", ""
 		if m.width < 24 || m.height < 9 {
@@ -1997,7 +2014,7 @@ func (m model) renderDiffRowWithGutter(r row, active bool, gutter string) string
 	text := r.text
 	syntax, inline := r.syntaxSpans(), r.inlineSpans()
 	contentWidth := max(0, m.width-margin)
-	if r.kind == 'f' || r.kind == 'F' || r.kind == 'm' || r.kind == 'M' {
+	if r.kind == 'f' || r.kind == 'F' || r.kind == 'm' || r.kind == 'M' || r.kind == 'n' {
 		text = fit(text, contentWidth)
 	} else if !m.wrap {
 		text = sliceWidth(text, m.horizontal, max(0, contentWidth-stringWidth(gutter)))
@@ -2031,6 +2048,8 @@ func (m model) renderDiffRowWithGutter(r row, active bool, gutter string) string
 			color = renameHeaderLight
 		}
 	case 'M':
+		color = styleDim
+	case 'n':
 		color = styleDim
 	}
 	if (r.kind == 'f' || r.kind == 'F') && len(inline) > 0 && strings.HasPrefix(text, gutter) {

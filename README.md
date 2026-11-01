@@ -41,6 +41,7 @@ For development, `just b` builds pane, installs it, and runs it in the current r
 | `f` | Open file tree; `j` / `k` navigate, `gg` / `G` jump to first / last, `{` / `}` jump between directories, `ctrl-d` / `ctrl-u` and `ctrl-f` / `ctrl-b` move by half / full pages, `h` / `l` fold directories, `/` searches, `v` hides viewed files. Relative row numbers help with navigation counts. |
 | `L` | Open history for the file under the cursor, following renames |
 | `v` | Mark the current file viewed or unviewed; viewed files collapse and the next unviewed file is selected |
+| `m` / `M` | Add or edit a note on the current line / copy all notes in the view as Markdown |
 | `/`, `n` / `N` | Search the diff; jump to the next / previous match |
 | Search / filter input: `←` / `→`, `home` / `end`, `alt-b` / `alt-f`, `ctrl-a` / `ctrl-e` | Move the query cursor by character, word, or to the start / end |
 | Search / filter input: `backspace` / `delete`, `ctrl-w` / `alt-backspace` | Delete a character or the previous word |
@@ -94,6 +95,8 @@ Submodule changes show the old and new revisions, available commit subjects, and
 Press `W` to ignore whitespace differences in working-tree, commit, and multi-commit diffs. The setting lasts for the session. Hunk staging and discarding are disabled while it is on, because the displayed patch may omit changes; whole-file staging remains available.
 
 Press `S` in the changes view to stash the whole working tree, including untracked (but not ignored) files. In history, `S` opens the stash list. Select a stash and press Enter to inspect it, `p` to pop it, or `x` to drop it. Pane asks for confirmation before popping or dropping; resolve any pop conflicts outside pane.
+
+Press `m` on a diff line to add a one-line note, shown dim under the line and searchable; an empty note deletes it. `M` copies every note in the view as Markdown with `path:line` (or a permalink in commit views), the quoted line, and the note, ready to paste into a review or back to a coding agent.
 
 Press `v` on any line of a file in a commit, range, or base review to mark it viewed. Viewed files collapse and the cursor moves to the next unviewed file; `v` again reopens and unmarks it. The file picker shows `✓` and `12/40 viewed`, and `v` there hides viewed files. Marks last across launches in `~/Library/Caches/pane` and are tied to the file's displayed change, so editing a file after marking it viewed clears the mark, which suits reviewing an agent's work in progress. Sequence reviews key marks by their first and last commit.
 
