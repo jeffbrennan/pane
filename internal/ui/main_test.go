@@ -266,3 +266,25 @@ func TestFileJumpPlacesHeaderAtTop(t *testing.T) {
 		t.Fatalf("previous file header not at top: pos %d top %d", m.pos, m.viewTop)
 	}
 }
+
+func TestEmptyStateTextRendersOnce(t *testing.T) {
+	m := model{width: 60, height: 10}
+	if view := plain(m.View()); strings.Count(view, "No changes · H opens history") != 1 {
+		t.Fatalf("empty text repeated: %q", view)
+	}
+	m.staged = true
+	if view := plain(m.View()); strings.Count(view, "No staged changes") != 1 {
+		t.Fatalf("staged empty text repeated: %q", view)
+	}
+}
+
+func TestStreamingPlaceholderRendersOnce(t *testing.T) {
+	m := model{width: 60, height: 10, screen: "commit", history: historyState{
+		current:      git.CommitInfo{Hash: "abcdef12"},
+		rows:         []row{{path: "file", kind: ' ', text: "line"}},
+		streamActive: true,
+	}}
+	if view := plain(m.View()); strings.Count(view, "Loading…") != 1 {
+		t.Fatalf("streaming placeholder repeated: %q", view)
+	}
+}

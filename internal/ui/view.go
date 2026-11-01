@@ -121,16 +121,16 @@ func (m model) View() string {
 		lines = append(lines, m.renderNumberedDiffRow(r, index))
 		rendered++
 	}
+	filler := ""
+	switch {
+	case len(m.rows) == 0:
+		filler = fit(m.emptyText(), m.width)
+	case start+renderedRows >= len(m.rows) && m.contextCommit != "" && m.history.streamActive:
+		filler = styleDim + "  Loading…" + styleReset
+	}
 	for rendered < visible {
-		index := start + renderedRows
-		switch {
-		case index == 0 && len(m.rows) == 0:
-			lines = append(lines, fit(m.emptyText(), m.width))
-		case index >= len(m.rows) && len(m.rows) > 0 && m.contextCommit != "" && m.history.streamActive:
-			lines = append(lines, styleDim+"  Loading…"+styleReset)
-		default:
-			lines = append(lines, "")
-		}
+		lines = append(lines, filler)
+		filler = ""
 		rendered++
 	}
 	status := syntax.Clean(strings.ReplaceAll(m.message, "\n", " | "))
