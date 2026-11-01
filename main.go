@@ -774,6 +774,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.stash.entries = msg.entries
 		m.stash.selected = min(m.stash.selected, max(0, len(msg.entries)-1))
+	case blameLoaded:
+		return m.applyBlame(msg)
 	case branchesLoaded:
 		if m.screen != "branches" || msg.request != m.branch.request {
 			break

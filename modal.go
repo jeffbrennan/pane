@@ -47,6 +47,7 @@ var shortcutSections = []struct {
 		{"L", "Open history for the current file"},
 		{"v", "Mark file viewed / unviewed"},
 		{"m / M", "Add or edit a note / copy notes as Markdown"},
+		{"gb", "Blame the current context or removed line"},
 		{"/ / g?", "Search forward / backward"},
 		{"n / N", "Next / previous match"},
 		{"h / l", "Fold file or commit details / reveal nearby context"},

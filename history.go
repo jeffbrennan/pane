@@ -759,6 +759,10 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if keyString != "]" && !(pending == "]" && keyString == "c") {
 		m.history.streamEndPending = false
 	}
+	if m.pending == "g" && key.String() == "b" {
+		m.pending = ""
+		return m.startBlame()
+	}
 	if m.pending == "" && (key.String() == "h" || key.String() == "l") && m.commitModel().onCommitHeader() {
 		m.history.headerCollapsed = key.String() == "h"
 		m.rebuildCommit()
