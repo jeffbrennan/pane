@@ -17,40 +17,39 @@ import (
 )
 
 type historyState struct {
-	commitContext                                       context.Context
-	commitCancel                                        context.CancelFunc
-	streamPaths                                         []string
-	streamError                                         string
-	streamLoaded, streamGutter                          int
-	streamActive, streamEndPending                      bool
-	stream                                              *git.HistoryStream
-	commits                                             []git.CommitInfo
-	statsCache                                          map[string]git.CommitInfo
-	changes                                             []git.Change
-	rows                                                []row
-	gutterWidth                                         int
-	selected, offset, pos, horizontal, viewTop, request int
-	stashCount                                          int
-	filter, draft                                       string
-	path                                                string
-	since                                               string
-	draftCursor                                         int
-	searching, loading, stale, more, fetching           bool
-	commitLoadingVisible                                bool
-	statsFetching                                       bool
-	directCommit                                        bool
-	current                                             git.CommitInfo
-	meta                                                git.CommitInfo
-	moved                                               *movedIndex
-	headerCollapsed                                     bool
-	positions                                           map[string]commitPosition
-	pendingPosition                                     *commitPosition
-	pendingStep                                         int
-	visualActive                                        bool
-	visualAnchor                                        int
-	expandedDeleted                                     map[string]bool
-	jumps                                               []jumpLocation
-	jumpIndex                                           int
+	commitContext                     context.Context
+	commitCancel                      context.CancelFunc
+	streamPaths                       []string
+	streamError                       string
+	streamLoaded, streamGutter        int
+	streamActive, streamEndPending    bool
+	stream                            *git.HistoryStream
+	commits                           []git.CommitInfo
+	statsCache                        map[string]git.CommitInfo
+	changes                           []git.Change
+	rows                              []row
+	gutterWidth                       int
+	list                              listState
+	pos, horizontal, viewTop, request int
+	stashCount                        int
+	path                              string
+	since                             string
+	loading, stale, more, fetching    bool
+	commitLoadingVisible              bool
+	statsFetching                     bool
+	directCommit                      bool
+	current                           git.CommitInfo
+	meta                              git.CommitInfo
+	moved                             *movedIndex
+	headerCollapsed                   bool
+	positions                         map[string]commitPosition
+	pendingPosition                   *commitPosition
+	pendingStep                       int
+	visualActive                      bool
+	visualAnchor                      int
+	expandedDeleted                   map[string]bool
+	jumps                             []jumpLocation
+	jumpIndex                         int
 }
 
 func (m *model) startCommitLoad() git.Repo {
@@ -263,9 +262,7 @@ func (m model) openHistory() (tea.Model, tea.Cmd) {
 	m.fileHistoryReturn = nil
 	m.pickerReturn, m.pickerBackToHistory = false, false
 	m.history.commits = nil
-	m.history.filter = ""
-	m.history.searching = false
-	m.history.selected, m.history.offset = 0, 0
+	m.history.list = listState{}
 	m.pending = ""
 	m, cmd := m.reloadHistory()
 	return m, tea.Batch(cmd, m.loadWorktreeHeads())
@@ -406,7 +403,7 @@ func (m model) loadMoreHistory() (model, tea.Cmd) {
 	if m.screen != "history" || m.history.loading || m.history.fetching || !m.history.more {
 		return m, nil
 	}
-	if m.historyQuery() == "" && m.history.selected < len(m.history.commits)-git.HistoryPage/4 {
+	if m.historyQuery() == "" && m.history.list.selected < len(m.history.commits)-git.HistoryPage/4 {
 		return m, nil
 	}
 	m.history.fetching = true
@@ -417,12 +414,7 @@ func (m model) loadMoreHistory() (model, tea.Cmd) {
 	return m, m.fetchHistory(len(m.history.commits), limit)
 }
 
-func (m model) historyQuery() string {
-	if m.history.searching {
-		return m.history.draft
-	}
-	return m.history.filter
-}
+func (m model) historyQuery() string { return m.history.list.filter }
 
 func (m model) filteredHistory() []git.CommitInfo {
 	query := strings.ToLower(m.historyQuery())
@@ -446,79 +438,16 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.screen == "commit" || m.screen == "base" {
 		return m.handleCommitKey(key)
 	}
-	if m.history.searching {
-		switch key.String() {
-		case "down":
-			m.history.selected = min(m.history.selected+1, max(0, len(m.filteredHistory())-1))
-			return m, nil
-		case "up":
-			m.history.selected = max(0, m.history.selected-1)
-			return m, nil
-		case "esc":
-			m.history.searching = false
-		case "enter":
-			if len(m.filteredHistory()) == 0 || m.history.loading {
-				return m, nil
-			}
-			m.history.filter = m.history.draft
-			m.history.searching = false
-			return m.handleHistoryKey(key)
-		default:
-			var runes []rune
-			if key.Type == tea.KeyRunes {
-				runes = key.Runes
-			} else if key.Type == tea.KeySpace {
-				runes = []rune{' '}
-			}
-			before := m.history.draft
-			m.history.draft, m.history.draftCursor, _ = editLine(before, m.history.draftCursor, key.String(), runes)
-			if before == m.history.draft {
-				return m, nil
-			}
-		}
-		m.history.selected, m.history.offset = 0, 0
-		return m, nil
-	}
 	matches := m.filteredHistory()
 	keyString := key.String()
-	if len(keyString) == 1 && keyString[0] >= '0' && keyString[0] <= '9' && m.pending == "" {
-		m.count = min(1000000, m.count*10+int(keyString[0]-'0'))
+	if m.history.list.filtering && keyString == "enter" && len(matches) == 0 {
+		// Keep the query editable when nothing matches.
 		return m, nil
 	}
-	hadCount := m.count > 0
-	count := max(1, m.count)
-	if m.pending != "" {
-		pending := m.pending
-		m.pending = ""
-		m.count = 0
-		if pending == "g" && key.String() == "g" {
-			m.history.selected = 0
-			if hadCount {
-				m.history.selected = min(count-1, max(0, len(matches)-1))
-			}
-			return m, nil
-		}
-		if pending == "g" && (keyString == "H" || keyString == "M" || keyString == "L") {
-			start, visible := m.historyViewport(len(matches))
-			end := min(max(0, len(matches)-1), start+visible-1)
-			m.history.selected = start
-			if keyString == "M" {
-				m.history.selected = (start + end) / 2
-			}
-			if keyString == "L" {
-				m.history.selected = end
-			}
-			return m, nil
-		}
-		if key.String() == "esc" {
-			return m, nil
-		}
+	if m.handleListKey(&m.history.list, key.String(), listRunes(key), len(matches), m.historyVisible(), nil) {
+		return m, nil
 	}
-	if keyString != "g" {
-		m.count = 0
-	}
-	page := max(1, (m.historyAvailable()-1)/3)
-	switch key.String() {
+	switch keyString {
 	case "esc", "q":
 		if m.history.visualActive {
 			m.history.visualActive = false
@@ -563,7 +492,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(matches) == 0 || m.history.loading {
 			break
 		}
-		return m.openBaseFrom(matches[min(m.history.selected, len(matches)-1)].Hash)
+		return m.openBaseFrom(matches[min(m.history.list.selected, len(matches)-1)].Hash)
 	case "b":
 		if m.history.path != "" {
 			m.flash = "Return to history to browse branches"
@@ -576,19 +505,15 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(matches) == 0 || m.history.loading {
 			break
 		}
-		return m.promptNewBranch(matches[min(m.history.selected, len(matches)-1)].Hash)
-	case "/":
-		m.history.searching = true
-		m.history.draft = m.history.filter
-		m.history.draftCursor = len([]rune(m.history.draft))
+		return m.promptNewBranch(matches[min(m.history.list.selected, len(matches)-1)].Hash)
 	case "y":
 		if len(matches) > 0 {
-			hash := matches[min(m.history.selected, len(matches)-1)].Hash
+			hash := matches[min(m.history.list.selected, len(matches)-1)].Hash
 			return m, copyCmd(hash, shortHash(hash))
 		}
 	case "Y":
 		if len(matches) > 0 {
-			commit := matches[min(m.history.selected, len(matches)-1)]
+			commit := matches[min(m.history.list.selected, len(matches)-1)]
 			if commit.FilePath != "" {
 				return m, copyLocationCmd(m.repo, commit.Hash, commit.FilePath, 0)
 			}
@@ -602,7 +527,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.busy || m.history.loading || len(matches) == 0 || len(m.history.commits) == 0 {
 			break
 		}
-		selected := matches[min(m.history.selected, len(matches)-1)]
+		selected := matches[min(m.history.list.selected, len(matches)-1)]
 		if selected.Hash != m.history.commits[0].Hash {
 			m.flash = "Only the latest commit message can be edited"
 			break
@@ -616,37 +541,12 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.recentCommits, m.recentCommitLoading, m.recentCommitError = nil, false, false
 		m.recentCommitRequest++
 		return m, nil
-	case "g":
-		m.pending = "g"
-	case "G", "end":
-		m.history.selected = max(0, len(matches)-1)
-		if hadCount && keyString == "G" {
-			m.history.selected = min(count-1, max(0, len(matches)-1))
-		}
-	case "home":
-		m.history.selected = 0
-	case "ctrl+d":
-		m.history.selected = min(m.history.selected+max(1, page/2)*count, max(0, len(matches)-1))
-	case "ctrl+u":
-		m.history.selected = max(0, m.history.selected-max(1, page/2)*count)
-	case "ctrl+f", "pgdown":
-		m.history.selected = min(m.history.selected+page*count, max(0, len(matches)-1))
-	case "ctrl+b", "pgup":
-		m.history.selected = max(0, m.history.selected-page*count)
-	case "j", "down":
-		m.history.selected = min(m.history.selected+count, max(0, len(matches)-1))
-	case "k", "up":
-		m.history.selected = max(0, m.history.selected-count)
-	case "}":
-		m.history.selected = min(m.history.selected+5*count, max(0, len(matches)-1))
-	case "{":
-		m.history.selected = max(0, m.history.selected-5*count)
 	case "enter", " ":
 		if len(matches) == 0 || m.history.loading {
 			break
 		}
 		if key.String() == "enter" && m.history.visualActive {
-			lo, hi := m.history.visualAnchor, min(m.history.selected, len(matches)-1)
+			lo, hi := m.history.visualAnchor, min(m.history.list.selected, len(matches)-1)
 			if lo > hi {
 				lo, hi = hi, lo
 			}
@@ -666,10 +566,10 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			next.viewed = m.viewed
 			return next, next.Init()
 		}
-		return m.openCommit(matches[min(m.history.selected, len(matches)-1)])
+		return m.openCommit(matches[min(m.history.list.selected, len(matches)-1)])
 	case "V":
 		m.history.visualActive = !m.history.visualActive
-		m.history.visualAnchor = m.history.selected
+		m.history.visualAnchor = m.history.list.selected
 
 	}
 	return m, nil
@@ -985,7 +885,7 @@ func (m model) historyView() string {
 	lines := m.historyHeader()
 	available := max(0, m.height-len(lines)-1)
 	matches := m.filteredHistory()
-	selected := min(m.history.selected, max(0, len(matches)-1))
+	selected := min(m.history.list.selected, max(0, len(matches)-1))
 	spacing := 0
 	if available >= 4 {
 		spacing = 1
@@ -1039,10 +939,9 @@ func (m model) historyView() string {
 		status = fmt.Sprintf("%d commit(s) selected", count)
 		hints = keyHints("↵", "review", "esc", "cancel")
 	}
-	if m.history.searching {
-		status, hints = "/"+renderInput(m.history.draft, m.history.draftCursor, max(1, m.width-1)), keyHints("↵", "open", "esc", "cancel")
-	} else if m.history.filter != "" {
-		status, hints = "/"+syntax.Clean(m.history.filter), keyHints("↵", "open", "/", "edit", "esc", "back")
+	if filter := m.history.list.listStatus(m.width); filter != "" {
+		status = filter
+		hints = keyHints("↵", "open", "/", "edit", "esc", "back")
 	}
 	if m.flash != "" {
 		status = syntax.Clean(m.flash)
@@ -1072,6 +971,16 @@ func (m model) historyView() string {
 	return strings.Join(lines, "\n")
 }
 
+// historyVisible is the number of commits that fit on screen.
+func (m model) historyVisible() int {
+	available := max(0, m.height-m.historyHeaderHeight()-1)
+	spacing := 0
+	if available >= 4 {
+		spacing = 1
+	}
+	return max(1, (available-spacing)/3)
+}
+
 func (m model) historyViewport(count int) (int, int) {
 	available := max(0, m.height-m.historyHeaderHeight()-1)
 	spacing := 0
@@ -1079,8 +988,8 @@ func (m model) historyViewport(count int) (int, int) {
 		spacing = 1
 	}
 	visible := max(1, (available-spacing)/3)
-	selected := min(m.history.selected, max(0, count-1))
-	offset := m.history.offset
+	selected := min(m.history.list.selected, max(0, count-1))
+	offset := m.history.list.offset
 	if selected < offset {
 		offset = selected
 	}
@@ -1092,7 +1001,7 @@ func (m model) historyViewport(count int) (int, int) {
 
 func (m *model) revealHistorySelection() {
 	if m.screen == "history" {
-		m.history.offset, _ = m.historyViewport(len(m.filteredHistory()))
+		m.history.list.offset, _ = m.historyViewport(len(m.filteredHistory()))
 	}
 }
 

@@ -95,7 +95,7 @@ func TestStreamPickerJumpAndSearch(t *testing.T) {
 		t.Fatalf("picker does not include unloaded file: %#v", entries)
 	}
 	view.openPicker()
-	view.picker.selected = 1
+	view.picker.list.selected = 1
 	view.handlePickerKey("enter", nil)
 	if view.picker.pendingPath != "two" {
 		t.Fatal("unloaded picker selection did not wait")

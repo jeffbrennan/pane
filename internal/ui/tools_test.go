@@ -97,14 +97,18 @@ func TestWorkingDiffPickerBackNavigation(t *testing.T) {
 						m.rebuild()
 					}
 					m = keys(t, m, "f", "/", "t", "y", "p", "enter", "j", back)
-					if m.screen != "" || m.modal != "files" || m.picker.query != "typ" || m.picker.searching {
+					if m.screen != "" || m.modal != "files" || m.picker.list.filter != "typ" || m.picker.list.filtering {
 						t.Fatalf("picker not restored: screen=%q modal=%q picker=%#v", m.screen, m.modal, m.picker)
 					}
 					items := m.pickerItems()
-					if len(items) == 0 || items[m.picker.selected].path != "pkg/api/types.go" {
+					if len(items) == 0 || items[m.picker.list.selected].path != "pkg/api/types.go" {
 						t.Fatalf("picker selection not restored: %#v", items)
 					}
 					m = keys(t, m, close)
+					if close == "esc" && m.modal == "files" {
+						// The first escape clears the restored filter.
+						m = keys(t, m, close)
+					}
 					if m.screen != "history" || m.modal != "" {
 						t.Fatalf("did not return to history: screen=%q modal=%q", m.screen, m.modal)
 					}
@@ -136,20 +140,20 @@ func TestFilePickerNavigationAndSearchModes(t *testing.T) {
 	if !strings.Contains(plain(m.View()), "j/k move") || !strings.Contains(plain(m.View()), "/ filter") {
 		t.Fatalf("missing navigation hints: %q", m.View())
 	}
-	initial := m.picker.selected
+	initial := m.picker.list.selected
 	m = keys(t, m, "j", "j", "k")
-	if m.picker.selected != initial+1 || m.picker.query != "" {
+	if m.picker.list.selected != initial+1 || m.picker.list.filter != "" {
 		t.Fatalf("j/k did not navigate: %#v", m.picker)
 	}
 	m = keys(t, m, "/", "k", "j", "/")
-	if !m.picker.searching || m.picker.query != "kj/" {
+	if !m.picker.list.filtering || m.picker.list.filter != "kj/" {
 		t.Fatalf("search mode did not accept literal keys: %#v", m.picker)
 	}
 	m = keys(t, m, "esc")
-	if m.modal != "files" || m.picker.searching || m.picker.query != "kj/" {
-		t.Fatal("escape should return to navigation while keeping the filter")
+	if m.modal != "files" || m.picker.list.filtering || m.picker.list.filter != "" {
+		t.Fatal("escape should clear the filter")
 	}
-	m = keys(t, m, "/", "backspace", "backspace", "backspace", "t", "y", "p", "esc", "enter")
+	m = keys(t, m, "/", "t", "y", "p", "enter")
 	if m.modal != "" || m.rows[m.pos].path != "pkg/api/types.go" {
 		t.Fatal("enter should jump to the selected filtered file")
 	}
@@ -177,8 +181,8 @@ func TestFilePickerVimMotions(t *testing.T) {
 		{[]string{"2", "{"}, 1},
 	} {
 		m = keys(t, m, tc.input...)
-		if m.picker.selected != tc.want {
-			t.Fatalf("%v selected %d, want %d", tc.input, m.picker.selected, tc.want)
+		if m.picker.list.selected != tc.want {
+			t.Fatalf("%v selected %d, want %d", tc.input, m.picker.list.selected, tc.want)
 		}
 	}
 	for _, tc := range []struct {
@@ -186,24 +190,24 @@ func TestFilePickerVimMotions(t *testing.T) {
 		want int
 	}{{"ctrl+d", 3}, {"ctrl+f", 6}, {"ctrl+u", 4}, {"ctrl+b", 0}, {"end", 6}, {"home", 0}} {
 		m.handlePickerKey(tc.key, nil)
-		if m.picker.selected != tc.want {
-			t.Fatalf("%s selected %d, want %d", tc.key, m.picker.selected, tc.want)
+		if m.picker.list.selected != tc.want {
+			t.Fatalf("%s selected %d, want %d", tc.key, m.picker.list.selected, tc.want)
 		}
 	}
 	m = keys(t, m, "g", "esc")
-	if m.modal != "files" || m.picker.pending != "" {
+	if m.modal != "files" || m.pending != "" {
 		t.Fatal("escape should cancel a pending motion")
 	}
 	m = keys(t, m, "/", "g", "G", "3")
-	if m.picker.query != "gG3" {
-		t.Fatalf("motion keys were not entered as search text: %q", m.picker.query)
+	if m.picker.list.filter != "gG3" {
+		t.Fatalf("motion keys were not entered as search text: %q", m.picker.list.filter)
 	}
 	m.handlePickerKey("ctrl+d", nil)
-	if m.picker.selected != 0 {
+	if m.picker.list.selected != 0 {
 		t.Fatal("page motion should be safe with no matches")
 	}
 	m = keys(t, toolModel(), "f", "g", "g", "h", "}")
-	if item := m.pickerItems()[m.picker.selected]; item.path != "pkg" {
+	if item := m.pickerItems()[m.picker.list.selected]; item.path != "pkg" {
 		t.Fatalf("directory jump should skip folded descendants: %#v", item)
 	}
 }
@@ -214,7 +218,7 @@ func TestFilePickerDirectoryTree(t *testing.T) {
 	if len(items) != 7 || items[0].path != "cmd" || !items[0].directory || items[1].path != "cmd/server" || items[2].path != "cmd/server/main.go" {
 		t.Fatalf("unexpected tree: %#v", items)
 	}
-	m.picker.selected = 0
+	m.picker.list.selected = 0
 	m = keys(t, m, "h")
 	items = m.pickerItems()
 	if len(items) != 5 || !items[0].collapsed || items[1].path != "pkg" {
@@ -224,14 +228,14 @@ func TestFilePickerDirectoryTree(t *testing.T) {
 	if len(m.pickerItems()) != 7 || m.modal != "files" {
 		t.Fatal("enter did not expand the directory")
 	}
-	m.picker.selected = 2
+	m.picker.list.selected = 2
 	m = keys(t, m, "h")
-	if item := m.pickerItems()[m.picker.selected]; item.path != "cmd/server" || !item.collapsed {
+	if item := m.pickerItems()[m.picker.list.selected]; item.path != "cmd/server" || !item.collapsed {
 		t.Fatal("h on a file did not collapse its parent")
 	}
-	m.picker.selected = 0
+	m.picker.list.selected = 0
 	m = keys(t, m, "h", "/", "m", "a", "i", "n")
-	if !strings.Contains(m.View(), "main.go") || m.pickerItems()[m.picker.selected].path != "cmd/server/main.go" {
+	if !strings.Contains(m.View(), "main.go") || m.pickerItems()[m.picker.list.selected].path != "cmd/server/main.go" {
 		t.Fatal("search did not reveal a file in a collapsed directory")
 	}
 	m = keys(t, m, "enter")
@@ -242,23 +246,23 @@ func TestFilePickerDirectoryTree(t *testing.T) {
 
 func TestFilePickerReverseScrollKeepsViewportStill(t *testing.T) {
 	m := keys(t, toolModel(), "f", "j", "j", "j", "j")
-	offset := m.picker.offset
-	selected := m.picker.selected
+	offset := m.picker.list.offset
+	selected := m.picker.list.selected
 	if offset == 0 {
 		t.Fatal("picker did not scroll down")
 	}
 	m = keys(t, m, "k")
-	if m.picker.offset != offset || m.picker.selected != selected-1 {
+	if m.picker.list.offset != offset || m.picker.list.selected != selected-1 {
 		t.Fatal("picker scrolled instead of moving the selection")
 	}
-	for m.picker.selected > offset {
+	for m.picker.list.selected > offset {
 		m = keys(t, m, "k")
 	}
-	if m.picker.offset != offset {
+	if m.picker.list.offset != offset {
 		t.Fatal("picker scrolled before the selection reached the top")
 	}
 	m = keys(t, m, "k")
-	if m.picker.offset != offset-1 {
+	if m.picker.list.offset != offset-1 {
 		t.Fatal("picker did not scroll after the selection reached the top")
 	}
 }
@@ -277,7 +281,7 @@ func TestFilePickerHighlightsEntireSelectedRow(t *testing.T) {
 	m.height = 20
 	m = keys(t, m, "f")
 	for _, selected := range []int{1, 2} {
-		m.picker.selected = selected
+		m.picker.list.selected = selected
 		item := m.pickerItems()[selected]
 		view := m.View()
 		if strings.Count(view, "\x1b[7m") != 1 {
@@ -315,7 +319,7 @@ func TestFilePickerRelativeNumbersAndChangeColumn(t *testing.T) {
 				}
 				found = true
 				fields := strings.Fields(line)
-				want := fmt.Sprint(max(i-m.picker.selected, m.picker.selected-i))
+				want := fmt.Sprint(max(i-m.picker.list.selected, m.picker.list.selected-i))
 				if len(fields) < 2 || fields[1] != want {
 					t.Fatalf("wrong distance for %s: %q, want %s", item.path, line, want)
 				}
@@ -360,7 +364,7 @@ func TestFilePickerTreeBranchesAndStableExpansion(t *testing.T) {
 	m := toolModel()
 	m.height = 20
 	m = keys(t, m, "f")
-	m.picker.selected = 0
+	m.picker.list.selected = 0
 	m = keys(t, m, "h")
 	before := strings.Split(m.View(), "\n")
 	selectedLine := -1
@@ -400,7 +404,7 @@ func TestCollapsedDirectoryShowsNestedChangeTotals(t *testing.T) {
 	m := toolModel()
 	m.height = 20
 	m = keys(t, m, "f")
-	m.picker.selected = 0
+	m.picker.list.selected = 0
 	m = keys(t, m, "h")
 	for _, line := range strings.Split(m.View(), "\n") {
 		if strings.Contains(line, "cmd/") {

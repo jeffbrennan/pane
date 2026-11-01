@@ -244,7 +244,7 @@ func measureViewScenarios(t *testing.T) {
 		historyModel.history.commits[i] = git.CommitInfo{Hash: fmt.Sprintf("%08x", i), Subject: fmt.Sprintf("commit %d", i)}
 	}
 	measurePerf(t, "synthetic-history", "view_ns", func() { _ = historyModel.View() })
-	historyModel.history.filter = "commit 4"
+	historyModel.history.list.filter = "commit 4"
 	measurePerf(t, "synthetic-history", "filtered_view_ns", func() { _ = historyModel.View() })
 	recordPerf(t, "synthetic-history", "commits", 500)
 }

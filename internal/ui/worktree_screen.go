@@ -19,20 +19,17 @@ type worktreeStatus struct {
 }
 
 type worktreeState struct {
-	entries          []git.WorktreeEntry
-	status           map[string]worktreeStatus
-	selected, offset int
-	filter, draft    string
-	draftCursor      int
-	request          int
-	searching        bool
-	loading          bool
-	confirm          git.WorktreeEntry
-	confirmForce     bool
-	newPath          string
-	newBranch        string
-	newStart         string
-	newExisting      bool
+	entries      []git.WorktreeEntry
+	status       map[string]worktreeStatus
+	list         listState
+	request      int
+	loading      bool
+	confirm      git.WorktreeEntry
+	confirmForce bool
+	newPath      string
+	newBranch    string
+	newStart     string
+	newExisting  bool
 }
 
 type worktreesLoaded struct {
@@ -77,7 +74,7 @@ func loadWorktreeStatus(repo git.Repo, path string, request int) tea.Cmd {
 
 func (m model) sortedWorktrees() []git.WorktreeEntry {
 	entries := append([]git.WorktreeEntry(nil), m.worktrees.entries...)
-	query := strings.ToLower(strings.TrimSpace(m.worktrees.filter))
+	query := strings.ToLower(strings.TrimSpace(m.worktrees.list.filter))
 	if query != "" {
 		var filtered []git.WorktreeEntry
 		for _, entry := range entries {
@@ -97,23 +94,11 @@ func (m model) sortedWorktrees() []git.WorktreeEntry {
 	return entries
 }
 
-func (m model) worktreeViewport(count int) (int, int) {
-	available := max(1, m.height-2)
-	selected := min(m.worktrees.selected, max(0, count-1))
-	offset := m.worktrees.offset
-	if selected < offset {
-		offset = selected
-	}
-	if selected >= offset+available {
-		offset = selected - available + 1
-	}
-	return min(offset, count), available
-}
-
 func (m model) worktreeView() string {
 	lines := []string{m.titleBar(" "+m.accent()+"worktrees"+styleReset, styleDim+"read-only"+styleReset)}
 	entries := m.sortedWorktrees()
-	offset, visible := m.worktreeViewport(len(entries))
+	selected := min(m.worktrees.list.selected, max(0, len(entries)-1))
+	offset, visible := listViewport(m.worktrees.list, len(entries), max(0, m.height-2))
 	current, _ := os.Getwd()
 	if len(entries) == 0 {
 		text := " No worktrees"
@@ -125,10 +110,6 @@ func (m model) worktreeView() string {
 	now := time.Now()
 	for i := offset; i < min(len(entries), offset+visible); i++ {
 		entry := entries[i]
-		marker := "  "
-		if i == m.worktrees.selected {
-			marker = "▸ "
-		}
 		here := " "
 		if entry.Path == current {
 			here = "*"
@@ -158,24 +139,15 @@ func (m model) worktreeView() string {
 			parts = append(parts, "prunable")
 		}
 		path := git.WorktreeDisplayPath(m.worktrees.entries, entry.Path)
-		row := fit(fmt.Sprintf("%s%s %s  %s  %s", marker, here, syntax.Clean(path), syntax.Clean(strings.Join(parts, "  ")), ""), m.width)
-		if i == m.worktrees.selected {
-			row = "\x1b[7m" + row + strings.Repeat(" ", max(0, m.width-stringWidth(row))) + styleReset
-		} else {
-			row = styleDim + row + styleReset
-		}
-		lines = append(lines, row)
+		lines = append(lines, m.listRow(i, selected, len(entries), here+" "+path+"  "+strings.Join(parts, "  "), ""))
 	}
 	hintKeys := []string{"↵", "switch", "n", "new", "d", "remove"}
 	if m.anyPrunable() {
 		hintKeys = append(hintKeys, "p", "prune")
 	}
-	status, hints := "", keyHints(hintKeys...)
-	if m.worktrees.searching {
-		status = "/" + renderInput(m.worktrees.draft, m.worktrees.draftCursor, max(1, m.width-1))
-		hints = keyHints("↵", "filter", "esc", "cancel")
-	} else if m.worktrees.filter != "" {
-		status = "/" + syntax.Clean(m.worktrees.filter)
+	status, hints := "", keyHints(append(hintKeys, "?", "help")...)
+	if filter := m.worktrees.list.listStatus(m.width); filter != "" {
+		status = filter
 	}
 	if m.flash != "" {
 		status = syntax.Clean(m.flash)
@@ -192,28 +164,10 @@ func (m model) worktreeView() string {
 
 func (m model) handleWorktreeKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	keyString := key.String()
-	if m.worktrees.searching {
-		switch keyString {
-		case "esc":
-			m.worktrees.searching = false
-		case "enter":
-			m.worktrees.filter = m.worktrees.draft
-			m.worktrees.searching = false
-			m.worktrees.selected, m.worktrees.offset = 0, 0
-		default:
-			var runes []rune
-			if key.Type == tea.KeyRunes {
-				runes = key.Runes
-			} else if key.Type == tea.KeySpace {
-				runes = []rune{' '}
-			}
-			m.worktrees.draft, m.worktrees.draftCursor, _ = editLine(m.worktrees.draft, m.worktrees.draftCursor, keyString, runes)
-			m.worktrees.filter = m.worktrees.draft
-			m.worktrees.selected, m.worktrees.offset = 0, 0
-		}
+	entries := m.sortedWorktrees()
+	if m.handleListKey(&m.worktrees.list, key.String(), listRunes(key), len(entries), max(1, m.height-2), nil) {
 		return m, nil
 	}
-	entries := m.sortedWorktrees()
 	switch keyString {
 	case "esc", "q":
 		m.screen = "history"
@@ -225,36 +179,24 @@ func (m model) handleWorktreeKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.helpPos = 0
 	case "tab":
 		return m.openBranches()
-	case "j", "down":
-		m.worktrees.selected = min(m.worktrees.selected+1, max(0, len(entries)-1))
-	case "k", "up":
-		m.worktrees.selected = max(0, m.worktrees.selected-1)
-	case "g", "home":
-		m.worktrees.selected = 0
-	case "G", "end":
-		m.worktrees.selected = max(0, len(entries)-1)
-	case "/":
-		m.worktrees.searching = true
-		m.worktrees.draft = m.worktrees.filter
-		m.worktrees.draftCursor = len([]rune(m.worktrees.draft))
 	case "r":
 		m.worktrees.loading = true
 		m.worktrees.request++
 		return m, m.loadWorktrees()
 	case "y":
 		if len(entries) > 0 {
-			path := entries[min(m.worktrees.selected, len(entries)-1)].Path
+			path := entries[min(m.worktrees.list.selected, len(entries)-1)].Path
 			return m, copyCmd(path, path)
 		}
 	case "enter":
 		if len(entries) > 0 {
-			return m.switchWorktree(entries[min(m.worktrees.selected, len(entries)-1)].Path)
+			return m.switchWorktree(entries[min(m.worktrees.list.selected, len(entries)-1)].Path)
 		}
 	case "n":
 		return m.promptNewWorktree("", "", false)
 	case "d", "D":
 		if len(entries) > 0 {
-			return m.confirmRemoveWorktree(entries[min(m.worktrees.selected, len(entries)-1)], keyString == "D")
+			return m.confirmRemoveWorktree(entries[min(m.worktrees.list.selected, len(entries)-1)], keyString == "D")
 		}
 	case "p":
 		if m.anyPrunable() {

@@ -11,14 +11,8 @@ import (
 )
 
 type pickerState struct {
-	query        string
-	cursor       int
-	selected     int
-	offset       int
-	count        int
-	pending      string
+	list         listState
 	pendingPath  string
-	searching    bool
 	hideViewed   bool
 	collapsed    map[string]bool
 	commitScoped bool
@@ -47,9 +41,7 @@ func (c *pickerCache) cached(rows []row) bool {
 func (m *model) restorePicker() {
 	m.pickerReturn = false
 	m.pickerBackToHistory = true
-	m.picker.searching = false
-	m.picker.pending = ""
-	m.picker.count = 0
+	m.picker.list.filtering = false
 	m.modal = "files"
 	m.picker.cache = &pickerCache{}
 }
@@ -162,7 +154,7 @@ func (m *model) openPicker() {
 	current := m.rows[m.pos].path
 	for i, e := range m.pickerItems() {
 		if !e.directory && e.path == current {
-			m.picker.selected = i
+			m.picker.list.selected = i
 		}
 	}
 	m.revealPickerSelection()
@@ -180,12 +172,12 @@ func (m model) pickerItems() []pickerItem {
 		entries = visible
 	}
 	cache := m.picker.cache
-	if cache != nil && cache.items != nil && cache.itemQuery == m.picker.query && cache.hideViewed == m.picker.hideViewed {
+	if cache != nil && cache.items != nil && cache.itemQuery == m.picker.list.filter && cache.hideViewed == m.picker.hideViewed {
 		return cache.items
 	}
-	items := pickerTree(filterFiles(entries, m.picker.query), m.picker.collapsed)
+	items := pickerTree(filterFiles(entries, m.picker.list.filter), m.picker.collapsed)
 	if cache != nil {
-		cache.items, cache.itemQuery, cache.hideViewed = items, m.picker.query, m.picker.hideViewed
+		cache.items, cache.itemQuery, cache.hideViewed = items, m.picker.list.filter, m.picker.hideViewed
 	}
 	return items
 }
@@ -195,11 +187,11 @@ func (m *model) resetPickerSearch() {
 	if m.picker.cache != nil {
 		m.picker.cache.items = nil
 	}
-	m.picker.selected = 0
-	m.picker.offset = 0
+	m.picker.list.selected = 0
+	m.picker.list.offset = 0
 	for i, item := range m.pickerItems() {
 		if !item.directory {
-			m.picker.selected = i
+			m.picker.list.selected = i
 			break
 		}
 	}
@@ -219,131 +211,59 @@ func (m *model) setPickerDirectory(item pickerItem, collapsed bool) {
 }
 
 func (m *model) handlePickerKey(key string, runes []rune) bool {
-	if m.picker.searching {
-		switch key {
-		case "left", "right", "home", "end", "ctrl+a", "ctrl+e", "alt+b", "alt+f", "ctrl+w", "alt+backspace", "backspace", "ctrl+h", "delete":
-			before := m.picker.query
-			m.picker.query, m.picker.cursor, _ = editLine(before, m.picker.cursor, key, nil)
-			if before != m.picker.query {
-				m.resetPickerSearch()
-			}
-			return false
-		}
-	}
 	items := m.pickerItems()
-	selected := min(m.picker.selected, max(0, len(items)-1))
-	if !m.picker.searching && m.picker.pending == "" && len(key) == 1 && key[0] >= '0' && key[0] <= '9' {
-		m.picker.count = min(1000000, m.picker.count*10+int(key[0]-'0'))
-		return false
-	}
-	count := max(1, m.picker.count)
-	hadCount := m.picker.count > 0
-	if m.picker.pending != "" {
-		pending := m.picker.pending
-		m.picker.pending = ""
-		m.picker.count = 0
-		if pending == "g" && key == "g" {
-			m.picker.selected = min(count-1, max(0, len(items)-1))
-			m.revealPickerSelection()
-			return false
+	page := 0
+	_, page = m.pickerViewport(len(items))
+	groups := func(index int) int {
+		for index > 0 && !items[index].directory {
+			index--
 		}
-		if key == "esc" {
-			return false
-		}
+		return max(0, index)
 	}
-	if key != "g" || m.picker.searching {
-		m.picker.count = 0
+	before := m.picker.list.filter
+	handled := m.handleListKey(&m.picker.list, key, runes, len(items), page, groups)
+	if m.picker.list.filter != before {
+		m.resetPickerSearch()
 	}
-	_, visible := m.pickerViewport(len(items))
+	keyName := key
+	selected := min(m.picker.list.selected, max(0, len(items)-1))
 	opened := false
-	switch key {
-	case "v":
-		if !m.picker.searching {
+	if !handled {
+		switch keyName {
+		case "v":
 			m.picker.hideViewed = !m.picker.hideViewed
 			if m.picker.cache != nil {
 				m.picker.cache.items = nil
 			}
-			m.picker.selected = 0
-			m.picker.offset = 0
-			m.revealPickerSelection()
-		}
-	case "ctrl+c":
-		m.modal = ""
-	case "esc":
-		if m.picker.searching {
-			m.picker.searching = false
-		} else {
+			m.picker.list.reset()
+		case "ctrl+c":
 			m.modal = ""
-		}
-	case "enter":
-		if len(items) == 0 {
+		case "esc":
 			m.modal = ""
-		} else if items[selected].directory {
-			m.setPickerDirectory(items[selected], !items[selected].collapsed)
-		} else {
-			m.modal = ""
-			opened = true
-			if items[selected].file.row < 0 {
-				m.picker.pendingPath = items[selected].path
-				break
+		case "enter":
+			if len(items) == 0 {
+				m.modal = ""
+			} else if items[selected].directory {
+				m.setPickerDirectory(items[selected], !items[selected].collapsed)
+			} else {
+				m.modal = ""
+				opened = true
+				if items[selected].file.row < 0 {
+					m.picker.pendingPath = items[selected].path
+					break
+				}
+				m.picker.pendingPath = ""
+				before := m.location()
+				m.pos = items[selected].file.row
+				m.positionViewport("t")
+				m.recordJump(before)
 			}
-			m.picker.pendingPath = ""
-			before := m.location()
-			m.pos = items[selected].file.row
-			m.positionViewport("t")
-			m.recordJump(before)
-		}
-	case "up", "ctrl+p", "ctrl+k", "shift+tab":
-		m.picker.selected = max(0, selected-count)
-	case "down", "ctrl+n", "ctrl+j", "tab":
-		m.picker.selected = min(selected+count, max(0, len(items)-1))
-	case "ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b":
-		amount := visible
-		if key == "ctrl+d" || key == "ctrl+u" {
-			amount = max(1, visible/2)
-		}
-		if key == "ctrl+u" || key == "ctrl+b" {
-			amount = -amount
-		}
-		m.picker.selected = max(0, min(selected+amount*count, len(items)-1))
-	case "home":
-		m.picker.selected = 0
-	case "end":
-		m.picker.selected = max(0, len(items)-1)
-	default:
-		if m.picker.searching && len(runes) > 0 {
-			m.picker.query, m.picker.cursor, _ = editLine(m.picker.query, m.picker.cursor, key, runes)
-			m.resetPickerSearch()
-		} else if !m.picker.searching {
-			switch key {
-			case "/":
-				m.picker.searching = true
-				m.picker.cursor = len([]rune(m.picker.query))
-			case "j":
-				m.picker.selected = min(selected+count, max(0, len(items)-1))
-			case "k":
-				m.picker.selected = max(0, selected-count)
-			case "g":
-				m.picker.pending = "g"
-			case "G":
-				m.picker.selected = max(0, len(items)-1)
-				if hadCount {
-					m.picker.selected = min(count-1, m.picker.selected)
-				}
-			case "{", "}":
-				direction := 1
-				if key == "{" {
-					direction = -1
-				}
-				for i := selected + direction; i >= 0 && i < len(items); i += direction {
-					if items[i].directory {
-						m.picker.selected = i
-						count--
-						if count == 0 {
-							break
-						}
-					}
-				}
+		case "up", "ctrl+p", "ctrl+k", "shift+tab":
+			m.picker.list.selected = max(0, selected-1)
+		case "down", "ctrl+n", "ctrl+j", "tab":
+			m.picker.list.selected = min(selected+1, max(0, len(items)-1))
+		default:
+			switch keyName {
 			case "h", "left":
 				if len(items) > 0 {
 					item := items[selected]
@@ -353,7 +273,7 @@ func (m *model) handlePickerKey(key string, runes []rune) bool {
 						parent := path.Dir(item.path)
 						for i, candidate := range items {
 							if candidate.directory && candidate.path == parent {
-								m.picker.selected = i
+								m.picker.list.selected = i
 								m.setPickerDirectory(candidate, true)
 								break
 							}
@@ -388,8 +308,8 @@ func (m model) pickerViewport(count int) (int, int) {
 		total = len(pickerTree(entries, nil))
 	}
 	visible := max(1, min(m.height-8, total))
-	selected := min(m.picker.selected, max(0, count-1))
-	offset := min(m.picker.offset, max(0, count-1))
+	selected := min(m.picker.list.selected, max(0, count-1))
+	offset := min(m.picker.list.offset, max(0, count-1))
 	if selected < offset {
 		offset = selected
 	} else if selected >= offset+visible {
@@ -399,18 +319,18 @@ func (m model) pickerViewport(count int) (int, int) {
 }
 
 func (m *model) revealPickerSelection() {
-	m.picker.offset, _ = m.pickerViewport(len(m.pickerItems()))
+	m.picker.list.offset, _ = m.pickerViewport(len(m.pickerItems()))
 }
 
 func (m model) showFilesDialog(lines []string) {
 	entries := m.fileEntries()
-	matches := filterFiles(entries, m.picker.query)
+	matches := filterFiles(entries, m.picker.list.filter)
 	items := m.pickerItems()
-	selected := min(m.picker.selected, max(0, len(items)-1))
+	selected := min(m.picker.list.selected, max(0, len(items)-1))
 	if m.width < 20 || len(lines) < 8 {
-		status := "file: /" + syntax.Clean(m.picker.query)
-		if m.picker.searching {
-			status = "file: /" + renderInput(m.picker.query, m.picker.cursor, max(1, m.width-7))
+		status := "file: /" + syntax.Clean(m.picker.list.filter)
+		if m.picker.list.filtering {
+			status = "file: /" + renderInput(m.picker.list.filter, m.picker.list.draftCursor, max(1, m.width-7))
 		}
 		if len(items) > 0 {
 			status += "  " + syntax.Clean(items[selected].path)
@@ -434,14 +354,14 @@ func (m model) showFilesDialog(lines []string) {
 		name = fit(name, nameWidth)
 		return number + " " + name + strings.Repeat(" ", max(0, nameWidth-stringWidth(name))) + " │ " + counts
 	}
-	query := sliceWidth(syntax.Clean(m.picker.query), max(0, stringWidth(m.picker.query)-innerWidth+2), max(0, innerWidth-2))
+	query := sliceWidth(syntax.Clean(m.picker.list.filter), max(0, stringWidth(m.picker.list.filter)-innerWidth+2), max(0, innerWidth-2))
 	queryLine := styleDim + "/" + query + styleReset
 	if query == "" {
 		queryLine = styleDim + "/ to filter" + styleReset
 	}
 	hint := keyHints("j/k", "move", "h/l", "fold", "/", "filter", "↵", "open", "esc", "close")
-	if m.picker.searching {
-		queryLine = "/" + renderInput(m.picker.query, m.picker.cursor, max(1, innerWidth-1))
+	if m.picker.list.filtering {
+		queryLine = "/" + renderInput(m.picker.list.filter, m.picker.list.draftCursor, max(1, innerWidth-1))
 		hint = keyHints("↑/↓", "move", "↵", "open", "esc", "done")
 	} else if ansi.StringWidth(hint) > innerWidth {
 		hint = keyHints("/", "filter", "↵", "open", "esc", "close")

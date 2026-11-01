@@ -45,7 +45,7 @@ var shortcutSections = []struct {
 		{"count + gg / G", "Jump to source line"},
 	}},
 	{"View", []shortcut{
-		{"f", "File tree (j/k, h/l fold, / filter)"},
+		{"f", "File tree (h/l fold, / filter)"},
 		{"L", "Open history for the current file"},
 		{"v", "Mark file viewed / unviewed"},
 		{"gb", "Blame the current context or removed line"},
@@ -62,7 +62,8 @@ var shortcutSections = []struct {
 		{"H", "Open commit history"},
 		{"↵ / space", "Open selected commit"},
 		{"} / {", "Jump five commits"},
-		{"/", "Search commits"},
+		{"/", "Filter commits"},
+		{"esc", "Clear the filter first, then go back"},
 		{"u", "Edit latest unpublished commit message"},
 		{"S", "Open stashes"},
 		{"b", "Open branches (tab switches to worktrees)"},
@@ -72,9 +73,10 @@ var shortcutSections = []struct {
 		{"esc / q", "Back"},
 	}},
 	{"Stashes", []shortcut{
-		{"j / k", "Select stash"},
+		{"j / k, gg / G", "Select stash"},
 		{"↵ / space", "View stash"},
-		{"p / x", "Pop / drop selected stash"},
+		{"p / d", "Pop / drop selected stash"},
+		{"/", "Filter stashes"},
 		{"esc / q", "Back to history"},
 	}},
 	{"Branches", []shortcut{
@@ -101,6 +103,7 @@ var shortcutSections = []struct {
 		{"h / l", "Fold a directory"},
 		{"↵", "Open file history or filter by author"},
 		{"V", "Review the selected file or directory as a commit range"},
+		{"/", "Filter hotspots"},
 		{"esc / q", "Back to history"},
 	}},
 	{"Search input", []shortcut{

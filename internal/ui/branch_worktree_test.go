@@ -306,14 +306,14 @@ func TestWorktreeForceDialogNamesDirtyCount(t *testing.T) {
 }
 
 func TestBranchAndWorktreeFiltersUsePickerMatcher(t *testing.T) {
-	branches := model{branch: branchState{entries: []git.BranchEntry{{Name: "feature/x"}, {Name: "main"}}, filter: "fx"}}
+	branches := model{branch: branchState{entries: []git.BranchEntry{{Name: "feature/x"}, {Name: "main"}}, list: listState{filter: "fx"}}}
 	matches := branches.filteredBranches()
 	if len(matches) != 1 || matches[0].Name != "feature/x" {
 		t.Fatalf("branch subsequence filter: %#v", matches)
 	}
 	worktrees := model{worktrees: worktreeState{
 		entries: []git.WorktreeEntry{{Path: "/tmp/pane-feature", Branch: "feature"}, {Path: "/tmp/other", Branch: "main"}},
-		filter:  "pfe",
+		list:    listState{filter: "pfe"},
 	}}
 	sorted := worktrees.sortedWorktrees()
 	if len(sorted) != 1 || sorted[0].Branch != "feature" {

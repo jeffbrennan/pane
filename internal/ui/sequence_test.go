@@ -238,10 +238,14 @@ func TestSequencePickerUsesHoveredCommit(t *testing.T) {
 				t.Fatalf("selected wrong file: %#v", m.rows[m.pos])
 			}
 			m = keys(t, m, back)
-			if m.modal != "files" || m.picker.query != "only-second" || m.picker.commitIndex != 1 {
+			if m.modal != "files" || m.picker.list.filter != "only-second" || m.picker.commitIndex != 1 {
 				t.Fatalf("picker context not restored: %#v", m.picker)
 			}
 			m = keys(t, m, back)
+			if back == "esc" && m.modal == "files" {
+				// The first escape clears the restored filter.
+				m = keys(t, m, back)
+			}
 			if m.screen != "history" || m.modal != "" || len(m.rows) != 0 {
 				t.Fatalf("picker back did not restore history and working diff: screen=%q rows=%#v", m.screen, m.rows)
 			}

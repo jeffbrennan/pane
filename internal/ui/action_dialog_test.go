@@ -78,13 +78,13 @@ func TestSuccessfulPushReturnsToHistory(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := model{screen: tt.screen, busy: true, history: historyState{filter: "query", selected: 2}}
+			m := model{screen: tt.screen, busy: true, history: historyState{list: listState{filter: "query", selected: 2}}}
 			updated, cmd := m.Update(completed{action: "push", message: "Pushed"})
 			got := updated.(model)
 			if got.screen != "history" || got.modal != "" || got.busy || !got.loading || cmd == nil {
 				t.Fatalf("push did not return to refreshed history: %#v", got)
 			}
-			if tt.screen == "history" && (got.history.filter != "query" || got.history.selected != 2) {
+			if tt.screen == "history" && (got.history.list.filter != "query" || got.history.list.selected != 2) {
 				t.Fatal("push discarded the current history selection")
 			}
 		})

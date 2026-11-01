@@ -15,7 +15,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "L" && m.pending == "" && (m.screen == "" || m.screen == "commit" || m.screen == "base" || m.screen == "sequence") {
 		return m.openFileHistory()
 	}
-	if msg.String() == "F" && m.pending == "" && !(m.screen == "history" && m.history.searching) {
+	if msg.String() == "F" && m.pending == "" && !(m.screen == "history" && m.history.list.filtering) {
 		if !m.busy {
 			return m.startFetch()
 		}
@@ -37,7 +37,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if msg.String() == "T" && m.pending == "" && !(m.screen == "history" && m.history.searching) {
+	if msg.String() == "T" && m.pending == "" && !(m.screen == "history" && m.history.list.filtering) {
 		m.lightTheme = !m.lightTheme
 		m.themeAuto = false
 		m.flash = "Dark colors"

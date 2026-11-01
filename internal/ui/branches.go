@@ -14,17 +14,14 @@ import (
 )
 
 type branchState struct {
-	entries          []git.BranchEntry
-	selected, offset int
-	filter, draft    string
-	draftCursor      int
-	request          int
-	searching        bool
-	loading          bool
-	remote           bool
-	newFrom          string
-	confirm          git.BranchEntry
-	confirmForce     bool
+	entries      []git.BranchEntry
+	list         listState
+	request      int
+	loading      bool
+	remote       bool
+	newFrom      string
+	confirm      git.BranchEntry
+	confirmForce bool
 }
 
 type branchesLoaded struct {
@@ -55,7 +52,7 @@ func (m model) loadBranches() tea.Cmd {
 }
 
 func (m model) filteredBranches() []git.BranchEntry {
-	query := strings.ToLower(strings.TrimSpace(m.branch.filter))
+	query := strings.ToLower(strings.TrimSpace(m.branch.list.filter))
 	if query == "" {
 		return m.branch.entries
 	}
@@ -66,19 +63,6 @@ func (m model) filteredBranches() []git.BranchEntry {
 		}
 	}
 	return matches
-}
-
-func (m model) branchViewport(count int) (int, int) {
-	available := max(0, m.height-2)
-	selected := min(m.branch.selected, max(0, count-1))
-	offset := m.branch.offset
-	if selected < offset {
-		offset = selected
-	}
-	if selected >= offset+available {
-		offset = selected - available + 1
-	}
-	return min(offset, count), max(1, available)
 }
 
 func branchTrack(track string) string {
@@ -101,7 +85,8 @@ func (m model) branchView() string {
 	lines = append(lines, m.titleBar(" "+title, styleDim+"read-only"+styleReset))
 	now := time.Now()
 	matches := m.filteredBranches()
-	offset, visible := m.branchViewport(len(matches))
+	selected := min(m.branch.list.selected, max(0, len(matches)-1))
+	offset, visible := listViewport(m.branch.list, len(matches), max(0, m.height-2))
 	if len(matches) == 0 {
 		text := " No branches"
 		if m.branch.loading {
@@ -111,10 +96,6 @@ func (m model) branchView() string {
 	}
 	for i := offset; i < min(len(matches), offset+visible); i++ {
 		entry := matches[i]
-		marker := "  "
-		if i == m.branch.selected {
-			marker = "▸ "
-		}
 		current := " "
 		if entry.Current {
 			current = "*"
@@ -132,20 +113,11 @@ func (m model) branchView() string {
 			}
 			parts = append(parts, part)
 		}
-		row := fit(fmt.Sprintf("%s%s %s  %s", marker, current, syntax.Clean(name), strings.Join(parts, "  ")), m.width)
-		if i == m.branch.selected {
-			row = "\x1b[7m" + row + strings.Repeat(" ", max(0, m.width-stringWidth(row))) + styleReset
-		} else {
-			row = styleDim + row + styleReset
-		}
-		lines = append(lines, row)
+		lines = append(lines, m.listRow(i, selected, len(matches), current+" "+name+"  "+strings.Join(parts, "  "), ""))
 	}
 	status, hints := "", keyHints("↵", "switch", "n", "new", "d", "delete", "r", "remotes", "?", "help")
-	if m.branch.searching {
-		status = "/" + renderInput(m.branch.draft, m.branch.draftCursor, max(1, m.width-1))
-		hints = keyHints("↵", "filter", "esc", "cancel")
-	} else if m.branch.filter != "" {
-		status = "/" + syntax.Clean(m.branch.filter)
+	if filter := m.branch.list.listStatus(m.width); filter != "" {
+		status = filter
 	}
 	if m.flash != "" {
 		status = syntax.Clean(m.flash)
@@ -162,29 +134,10 @@ func (m model) branchView() string {
 
 func (m model) handleBranchKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	keyString := key.String()
-	if m.branch.searching {
-		switch keyString {
-		case "esc":
-			m.branch.searching = false
-		case "enter":
-			m.branch.filter = m.branch.draft
-			m.branch.searching = false
-			m.branch.selected, m.branch.offset = 0, 0
-		default:
-			var runes []rune
-			if key.Type == tea.KeyRunes {
-				runes = key.Runes
-			} else if key.Type == tea.KeySpace {
-				runes = []rune{' '}
-			}
-			m.branch.draft, m.branch.draftCursor, _ = editLine(m.branch.draft, m.branch.draftCursor, keyString, runes)
-			m.branch.filter = m.branch.draft
-			m.branch.selected, m.branch.offset = 0, 0
-		}
+	matches := m.filteredBranches()
+	if m.handleListKey(&m.branch.list, key.String(), listRunes(key), len(matches), max(1, m.height-2), nil) {
 		return m, nil
 	}
-	matches := m.filteredBranches()
-	page := max(1, m.height-2)
 	switch keyString {
 	case "esc", "q":
 		m.screen = "history"
@@ -194,22 +147,6 @@ func (m model) handleBranchKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "?":
 		m.modal = "help"
 		m.helpPos = 0
-	case "j", "down":
-		m.branch.selected = min(m.branch.selected+1, max(0, len(matches)-1))
-	case "k", "up":
-		m.branch.selected = max(0, m.branch.selected-1)
-	case "ctrl+d":
-		m.branch.selected = min(m.branch.selected+page/2, max(0, len(matches)-1))
-	case "ctrl+u":
-		m.branch.selected = max(0, m.branch.selected-page/2)
-	case "g", "home":
-		m.branch.selected = 0
-	case "G", "end":
-		m.branch.selected = max(0, len(matches)-1)
-	case "/":
-		m.branch.searching = true
-		m.branch.draft = m.branch.filter
-		m.branch.draftCursor = len([]rune(m.branch.draft))
 	case "tab":
 		return m.openWorktrees()
 	case "r":
@@ -219,26 +156,26 @@ func (m model) handleBranchKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.loadBranches()
 	case "y":
 		if len(matches) > 0 {
-			name := matches[min(m.branch.selected, len(matches)-1)].Name
+			name := matches[min(m.branch.list.selected, len(matches)-1)].Name
 			return m, copyCmd(name, name)
 		}
 	case "enter":
 		if len(matches) > 0 {
-			return m.switchBranch(matches[min(m.branch.selected, len(matches)-1)])
+			return m.switchBranch(matches[min(m.branch.list.selected, len(matches)-1)])
 		}
 	case "n":
 		if len(matches) > 0 {
-			entry := matches[min(m.branch.selected, len(matches)-1)]
+			entry := matches[min(m.branch.list.selected, len(matches)-1)]
 			return m.promptNewBranch(entry.Ref)
 		}
 	case "w":
 		if len(matches) > 0 {
-			entry := matches[min(m.branch.selected, len(matches)-1)]
+			entry := matches[min(m.branch.list.selected, len(matches)-1)]
 			return m.promptNewWorktree(entry.Name, entry.Ref, true)
 		}
 	case "d", "D":
 		if len(matches) > 0 {
-			return m.confirmDeleteBranch(matches[min(m.branch.selected, len(matches)-1)], keyString == "D")
+			return m.confirmDeleteBranch(matches[min(m.branch.list.selected, len(matches)-1)], keyString == "D")
 		}
 	}
 	return m, nil

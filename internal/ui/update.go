@@ -313,7 +313,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cacheHistoryStats()
 		}
 		m.history.more = len(msg.commits) == msg.limit
-		m.history.selected = min(m.history.selected, max(0, len(m.filteredHistory())-1))
+		m.history.list.selected = min(m.history.list.selected, max(0, len(m.filteredHistory())-1))
 		if m.screen == "commit" {
 			if direction := m.history.pendingStep; direction != 0 {
 				m.history.pendingStep = 0
@@ -369,7 +369,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.stash.entries = msg.entries
-		m.stash.selected = min(m.stash.selected, max(0, len(msg.entries)-1))
+		m.stash.list.selected = min(m.stash.list.selected, max(0, len(msg.entries)-1))
 	case hotspotSequenceLoaded:
 		if m.screen != "hotspots" || msg.request != m.hotspots.request {
 			break
@@ -445,7 +445,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(msg.items) > 0 {
 			m.hotspots.items = &hotItemsCache{items: msg.items, filled: true, dataVersion: m.hotspots.dataVersion, builtAt: time.Now()}
 		}
-		m.hotspots.selected, m.hotspots.offset = 0, 0
+		m.hotspots.list.selected, m.hotspots.list.offset = 0, 0
 	case blameLoaded:
 		return m.applyBlame(msg)
 	case branchesLoaded:
@@ -460,7 +460,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.branch.entries = msg.entries
-		m.branch.selected = min(m.branch.selected, max(0, len(msg.entries)-1))
+		m.branch.list.selected = min(m.branch.list.selected, max(0, len(msg.entries)-1))
 	case branchActionDone:
 		if msg.err != nil {
 			m.errorText = msg.err.Error()
@@ -488,7 +488,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.worktrees.entries = msg.entries
 		m.worktrees.status = make(map[string]worktreeStatus, len(msg.entries))
-		m.worktrees.selected = min(m.worktrees.selected, max(0, len(msg.entries)-1))
+		m.worktrees.list.selected = min(m.worktrees.list.selected, max(0, len(msg.entries)-1))
 		cmds := make([]tea.Cmd, 0, len(msg.entries))
 		for _, entry := range msg.entries {
 			cmds = append(cmds, loadWorktreeStatus(m.repo, entry.Path, m.worktrees.request))

@@ -99,7 +99,7 @@ func TestHistoryRStartsBaseReview(t *testing.T) {
 
 func TestHistoryVisualSelectionOpensSequence(t *testing.T) {
 	commits := []git.CommitInfo{{Hash: "aaaa"}, {Hash: "bbbb"}, {Hash: "cccc"}}
-	m := model{width: 80, height: 20, screen: "history", history: historyState{commits: commits, selected: 0}}
+	m := model{width: 80, height: 20, screen: "history", history: historyState{commits: commits, list: listState{selected: 0}}}
 	updated, _ := m.handleHistoryKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("V")})
 	m = updated.(model)
 	if !m.history.visualActive {

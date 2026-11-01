@@ -89,7 +89,7 @@ func TestStashDropConfirmationAndStaleSelection(t *testing.T) {
 		t.Fatalf("stashes: %#v %v", entries, err)
 	}
 	m := model{repo: r, screen: "stashes", width: 70, height: 15, stash: stashState{entries: entries}}
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
 	if cmd != nil || updated.(model).modal != "stash-confirm" || !strings.Contains(updated.(model).View(), "Drop stash?") {
 		t.Fatal("drop did not request confirmation")
 	}
@@ -130,7 +130,7 @@ func TestStashDropAndHistoryCount(t *testing.T) {
 	}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("S")})
 	updated, _ = updated.(model).Update(cmd())
-	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
 	updated, cmd = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
 	if cmd != nil || updated.(model).modal != "" {
 		t.Fatal("drop cancellation failed")
@@ -139,7 +139,7 @@ func TestStashDropAndHistoryCount(t *testing.T) {
 	if err != nil || len(entries) != 1 {
 		t.Fatal("cancelling removed the stash")
 	}
-	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
 	_, cmd = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	if result := cmd().(completed); result.err != nil {
 		t.Fatal(result.err)

@@ -34,11 +34,11 @@ func TestHistorySearchEditsWithoutLosingSelection(t *testing.T) {
 	m := model{width: 50, height: 12, screen: "history", history: historyState{commits: []git.CommitInfo{{Subject: "abc"}, {Subject: "abc again"}}}}
 	m = keys(t, m, "/", "a", "b", "c")
 	m = sendInput(t, m, tea.KeyMsg{Type: tea.KeyDown}, tea.KeyMsg{Type: tea.KeyLeft})
-	if m.history.selected != 1 || m.history.draftCursor != 2 {
+	if m.history.list.selected != 1 || m.history.list.draftCursor != 2 {
 		t.Fatalf("motion changed selection: %#v", m.history)
 	}
 	m = sendInput(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
-	if m.history.draft != "abbc" || m.history.selected != 0 || !strings.Contains(m.View(), "abb\x1b[7mc\x1b[0m") {
+	if m.history.list.draft != "abbc" || m.history.list.selected != 0 || !strings.Contains(m.View(), "abb\x1b[7mc\x1b[0m") {
 		t.Fatalf("history search: %#v", m.history)
 	}
 }
@@ -46,11 +46,11 @@ func TestHistorySearchEditsWithoutLosingSelection(t *testing.T) {
 func TestPickerFilterEditsAndKeepsNavigation(t *testing.T) {
 	m := keys(t, toolModel(), "f", "/", "a", "c")
 	m = sendInput(t, m, tea.KeyMsg{Type: tea.KeyLeft}, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
-	if m.picker.query != "abc" || m.picker.cursor != 2 || !strings.Contains(m.View(), "ab\x1b[7mc\x1b[0m") {
+	if m.picker.list.filter != "abc" || m.picker.list.draftCursor != 2 || !strings.Contains(m.View(), "ab\x1b[7mc\x1b[0m") {
 		t.Fatalf("picker input: %#v, %q", m.picker, m.View())
 	}
 	m = sendInput(t, m, tea.KeyMsg{Type: tea.KeyCtrlA}, tea.KeyMsg{Type: tea.KeyDelete})
-	if m.picker.query != "bc" {
+	if m.picker.list.filter != "bc" {
 		t.Fatalf("picker deletion: %#v", m.picker)
 	}
 }

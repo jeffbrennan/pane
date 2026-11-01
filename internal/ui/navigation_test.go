@@ -113,22 +113,22 @@ func TestCommitDiffNavigation(t *testing.T) {
 }
 
 func TestHistoryNavigationAndSearchInput(t *testing.T) {
-	m := model{screen: "history", height: 15, history: historyState{commits: make([]git.CommitInfo, 20), selected: 10}}
+	m := model{screen: "history", height: 15, history: historyState{commits: make([]git.CommitInfo, 20), list: listState{selected: 10}}}
 	for _, key := range []string{"g", "g"} {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
 		m = updated.(model)
 	}
-	if m.history.selected != 0 {
+	if m.history.list.selected != 0 {
 		t.Fatal("history gg failed")
 	}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
 	m = updated.(model)
-	if m.history.selected != 19 {
+	if m.history.list.selected != 19 {
 		t.Fatal("history G failed")
 	}
-	m.history.searching = true
+	m.history.list.filtering = true
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
-	if updated.(model).history.draft != "g" {
+	if updated.(model).history.list.draft != "g" {
 		t.Fatal("navigation intercepted search text")
 	}
 }
@@ -238,11 +238,11 @@ func TestReverseSearchAndJumpBack(t *testing.T) {
 func TestHistoryCounts(t *testing.T) {
 	m := model{screen: "history", height: 15, history: historyState{commits: make([]git.CommitInfo, 30)}}
 	m = keys(t, m, "1", "0", "j")
-	if m.history.selected != 10 {
-		t.Fatalf("10j: %d", m.history.selected)
+	if m.history.list.selected != 10 {
+		t.Fatalf("10j: %d", m.history.list.selected)
 	}
 	m = keys(t, m, "5", "G")
-	if m.history.selected != 4 {
-		t.Fatalf("5G: %d", m.history.selected)
+	if m.history.list.selected != 4 {
+		t.Fatalf("5G: %d", m.history.list.selected)
 	}
 }

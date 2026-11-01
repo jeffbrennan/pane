@@ -131,12 +131,12 @@ func TestHistorySearchAndReadOnlyNavigation(t *testing.T) {
 		{Hash: "def123456789", Author: "Bob", Email: "b@example.com", Subject: "Fix issue", Message: "Fix issue\n\nbody detail"},
 	}}}
 	for _, query := range []string{"ALICE", "example.com", "fix", "def123", "body detail"} {
-		m.history.filter = query
+		m.history.list.filter = query
 		if got := m.filteredHistory(); len(got) == 0 {
 			t.Fatalf("no result for %q", query)
 		}
 	}
-	m.history.filter = ""
+	m.history.list.filter = ""
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
 	m = updated.(model)
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("fix")})
@@ -146,7 +146,7 @@ func TestHistorySearchAndReadOnlyNavigation(t *testing.T) {
 	}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(model)
-	if m.screen != "commit" || cmd == nil || m.history.current.Author != "Bob" || m.history.searching || m.history.filter != "fix" {
+	if m.screen != "commit" || cmd == nil || m.history.current.Author != "Bob" || m.history.list.filtering || m.history.list.filter != "fix" {
 		t.Fatal("commit not opened")
 	}
 	for _, key := range []string{" ", "c", "p", "P"} {
@@ -202,14 +202,18 @@ func TestCommitPickerBackNavigation(t *testing.T) {
 					t.Fatalf("file did not open from picker: %#v", m.history)
 				}
 				m = keys(t, m, back)
-				if m.screen != "commit" || m.modal != "files" || m.picker.query != "second" || m.picker.searching {
+				if m.screen != "commit" || m.modal != "files" || m.picker.list.filter != "second" || m.picker.list.filtering {
 					t.Fatalf("did not restore picker and search: screen=%q modal=%q picker=%#v", m.screen, m.modal, m.picker)
 				}
 				items := m.commitModel().pickerItems()
-				if len(items) == 0 || items[m.picker.selected].path != "second.go" {
+				if len(items) == 0 || items[m.picker.list.selected].path != "second.go" {
 					t.Fatalf("picker lost its selection: %#v", items)
 				}
 				m = keys(t, m, close)
+				if close == "esc" && m.modal == "files" {
+					// The first escape clears the restored filter.
+					m = keys(t, m, close)
+				}
 				if m.screen != "history" || m.modal != "" {
 					t.Fatalf("did not return to history: screen=%q modal=%q", m.screen, m.modal)
 				}
@@ -245,18 +249,18 @@ func TestClosingInitiallyOpenedCommitPickerReturnsToDiff(t *testing.T) {
 }
 
 func TestSearchEnterWithNoMatchesKeepsSearchOpen(t *testing.T) {
-	m := model{screen: "history", history: historyState{searching: true, draft: "missing", commits: []git.CommitInfo{{Subject: "present"}}}}
+	m := model{screen: "history", history: historyState{commits: []git.CommitInfo{{Subject: "present"}}, list: listState{filtering: true, filter: "missing", draft: "missing"}}}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	got := updated.(model)
-	if got.screen != "history" || !got.history.searching || cmd != nil {
+	if got.screen != "history" || !got.history.list.filtering || cmd != nil {
 		t.Fatal("empty search should remain editable")
 	}
 }
 
 func TestSearchEnterOpensFocusedResult(t *testing.T) {
-	m := model{screen: "history", history: historyState{searching: true, draft: "fix", commits: []git.CommitInfo{
+	m := model{screen: "history", history: historyState{commits: []git.CommitInfo{
 		{Hash: "first", Subject: "fix one"}, {Hash: "second", Subject: "fix two"},
-	}}}
+	}, list: listState{filtering: true, filter: "fix", draft: "fix"}}}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m = updated.(model)
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -267,17 +271,17 @@ func TestSearchEnterOpensFocusedResult(t *testing.T) {
 }
 
 func TestSpaceOpensSelectedCommit(t *testing.T) {
-	m := model{screen: "history", history: historyState{selected: 1, commits: []git.CommitInfo{{Hash: "first"}, {Hash: "second"}}}}
+	m := model{screen: "history", history: historyState{commits: []git.CommitInfo{{Hash: "first"}, {Hash: "second"}}, list: listState{selected: 1}}}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	got := updated.(model)
 	if cmd == nil || got.screen != "commit" || got.history.current.Hash != "second" {
 		t.Fatal("space did not open the selected commit")
 	}
 
-	m.history.searching = true
+	m.history.list.filtering = true
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	got = updated.(model)
-	if got.screen != "history" || got.history.draft != " " {
+	if got.screen != "history" || got.history.list.draft != " " {
 		t.Fatal("space should remain searchable while editing the history filter")
 	}
 }
@@ -292,7 +296,7 @@ func TestHistorySelectionPresentationAndScrolling(t *testing.T) {
 	if !strings.Contains(view, "▸ \x1b[0m\x1b[1mfirst") || !strings.Contains(view, "\x1b[2m  second") || !strings.Contains(view, "\x1b[32m+0") || !strings.Contains(view, "\x1b[31m -0") {
 		t.Fatalf("missing selection styles or spacing: %q", view)
 	}
-	m.history.selected = 2
+	m.history.list.selected = 2
 	view = m.historyView()
 	if !strings.Contains(view, "▸ \x1b[0m\x1b[1mthird") {
 		t.Fatalf("selected commit not visible: %q", view)
@@ -304,22 +308,22 @@ func TestHistoryReverseScrollKeepsViewportStill(t *testing.T) {
 	for i := 0; i < 8; i++ {
 		m = keys(t, m, "j")
 	}
-	offset := m.history.offset
+	offset := m.history.list.offset
 	if offset == 0 {
 		t.Fatal("history did not scroll down")
 	}
 	m = keys(t, m, "k")
-	if m.history.offset != offset || m.history.selected != 7 {
-		t.Fatalf("history scrolled instead of moving selection: offset=%d selected=%d", m.history.offset, m.history.selected)
+	if m.history.list.offset != offset || m.history.list.selected != 7 {
+		t.Fatalf("history scrolled instead of moving selection: offset=%d selected=%d", m.history.list.offset, m.history.list.selected)
 	}
-	for m.history.selected > offset {
+	for m.history.list.selected > offset {
 		m = keys(t, m, "k")
 	}
-	if m.history.offset != offset {
+	if m.history.list.offset != offset {
 		t.Fatal("history scrolled before the selection reached the top")
 	}
 	m = keys(t, m, "k")
-	if m.history.offset != offset-1 {
+	if m.history.list.offset != offset-1 {
 		t.Fatal("history did not scroll after the selection reached the top")
 	}
 }
@@ -347,10 +351,10 @@ func TestHistoryEmptyAndBinaryCommits(t *testing.T) {
 }
 
 func TestSuccessfulCommitOpensHistory(t *testing.T) {
-	m := model{width: 60, height: 10, busy: true, history: historyState{selected: 5, filter: "old"}}
+	m := model{width: 60, height: 10, busy: true, history: historyState{list: listState{selected: 5, filter: "old"}}}
 	updated, cmd := m.Update(completed{message: "[main abc] message", commitMessage: "message"})
 	got := updated.(model)
-	if got.screen != "history" || got.history.selected != 0 || got.history.filter != "" || !got.history.loading || cmd == nil {
+	if got.screen != "history" || got.history.list.selected != 0 || got.history.list.filter != "" || !got.history.loading || cmd == nil {
 		t.Fatalf("history did not open after commit: %#v", got)
 	}
 }
@@ -359,18 +363,18 @@ func TestParagraphHistoryAndCommitJumps(t *testing.T) {
 	m := model{screen: "history", history: historyState{commits: make([]git.CommitInfo, 7)}}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("}")})
 	m = updated.(model)
-	if m.history.selected != 5 {
-		t.Fatalf("history jump: %d", m.history.selected)
+	if m.history.list.selected != 5 {
+		t.Fatalf("history jump: %d", m.history.list.selected)
 	}
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("}")})
 	m = updated.(model)
-	if m.history.selected != 6 {
-		t.Fatalf("history end: %d", m.history.selected)
+	if m.history.list.selected != 6 {
+		t.Fatalf("history end: %d", m.history.list.selected)
 	}
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("{")})
 	m = updated.(model)
-	if m.history.selected != 1 {
-		t.Fatalf("history jump back: %d", m.history.selected)
+	if m.history.list.selected != 1 {
+		t.Fatalf("history jump back: %d", m.history.list.selected)
 	}
 	m.screen = "commit"
 	m.history.rows = []row{{text: "first"}, {text: ""}, {text: "second"}}
@@ -587,7 +591,7 @@ func TestHistorySearchUsesLargerPages(t *testing.T) {
 		{name: "search", filter: "initial", limit: 5 * git.HistoryPage},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			m := model{repo: r, screen: "history", history: historyState{commits: make([]git.CommitInfo, git.HistoryPage), selected: git.HistoryPage - 1, more: true, filter: tt.filter}}
+			m := model{repo: r, screen: "history", history: historyState{commits: make([]git.CommitInfo, git.HistoryPage), more: true, list: listState{selected: git.HistoryPage - 1, filter: tt.filter}}}
 			_, cmd := m.loadMoreHistory()
 			if cmd == nil {
 				t.Fatal("expected a page request")

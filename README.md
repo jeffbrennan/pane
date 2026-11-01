@@ -35,10 +35,10 @@ For development, `just b` builds pane, installs it, and runs it in the current r
 | `ctrl-f` / `ctrl-b` | Move down / up a page |
 | `ctrl-e` / `ctrl-y` | Scroll the diff viewport down / up one line |
 | `zt` / `zz` / `zb` | Place the active diff line at the top / middle / bottom |
-| `}` / `{` | Jump to the next / previous paragraph boundary, or five commits in history |
+| `}` / `{` | Jump to the next / previous paragraph boundary, or five entries in any list |
 | `J` / `K` | Jump to the next / previous file, placing it at the top |
 | `)` / `(` | Open the next / previous commit in the history or file history the current commit came from |
-| `f` | Open file tree; `j` / `k` navigate, `gg` / `G` jump to first / last, `{` / `}` jump between directories, `ctrl-d` / `ctrl-u` and `ctrl-f` / `ctrl-b` move by half / full pages, `h` / `l` fold directories, `/` searches, `v` hides viewed files. Relative row numbers help with navigation counts. |
+| `f` | Open file tree; `h` / `l` fold directories, `v` hides viewed files. It shares the list keys below. |
 | `L` | Open history for the file under the cursor, following renames |
 | `v` | Mark the current file viewed or unviewed; viewed files collapse and the next unviewed file is selected |
 | `gb` | In a commit, open the commit that last touched the context or removed line under the cursor |
@@ -58,9 +58,10 @@ For development, `just b` builds pane, installs it, and runs it in the current r
 | Hotspots: `tab`, `s`, `h` / `l`, `↵`, `V` | Switch to authors or back, sort, fold a directory, open file history or filter by author, review the selection as a range |
 | Branches: `↵`, `n`, `w`, `d` / `D`, `r`, `y`, `/` | Switch, create from the selection, create a worktree, delete / force delete, include remotes, copy the name, filter |
 | Worktrees: `↵`, `n`, `d` / `D`, `p`, `y`, `/` | Switch this pane, create, remove / force remove, prune, copy the path, filter |
+| Lists: `j` / `k`, `gg` / `G`, `42j`, `ctrl-d` / `ctrl-u`, `ctrl-f` / `ctrl-b`, `{` / `}`, `/`, `v` in the picker | Move, jump, filter and hide viewed files the same way in history, branches, worktrees, stashes, hotspots and the file picker; `esc` clears a filter first and leaves on a second press |
 | `R` | In history, review from the selected commit to the working tree |
 | `V` | In history, start or end a commit-range selection; Enter reviews the range |
-| Stash list: `enter` / `space`, `p`, `x` | View, pop, or drop the selected stash; pop and drop require confirmation |
+| Stash list: `enter` / `space`, `p`, `d` | View, pop, or drop the selected stash; pop and drop require confirmation |
 | `d` | Discard the current unstaged hunk, or the whole file on its header (confirmation required) |
 | `w` | Toggle line wrapping |
 | `W` | Toggle ignoring whitespace in diffs |
@@ -98,7 +99,7 @@ Submodule changes show the old and new revisions, available commit subjects, and
 
 Press `W` to ignore whitespace differences in working-tree, commit, and multi-commit diffs. The setting lasts for the session. Hunk staging and discarding are disabled while it is on, because the displayed patch may omit changes; whole-file staging remains available.
 
-Press `S` in the changes view to stash the whole working tree, including untracked (but not ignored) files. In history, `S` opens the stash list. Select a stash and press Enter to inspect it, `p` to pop it, or `x` to drop it. Pane asks for confirmation before popping or dropping; resolve any pop conflicts outside pane.
+Press `S` in the changes view to stash the whole working tree, including untracked (but not ignored) files. In history, `S` opens the stash list. Select a stash and press Enter to inspect it, `p` to pop it, or `d` to drop it, and `/` filters the list. Pane asks for confirmation before popping or dropping; resolve any pop conflicts outside pane.
 
 In a commit, `gb` on a context or removed line blames it against the first parent and opens the commit that last touched it, selecting the file and line. `ctrl-o` returns to where you were.
 
@@ -106,7 +107,7 @@ Press `v` on any line of a file in a commit, range, or base review to mark it vi
 
 In diffs, paragraph boundaries are blank lines, file headers, and hunk separators. On a file header, `h` collapses the file and `l` reopens its standard diff. On a diff line or `···`, `l` reveals nearby unchanged lines in chunks; repeat to see more, or use `h` to undo a nearby expansion. This also works for staged changes and historical commits. In the unstaged view, `d` discards the Git hunk containing the selected line, or all unstaged changes in the selected file when on its header. Discarding an untracked file deletes it from disk. Pane asks for confirmation; staged changes must be unstaged first. Diff search is incremental and case-insensitive unless the query contains an uppercase letter; matches are highlighted and `n` / `N` wrap around. The diff jump list tracks searches and larger jumps within the current view. `gi` is used for jump-forward because terminals commonly send `ctrl-i` as Tab, which switches staged views. `o` opens the working-tree file, so in a historical commit the line may have moved since. Copying uses `pbcopy`, `wl-copy`, `xclip`, or `xsel`. Run `pane hot` (optionally `--since 6mo` or `--author <pattern>`) to rank files by churn weighted with a 90-day half-life, excluding generated and lock files. The tree shows a heat bar, commit count, churn, last change and top author; directories sum their children, `h` / `l` fold, `s` sorts by score or path, Enter opens a file's history for the same window, `V` reviews the selected file or directory's commits in the window as a range, and `tab` switches to an author list whose Enter filters the tree. `X` opens the same view from history with the default one-year window. Results are cached in `~/Library/Caches/pane` as per-commit numstat, so reopening is instant and after HEAD moves only the new commits are read.
 
-Press `b` in history to list branches with their upstream state, last commit and subject; branches checked out in another worktree are marked `⌂`. Enter switches, `n` creates a branch from the selection, `w` creates a worktree for it, `d` deletes with confirmation, `r` includes remote branches, and `y` copies the name. Press `tab` for worktrees, which show dirty counts and last activity, sorted most recent first; Enter moves this pane into a worktree, `n` creates one using the shared parent directory and the branch name, `d` removes it, and `p` prunes stale entries. Switching worktrees keeps theme and wrapping but starts the new repository's history and caches fresh. History marks commits that are the HEAD of another worktree with `⌂`.
+Press `b` in history to list branches with their upstream state, last commit and subject; branches checked out in another worktree are marked `⌂`. Enter switches, `n` creates a branch from the selection, `w` creates a worktree for it, `d` deletes with confirmation, `r` includes remote branches, `y` copies the name, and `/` filters. Press `tab` for worktrees, which show dirty counts and last activity, sorted most recent first; Enter moves this pane into a worktree, `n` creates one using the shared parent directory and the branch name, `d` removes it, and `p` prunes stale entries. Switching worktrees keeps theme and wrapping but starts the new repository's history and caches fresh. History marks commits that are the HEAD of another worktree with `⌂`.
 
 In history, `j` / `k` select commits, `}` / `{` jump five commits, and `/` searches author name or email, message, and hash. Enter or Space opens the selected commit's read-only diff. Press `R` to review from the selected commit to the working tree, or `V` to start a range selection, move with `j` / `k`, and Enter to review the selected commits oldest first. While typing a search, use the arrow keys to select a result and Enter to open it. Press `Esc` or `q` to go back. If you opened a file from a diff's file picker, back returns to the picker first; back again returns to history. Addition and deletion counts omit binary files, which are counted separately. Merge commit counts and diffs are relative to their first parent.
 

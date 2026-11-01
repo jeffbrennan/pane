@@ -10,8 +10,8 @@ import (
 )
 
 type stashState struct {
+	list             listState
 	entries          []git.StashEntry
-	selected, offset int
 	request          int
 	loading, viewing bool
 	operation        string
@@ -68,27 +68,37 @@ func (m model) startStashAction(operation string, target git.StashEntry) (tea.Mo
 	}
 }
 
+func (m model) filteredStashes() []git.StashEntry {
+	query := strings.ToLower(strings.TrimSpace(m.stash.list.filter))
+	if query == "" {
+		return m.stash.entries
+	}
+	var matches []git.StashEntry
+	for _, entry := range m.stash.entries {
+		if matchesPicker(entry.Ref+" "+entry.Message, query) {
+			matches = append(matches, entry)
+		}
+	}
+	return matches
+}
+
 func (m model) handleStashKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
-	count := len(m.stash.entries)
+	entries := m.filteredStashes()
+	count := len(entries)
+	if m.handleListKey(&m.stash.list, key.String(), listRunes(key), count, max(1, m.height-2), nil) {
+		return m, nil
+	}
 	switch key.String() {
 	case "esc", "q":
 		return m.openHistory()
 	case "ctrl+c":
 		m.closeHistoryStreams()
 		return m, tea.Quit
-	case "j", "down":
-		m.stash.selected = min(m.stash.selected+1, max(0, count-1))
-	case "k", "up":
-		m.stash.selected = max(0, m.stash.selected-1)
-	case "g", "home":
-		m.stash.selected = 0
-	case "G", "end":
-		m.stash.selected = max(0, count-1)
 	case "enter", " ":
 		if count == 0 || m.stash.loading {
 			return m, nil
 		}
-		entry := m.stash.entries[m.stash.selected]
+		entry := entries[min(m.stash.list.selected, count-1)]
 		m.stash.viewing = true
 		m.screen = "commit"
 		m.history.current = git.CommitInfo{Hash: entry.Hash, Subject: entry.Ref + " · " + entry.Message}
@@ -113,15 +123,15 @@ func (m model) handleStashKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return stashDiffLoaded{changes: changes, meta: detail, request: request, err: err}
 		}
-	case "p", "x":
+	case "p", "d":
 		if count == 0 || m.stash.loading || m.busy {
 			return m, nil
 		}
 		m.stash.operation = "pop"
-		if key.String() == "x" {
+		if key.String() == "d" {
 			m.stash.operation = "drop"
 		}
-		m.stash.target = m.stash.entries[m.stash.selected]
+		m.stash.target = entries[min(m.stash.list.selected, count-1)]
 		m.modal = "stash-confirm"
 	case "?":
 		m.modal = "help"
@@ -130,36 +140,31 @@ func (m model) handleStashKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) stashView() string {
-	lines := []string{m.titleBar(" Stashes", "")}
+	entries := m.filteredStashes()
+	selected := min(m.stash.list.selected, max(0, len(entries)-1))
+	lines := []string{m.titleBar(" "+m.accent()+"stashes"+styleReset, "")}
 	available := max(0, m.height-2)
-	selected := min(m.stash.selected, max(0, len(m.stash.entries)-1))
-	start := min(m.stash.offset, selected)
-	if selected >= start+max(1, available) {
-		start = selected - max(1, available) + 1
-	}
-	for i := 0; i < available; i++ {
-		index := start + i
-		line := ""
-		if index < len(m.stash.entries) {
-			entry := m.stash.entries[index]
-			prefix := "  "
-			if index == selected {
-				prefix = m.accent() + "▸ " + styleReset
-			}
-			line = prefix + syntax.Clean(entry.Ref+"  "+git.RelativeCommitTime(entry.Date, time.Now())+"  "+entry.Message)
-		} else if i == 0 {
-			line = " No stashes"
-			if m.stash.loading {
-				line = " Loading stashes…"
-			}
+	start, _ := listViewport(m.stash.list, len(entries), available)
+	now := time.Now()
+	if len(entries) == 0 {
+		text := " No stashes"
+		if m.stash.loading {
+			text = " Loading stashes…"
 		}
-		lines = append(lines, bar(m.width, line, ""))
+		lines = append(lines, fit(text, m.width))
+	}
+	for i := start; i < min(len(entries), start+max(1, available)); i++ {
+		entry := entries[i]
+		lines = append(lines, m.listRow(i, selected, len(entries),
+			entry.Ref+"  "+git.RelativeCommitTime(entry.Date, now)+"  "+entry.Message, ""))
 	}
 	status := m.flash
 	if m.modal == "help" {
 		status = ""
+	} else if filter := m.stash.list.listStatus(m.width); filter != "" {
+		status = filter
 	}
-	lines = append(lines, m.statusBar(status, keyHints("↵", "view", "p", "pop", "x", "drop", "esc", "back")))
+	lines = append(lines, m.statusBar(status, keyHints("↵", "view", "p", "pop", "d", "drop", "?", "help")))
 	if m.modal == "help" {
 		clearBody(lines)
 		m.showHelpDialog(lines)

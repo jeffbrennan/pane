@@ -67,13 +67,13 @@ func TestLightThemeDiffRendering(t *testing.T) {
 }
 
 func TestToggleThemeAndHistorySearch(t *testing.T) {
-	m := model{screen: "history", history: historyState{searching: true}}
+	m := model{screen: "history", history: historyState{list: listState{filtering: true}}}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("T")})
 	m = updated.(model)
-	if m.lightTheme || m.history.draft != "T" {
+	if m.lightTheme || m.history.list.draft != "T" {
 		t.Fatal("theme toggle intercepted history search")
 	}
-	m.history.searching = false
+	m.history.list.filtering = false
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("T")})
 	if !updated.(model).lightTheme {
 		t.Fatal("theme did not toggle")

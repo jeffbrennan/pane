@@ -54,7 +54,7 @@ func TestFetchUpdatesHistoryStatus(t *testing.T) {
 			fetchArgs = append([]string(nil), args...)
 		}
 	}
-	m := model{repo: r, snapshot: snapshot, width: 80, height: 20, screen: "history", history: historyState{filter: "keep", selected: 1}}
+	m := model{repo: r, snapshot: snapshot, width: 80, height: 20, screen: "history", history: historyState{list: listState{filter: "keep", selected: 1}}}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("F")})
 	m = updated.(model)
 	if cmd == nil || !m.busy || !strings.Contains(m.View(), "Fetching…") {
@@ -69,7 +69,7 @@ func TestFetchUpdatesHistoryStatus(t *testing.T) {
 	}
 	updated, cmd = m.Update(result)
 	m = updated.(model)
-	if cmd == nil || m.screen != "history" || m.history.filter != "keep" || m.history.selected != 1 {
+	if cmd == nil || m.screen != "history" || m.history.list.filter != "keep" || m.history.list.selected != 1 {
 		t.Fatalf("fetch changed history state: %#v", m.history)
 	}
 	updated, _ = m.Update(cmd())
@@ -114,9 +114,9 @@ func TestFetchAvailableAcrossViewsAndNotInSearch(t *testing.T) {
 			t.Errorf("fetch unavailable on %q", screen)
 		}
 	}
-	m := model{screen: "history", history: historyState{searching: true}}
+	m := model{screen: "history", history: historyState{list: listState{filtering: true}}}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("F")})
-	if cmd != nil || updated.(model).history.draft != "F" || updated.(model).busy {
+	if cmd != nil || updated.(model).history.list.draft != "F" || updated.(model).busy {
 		t.Fatal("fetch shortcut intercepted history search")
 	}
 }

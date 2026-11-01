@@ -69,7 +69,7 @@ func TestFileHistoryReturnAndSelectHistoricalPath(t *testing.T) {
 	}
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = updated.(model)
-	m.history.selected = 2
+	m.history.list.selected = 2
 	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	batch = cmd().(tea.BatchMsg)
 	updated, _ = updated.(model).Update(batch[0]())

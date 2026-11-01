@@ -60,8 +60,7 @@ type hotspotState struct {
 	head             string
 	cachePath        string
 	cutoff           int64
-	selected         int
-	offset           int
+	list             listState
 	request          int
 	streamLoaded     int
 	dataVersion      int
@@ -761,19 +760,6 @@ func (m model) hotspotSequence(path string) tea.Cmd {
 	}
 }
 
-func (m model) hotViewport(count int) (int, int) {
-	available := max(1, m.height-2)
-	selected := min(m.hotspots.selected, max(0, count-1))
-	offset := m.hotspots.offset
-	if selected < offset {
-		offset = selected
-	}
-	if selected >= offset+available {
-		offset = selected - available + 1
-	}
-	return min(offset, count), available
-}
-
 func hotBar(score, maxScore float64, width int) string {
 	if maxScore <= 0 {
 		return strings.Repeat("░", width)
@@ -796,23 +782,14 @@ func (m model) hotView() string {
 	}
 	lines := []string{m.titleBar(" "+m.accent()+syntax.Clean(title)+styleReset, styleDim+"read-only"+styleReset)}
 	now := time.Now()
+	selected := m.hotspots.list.selected
 	if m.hotspots.mode == "authors" {
-		authors := m.hotAuthorList()
-		offset, visible := m.hotViewport(len(authors))
+		authors := m.hotFilteredAuthors()
+		selected = min(selected, max(0, len(authors)-1))
+		offset, visible := listViewport(m.hotspots.list, len(authors), max(0, m.height-2))
 		for i := offset; i < min(len(authors), offset+visible); i++ {
 			author := authors[i]
-			marker := "  "
-			if i == m.hotspots.selected {
-				marker = "▸ "
-			}
-			dir := topAuthorDir(author)
-			row := fit(fmt.Sprintf("%s%s  %d commits  %d churn  %s", marker, syntax.Clean(author.name), author.commits, author.churn, dir), m.width)
-			if i == m.hotspots.selected {
-				row = "\x1b[7m" + row + strings.Repeat(" ", max(0, m.width-stringWidth(row))) + styleReset
-			} else {
-				row = styleDim + row + styleReset
-			}
-			lines = append(lines, row)
+			lines = append(lines, m.listRow(i, selected, len(authors), author.name, fmt.Sprintf("%d commits  %d churn  %s", author.commits, author.churn, topAuthorDir(author))))
 		}
 	} else {
 		items := m.hotItems()
@@ -827,7 +804,9 @@ func (m model) hotView() string {
 				maxScore = max(maxScore, item.score)
 			}
 		}
-		offset, visible := m.hotViewport(len(items))
+		items = m.hotFilteredItems()
+		selected = min(selected, max(0, len(items)-1))
+		offset, visible := listViewport(m.hotspots.list, len(items), max(0, m.height-2))
 		if len(items) == 0 {
 			text := " No changes in the window"
 			if m.hotspots.loading {
@@ -837,10 +816,6 @@ func (m model) hotView() string {
 		}
 		for i := offset; i < min(len(items), offset+visible); i++ {
 			item := items[i]
-			marker := "  "
-			if i == m.hotspots.selected {
-				marker = "▸ "
-			}
 			name := item.branch + syntax.Clean(item.name)
 			if item.directory {
 				arrow := "▾ "
@@ -856,18 +831,15 @@ func (m model) hotView() string {
 			if item.author != "" {
 				meta += " " + syntax.Clean(item.author)
 			}
-			row := fit(fmt.Sprintf("%s%s  %s", marker, name, meta), m.width)
-			if i == m.hotspots.selected {
-				row = "\x1b[7m" + row + strings.Repeat(" ", max(0, m.width-stringWidth(row))) + styleReset
-			} else {
-				row = styleDim + row + styleReset
-			}
-			lines = append(lines, row)
+			lines = append(lines, m.listRow(i, selected, len(items), name, meta))
 		}
 	}
-	status, hints := "", keyHints("tab", "authors", "s", "sort", "↵", "open", "esc", "back")
+	status, hints := "", keyHints("tab", "authors", "s", "sort", "↵", "open", "?", "help")
 	if m.hotspots.mode == "authors" {
-		hints = keyHints("tab", "files", "↵", "filter", "esc", "back")
+		hints = keyHints("tab", "files", "↵", "filter", "?", "help")
+	}
+	if filter := m.hotspots.list.listStatus(m.width); filter != "" {
+		status = filter
 	}
 	if m.flash != "" {
 		status = syntax.Clean(m.flash)
@@ -913,7 +885,44 @@ func (m model) hotAuthorList() []*hotAuthor {
 	return authors
 }
 
+func (m model) hotFilteredItems() []hotItem {
+	items := m.hotItems()
+	query := strings.ToLower(strings.TrimSpace(m.hotspots.list.filter))
+	if query == "" {
+		return items
+	}
+	var matches []hotItem
+	for _, item := range items {
+		if matchesPicker(item.path, query) || matchesPicker(item.name, query) {
+			matches = append(matches, item)
+		}
+	}
+	return matches
+}
+
+func (m model) hotFilteredAuthors() []*hotAuthor {
+	authors := m.hotAuthorList()
+	query := strings.ToLower(strings.TrimSpace(m.hotspots.list.filter))
+	if query == "" {
+		return authors
+	}
+	var matches []*hotAuthor
+	for _, author := range authors {
+		if matchesPicker(author.name, query) {
+			matches = append(matches, author)
+		}
+	}
+	return matches
+}
+
 func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	count := len(m.hotFilteredItems())
+	if m.hotspots.mode == "authors" {
+		count = len(m.hotFilteredAuthors())
+	}
+	if m.handleListKey(&m.hotspots.list, key.String(), listRunes(key), count, max(1, m.height-2), nil) {
+		return m, nil
+	}
 	switch key.String() {
 	case "esc", "q":
 		m.closeHotspotStream()
@@ -930,55 +939,43 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.hotspots.mode = "authors"
 		}
-		m.hotspots.selected, m.hotspots.offset = 0, 0
+		m.hotspots.list.reset()
 	case "s":
 		m.hotspots.sortPath = !m.hotspots.sortPath
-	case "j", "down":
-		m.hotspots.selected++
-	case "k", "up":
-		m.hotspots.selected = max(0, m.hotspots.selected-1)
-	case "g", "home":
-		m.hotspots.selected = 0
-	case "G", "end":
-		if m.hotspots.mode == "authors" {
-			m.hotspots.selected = max(0, len(m.hotAuthorList())-1)
-		} else {
-			m.hotspots.selected = max(0, len(m.hotItems())-1)
-		}
 	case "h", "l":
 		if m.hotspots.mode == "" {
-			items := m.hotItems()
-			if m.hotspots.selected >= 0 && m.hotspots.selected < len(items) && items[m.hotspots.selected].directory {
+			items := m.hotFilteredItems()
+			if m.hotspots.list.selected >= 0 && m.hotspots.list.selected < len(items) && items[m.hotspots.list.selected].directory {
 				if m.hotspots.collapsed == nil {
 					m.hotspots.collapsed = make(map[string]bool)
 				}
-				m.hotspots.collapsed[items[m.hotspots.selected].path] = key.String() == "h"
+				m.hotspots.collapsed[items[m.hotspots.list.selected].path] = key.String() == "h"
 				m.hotspots.collapsedVersion++
 			}
 		}
 	case "V":
 		if m.hotspots.mode == "" {
-			items := m.hotItems()
+			items := m.hotFilteredItems()
 			if len(items) > 0 {
 				m.closeHotspotStream()
-				return m, m.hotspotSequence(items[min(m.hotspots.selected, len(items)-1)].path)
+				return m, m.hotspotSequence(items[min(m.hotspots.list.selected, len(items)-1)].path)
 			}
 		}
 	case "enter":
 		if m.hotspots.mode == "authors" {
-			authors := m.hotAuthorList()
+			authors := m.hotFilteredAuthors()
 			if len(authors) > 0 {
-				m.hotspots.authorFilter = authors[min(m.hotspots.selected, len(authors)-1)].name
+				m.hotspots.authorFilter = authors[min(m.hotspots.list.selected, len(authors)-1)].name
 				m.hotspots.mode = ""
-				m.hotspots.selected, m.hotspots.offset = 0, 0
+				m.hotspots.list.reset()
 			}
 			break
 		}
-		items := m.hotItems()
+		items := m.hotFilteredItems()
 		if len(items) == 0 {
 			break
 		}
-		item := items[min(m.hotspots.selected, len(items)-1)]
+		item := items[min(m.hotspots.list.selected, len(items)-1)]
 		if item.directory {
 			if m.hotspots.collapsed == nil {
 				m.hotspots.collapsed = make(map[string]bool)
