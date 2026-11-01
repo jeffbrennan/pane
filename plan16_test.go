@@ -435,3 +435,14 @@ func TestBranchAndWorktreeFiltersUsePickerMatcher(t *testing.T) {
 		t.Fatalf("worktree subsequence filter: %#v", sorted)
 	}
 }
+
+func TestPruneHintOnlyWhenPrunable(t *testing.T) {
+	m := model{width: 120, height: 20, worktrees: worktreeState{entries: []worktreeEntry{{path: "/tmp/one", branch: "main"}}}}
+	if view := m.worktreeView(); strings.Contains(view, "prune") {
+		t.Fatalf("prune hint shown without a prunable worktree: %q", view)
+	}
+	m.worktrees.entries = append(m.worktrees.entries, worktreeEntry{path: "/tmp/gone", prunable: true})
+	if view := m.worktreeView(); !strings.Contains(view, "prune") {
+		t.Fatalf("prune hint missing: %q", view)
+	}
+}

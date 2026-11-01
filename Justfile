@@ -50,17 +50,18 @@ perf-external:
     mkdir -p .scratch .scratch/profiles
     export PANE_PERF_RUN="$(date -u +%Y%m%dT%H%M%S)-$$"
     go build -o .scratch/perf-pane .
-    while IFS=$'\t' read -r name repo revision extra wait; do
+    while IFS=$'\t' read -r name repo revision extra wait content; do
         case "$name" in ''|'#'*) continue ;; esac
         if [ ! -d "$repo" ]; then
             echo "skip $name: $repo is not available"
             continue
         fi
         PANE_PERF=1 PANE_PERF_SCENARIO="$name" PANE_PERF_REPO="$repo" PANE_PERF_COMMIT="$revision" PANE_PERF_LOG=.scratch/perf-log.tsv PANE_PERF_PROFILES=.scratch/profiles go test -run '^TestPerf$' -count=1 -v .
+        content="${content:-${PANE_PERF_CONTENT:-}}"
         if [ -n "${extra:-}" ]; then
-            go run ./perf/firstpaint -scenario "$name" -repo "$repo" -args "$extra" -idle "${PANE_PERF_IDLE:-60s}" -key "${PANE_PERF_KEY:-}" -after "${PANE_PERF_AFTER:-}" -content "${PANE_PERF_CONTENT:-}" -wait "${wait:-read-only}" -log .scratch/perf-log.tsv
+            go run ./perf/firstpaint -scenario "$name" -repo "$repo" -args "$extra" -idle "${PANE_PERF_IDLE:-60s}" -key "${PANE_PERF_KEY:-}" -after "${PANE_PERF_AFTER:-}" -content "$content" -wait "${wait:-read-only}" -log .scratch/perf-log.tsv
         else
-            go run ./perf/firstpaint -scenario "$name" -repo "$repo" -revision "$revision" -idle "${PANE_PERF_IDLE:-60s}" -key "${PANE_PERF_KEY:-}" -after "${PANE_PERF_AFTER:-}" -content "${PANE_PERF_CONTENT:-}" -wait "${wait:-read-only}" -log .scratch/perf-log.tsv
+            go run ./perf/firstpaint -scenario "$name" -repo "$repo" -revision "$revision" -idle "${PANE_PERF_IDLE:-60s}" -key "${PANE_PERF_KEY:-}" -after "${PANE_PERF_AFTER:-}" -content "$content" -wait "${wait:-read-only}" -log .scratch/perf-log.tsv
         fi
     done < perf/scenarios.txt
 

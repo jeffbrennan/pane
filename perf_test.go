@@ -479,8 +479,13 @@ func measureHotspotPerf(t *testing.T) {
 	repo := repository{root: root}
 	since, author := "1.year", ""
 	cache := hotCachePath(repo.root, since, author)
-	measurePerf(t, "hotspot", "first_page_ns", func() {
+	summary := hotSummaryPath(repo.root, since, author)
+	clear := func() {
 		_ = os.Remove(cache)
+		_ = os.Remove(summary)
+	}
+	measurePerf(t, "hotspot", "first_page_ns", func() {
+		clear()
 		plan, err := repo.planHotspots(since, author)
 		if err != nil {
 			t.Fatal(err)
@@ -495,7 +500,7 @@ func measureHotspotPerf(t *testing.T) {
 		}
 	})
 	measurePerf(t, "hotspot", "first_view_ns", func() {
-		_ = os.Remove(cache)
+		clear()
 		plan, err := repo.planHotspots(since, author)
 		if err != nil {
 			t.Fatal(err)
@@ -511,7 +516,13 @@ func measureHotspotPerf(t *testing.T) {
 			t.Fatal("hotspot first view was empty")
 		}
 	})
-	_ = os.Remove(cache)
+	measurePerf(t, "hotspot", "full_ns", func() {
+		clear()
+		if _, _, err := repo.hotspots(since, author); err != nil {
+			t.Fatal(err)
+		}
+	})
+	clear()
 	if _, _, err := repo.hotspots(since, author); err != nil {
 		t.Fatal(err)
 	}

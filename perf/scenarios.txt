@@ -1,4 +1,4 @@
-# External commit scenarios for PANE_PERF_REPO. Lines: name<TAB>repository<TAB>revision<TAB>pane-args<TAB>first-paint text alternatives
+# External scenarios for PANE_PERF_REPO. Lines: name<TAB>repository<TAB>revision<TAB>pane-args<TAB>first-paint text<TAB>first-content text
 # The synthetic scenarios in perf_test.go run without these.
 # Pane arguments "-" mean "no arguments", which opens history in a clean tree.
 # Revisions are pinned so the numbers stay comparable between runs.
@@ -9,4 +9,4 @@ many-small	../bun	6673b8ebf2d60de2bbb9ce39a4e95b65560a4d0a
 range	../bun	HEAD	HEAD~100..HEAD
 base	../bun	HEAD	-b a47a315~100
 history	../bun	HEAD	-	clean|unstaged|staged
-hot	../bun	HEAD	hot
+hot	../bun	HEAD	hot	read-only	what-reflect-apply-of.programs

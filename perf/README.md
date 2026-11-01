@@ -69,8 +69,9 @@ which uses a 36,008-file, 271 MB working-tree diff:
 | Heap after build | ~249 MB | < 200 MB | not met; revised to 250 MB |
 | Idle CPU, 60 s commit view | ~0.41 s (0.68%) | < 0.30 s (0.5%) | not met; revised to 1% |
 | Idle terminal output | < 100 B/min | minimal | met |
-| Hotspot first rows, 1-year bun window | ~22 ms | < 200 ms | met |
+| Hotspot first rows, 1-year bun window | ~50 ms | < 200 ms | met |
 | Hotspot cache-hit launch | ~60 ms | < 100 ms | met (summary incl. prebuilt tree) |
+| Hotspot full one-year window | ~5.7 s | a few seconds | improved from 14.3 s; 24 staggered parallel git log walks, Git-bound |
 
 The remaining heap is predominantly row text and the loaded patch itself;
 further reductions require changing how diff text is retained. Width resize

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -328,7 +329,7 @@ func TestHotspotStreamEmitsPagesAndUpdatesTree(t *testing.T) {
 	// A partial page must already produce rows, before the stream finishes.
 	updated, cmd = applyBatch(t, m, cmd)
 	m = updated.(model)
-	if len(m.hotspots.commits) != 1 || len(m.hotspots.files) == 0 || cmd == nil {
+	if len(m.hotspots.commits) == 0 || len(m.hotspots.files) == 0 || cmd == nil {
 		t.Fatalf("first page did not update the tree: commits=%d files=%d", len(m.hotspots.commits), len(m.hotspots.files))
 	}
 	if !strings.Contains(m.hotView(), "recent.txt") && !strings.Contains(m.hotView(), "old-big.txt") {
@@ -385,5 +386,47 @@ func TestHotspotCacheHitPrefillsTree(t *testing.T) {
 	}
 	if view := m.hotView(); !strings.Contains(view, "recent.txt") {
 		t.Fatalf("prefilled view: %q", view)
+	}
+}
+
+func TestParallelHotspotWalkMatchesSingle(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	r := testRepo(t)
+	for i := 0; i < 25; i++ {
+		writeFile(t, r, fmt.Sprintf("file-%02d.txt", i%5), strings.Repeat(fmt.Sprintf("line %d\n", i), 10))
+		if _, err := r.commit(fmt.Sprintf("commit %d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	oldThreshold, oldWorkers := hotspotParallelThreshold, hotspotWorkers
+	t.Cleanup(func() { hotspotParallelThreshold, hotspotWorkers = oldThreshold, oldWorkers })
+	clear := func() {
+		_ = os.Remove(hotCachePath(r.root, "1.year", ""))
+		_ = os.Remove(hotSummaryPath(r.root, "1.year", ""))
+	}
+	hotspotParallelThreshold, hotspotWorkers = 5, 4
+	clear()
+	parallelFiles, parallelAuthors, err := r.hotspots("1.year", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hotspotParallelThreshold, hotspotWorkers = 10000, 1
+	clear()
+	singleFiles, singleAuthors, err := r.hotspots("1.year", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parallelFiles) != len(singleFiles) || len(parallelAuthors) != len(singleAuthors) {
+		t.Fatalf("parallel %d files/%d authors, single %d/%d", len(parallelFiles), len(parallelAuthors), len(singleFiles), len(singleAuthors))
+	}
+	byPath := make(map[string]hotFile, len(singleFiles))
+	for _, file := range singleFiles {
+		byPath[file.path] = file
+	}
+	for _, file := range parallelFiles {
+		other, ok := byPath[file.path]
+		if !ok || file.added != other.added || file.deleted != other.deleted || file.commits != other.commits {
+			t.Fatalf("parallel file %#v, single %#v", file, other)
+		}
 	}
 }

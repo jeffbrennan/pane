@@ -6,43 +6,33 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
-// hotSpotStream reads git log --numstat output one commit at a time so the
-// hotspot tree can fill in while the window is still being walked.
-type hotSpotStream struct {
+// hotSpotReader reads one git log --numstat process.
+type hotSpotReader struct {
 	repo repository
 	args []string
 
-	mu          sync.Mutex
-	cmd         *exec.Cmd
-	reader      *bufio.Reader
-	stderr      bytes.Buffer
-	done        bool
-	closed      bool
-	headerReady bool
+	mu     sync.Mutex
+	cmd    *exec.Cmd
+	reader *bufio.Reader
+	stderr bytes.Buffer
+	done   bool
+	closed bool
+	header bool
 }
 
-func newHotSpotStream(repo repository, since, author, revisionRange string) *hotSpotStream {
-	args := []string{"log", "--numstat", "-M", "-z", "--format=%x00%H%x00%ct%x00%aN"}
-	if since != "" {
-		args = append(args, "--since="+since)
-	}
-	if author != "" {
-		args = append(args, "--author="+author)
-	}
-	if revisionRange != "" {
-		args = append(args, revisionRange)
-	}
-	args = append(args, "--")
-	return &hotSpotStream{repo: repo, args: args}
+func newHotSpotReader(repo repository, args []string) *hotSpotReader {
+	return &hotSpotReader{repo: repo, args: args}
 }
 
-func (s *hotSpotStream) start() error {
+func (s *hotSpotReader) start() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -64,9 +54,7 @@ func (s *hotSpotStream) start() error {
 	return nil
 }
 
-// readField returns one NUL-terminated field without the terminator. io.EOF
-// means the process finished.
-func (s *hotSpotStream) readField() (string, error) {
+func (s *hotSpotReader) readField() (string, error) {
 	field, err := s.reader.ReadString(0)
 	if err == io.EOF {
 		return strings.TrimSuffix(field, "\x00"), io.EOF
@@ -77,7 +65,7 @@ func (s *hotSpotStream) readField() (string, error) {
 	return strings.TrimSuffix(field, "\x00"), nil
 }
 
-func (s *hotSpotStream) finish(kill bool) error {
+func (s *hotSpotReader) finish(kill bool) error {
 	s.mu.Lock()
 	if s.done {
 		s.mu.Unlock()
@@ -99,7 +87,7 @@ func (s *hotSpotStream) finish(kill bool) error {
 	return nil
 }
 
-func (s *hotSpotStream) close() {
+func (s *hotSpotReader) close() {
 	if s == nil {
 		return
 	}
@@ -109,8 +97,7 @@ func (s *hotSpotStream) close() {
 	_ = s.finish(true)
 }
 
-// nextPage returns up to limit commits and reports whether the stream is done.
-func (s *hotSpotStream) nextPage(limit int) ([]hotCacheCommit, bool, error) {
+func (s *hotSpotReader) nextPage(limit int) ([]hotCacheCommit, bool, error) {
 	if s == nil {
 		return nil, true, nil
 	}
@@ -119,7 +106,7 @@ func (s *hotSpotStream) nextPage(limit int) ([]hotCacheCommit, bool, error) {
 	}
 	page := make([]hotCacheCommit, 0, min(limit, 128))
 	for len(page) < limit {
-		if !s.headerReady {
+		if !s.header {
 			field, err := s.readField()
 			if err == io.EOF {
 				if err := s.finish(false); err != nil {
@@ -133,7 +120,7 @@ func (s *hotSpotStream) nextPage(limit int) ([]hotCacheCommit, bool, error) {
 			if field != "" {
 				continue
 			}
-			s.headerReady = true
+			s.header = true
 		}
 		hash, err := s.readField()
 		if err == io.EOF {
@@ -151,7 +138,7 @@ func (s *hotSpotStream) nextPage(limit int) ([]hotCacheCommit, bool, error) {
 		if err != nil {
 			return page, true, err
 		}
-		s.headerReady = false
+		s.header = false
 		var fields []string
 		eof := false
 		for {
@@ -164,7 +151,7 @@ func (s *hotSpotStream) nextPage(limit int) ([]hotCacheCommit, bool, error) {
 				return page, true, err
 			}
 			if field == "" {
-				s.headerReady = true
+				s.header = true
 				break
 			}
 			fields = append(fields, field)
@@ -182,6 +169,198 @@ func (s *hotSpotStream) nextPage(limit int) ([]hotCacheCommit, bool, error) {
 		}
 	}
 	return page, false, nil
+}
+
+type hotSpotPage struct {
+	commits []hotCacheCommit
+	done    bool
+	err     error
+}
+
+// hotSpotStream merges one or more git log readers so a large window can be
+// walked in parallel. It still yields commits in pages.
+type hotSpotStream struct {
+	repo          repository
+	since, author string
+	revisionRange string
+
+	mu         sync.Mutex
+	readers    []*hotSpotReader
+	results    chan hotSpotPage
+	closed     chan struct{}
+	started    bool
+	closedFlag bool
+	remaining  int
+	err        error
+}
+
+func newHotSpotStream(repo repository, since, author, revisionRange string) *hotSpotStream {
+	return &hotSpotStream{repo: repo, since: since, author: author, revisionRange: revisionRange, closed: make(chan struct{})}
+}
+
+func (s *hotSpotStream) start() error {
+	s.mu.Lock()
+	if s.started {
+		s.mu.Unlock()
+		return nil
+	}
+	s.started = true
+	s.mu.Unlock()
+	readers, err := s.buildReaders()
+	if err != nil {
+		return err
+	}
+	s.readers = readers
+	s.results = make(chan hotSpotPage, max(2, len(readers)*2))
+	s.remaining = len(readers)
+	startReader := func(reader *hotSpotReader) {
+		go func() {
+			batch := 1
+			for {
+				commits, done, err := reader.nextPage(batch)
+				batch = 20
+				select {
+				case s.results <- hotSpotPage{commits: commits, done: done, err: err}:
+				case <-s.closed:
+					return
+				}
+				if done || err != nil {
+					return
+				}
+			}
+		}()
+	}
+	// Start a few readers first so the first page is not delayed by process
+	// startup contention, then fan out to the rest.
+	initial := min(6, len(readers))
+	for _, reader := range readers[:initial] {
+		startReader(reader)
+	}
+	if initial < len(readers) {
+		go func() {
+			select {
+			case <-time.After(120 * time.Millisecond):
+			case <-s.closed:
+				return
+			}
+			for _, reader := range readers[initial:] {
+				startReader(reader)
+			}
+		}()
+	}
+	return nil
+}
+
+var (
+	hotspotParallelThreshold = 1000
+	hotspotWorkers           = 0
+)
+
+func (s *hotSpotStream) buildReaders() ([]*hotSpotReader, error) {
+	single := func() []*hotSpotReader {
+		args := []string{"log", "--numstat", "-M", "-z", "--format=%x00%H%x00%ct%x00%aN"}
+		if s.since != "" {
+			args = append(args, "--since="+s.since)
+		}
+		if s.author != "" {
+			args = append(args, "--author="+s.author)
+		}
+		if s.revisionRange != "" {
+			args = append(args, s.revisionRange)
+		}
+		args = append(args, "--")
+		return []*hotSpotReader{newHotSpotReader(s.repo, args)}
+	}
+	if s.revisionRange != "" {
+		return single(), nil
+	}
+	var args []string
+	if s.since != "" {
+		args = append(args, "rev-list", "--since="+s.since)
+	} else {
+		args = append(args, "rev-list")
+	}
+	if s.author != "" {
+		args = append(args, "--author="+s.author)
+	}
+	args = append(args, "HEAD")
+	out, err := s.repo.commandStdout(args...)
+	if err != nil {
+		return single(), nil
+	}
+	var hashes []string
+	for _, field := range bytes.Split(out, []byte{'\n'}) {
+		if hash := strings.TrimSpace(string(field)); hash != "" {
+			hashes = append(hashes, hash)
+		}
+	}
+	if len(hashes) < hotspotParallelThreshold {
+		return single(), nil
+	}
+	workers := hotspotWorkers
+	if workers <= 0 {
+		workers = min(24, runtime.GOMAXPROCS(0)*3)
+	}
+	group := (len(hashes) + workers - 1) / workers
+	if group > 2000 {
+		group = 2000
+	}
+	var readers []*hotSpotReader
+	for start := 0; start < len(hashes); start += group {
+		end := min(start+group, len(hashes))
+		logArgs := []string{"log", "--no-walk=unsorted", "--numstat", "-M", "-z", "--format=%x00%H%x00%ct%x00%aN"}
+		logArgs = append(logArgs, hashes[start:end]...)
+		logArgs = append(logArgs, "--")
+		readers = append(readers, newHotSpotReader(s.repo, logArgs))
+	}
+	return readers, nil
+}
+
+func (s *hotSpotStream) nextPage(limit int) ([]hotCacheCommit, bool, error) {
+	if s == nil {
+		return nil, true, nil
+	}
+	if err := s.start(); err != nil {
+		return nil, true, err
+	}
+	page := make([]hotCacheCommit, 0, min(limit, 128))
+	for len(page) < limit {
+		select {
+		case result := <-s.results:
+			if result.err != nil {
+				s.close()
+				return page, true, result.err
+			}
+			page = append(page, result.commits...)
+			if result.done {
+				s.remaining--
+				if s.remaining == 0 {
+					return page, true, nil
+				}
+			}
+		case <-s.closed:
+			return page, true, nil
+		}
+	}
+	return page, false, nil
+}
+
+func (s *hotSpotStream) close() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	if s.closedFlag {
+		s.mu.Unlock()
+		return
+	}
+	s.closedFlag = true
+	close(s.closed)
+	readers := s.readers
+	s.mu.Unlock()
+	for _, reader := range readers {
+		reader.close()
+	}
 }
 
 func parseHotCommitFields(hash, timestamp, author string, fields []string) (hotCacheCommit, error) {
@@ -202,7 +381,6 @@ func parseHotCommitFields(hash, timestamp, author string, fields []string) (hotC
 		}
 		path := parts[2]
 		if path == "" && i+2 < len(fields) {
-			// The next two fields are the original and new paths.
 			path = fields[i+2]
 			i += 2
 		}

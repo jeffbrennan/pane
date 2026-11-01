@@ -164,7 +164,11 @@ func (m model) worktreeView() string {
 		}
 		lines = append(lines, row)
 	}
-	status, hints := "", keyHints("↵", "switch", "n", "new", "d", "remove", "p", "prune")
+	hintKeys := []string{"↵", "switch", "n", "new", "d", "remove"}
+	if m.anyPrunable() {
+		hintKeys = append(hintKeys, "p", "prune")
+	}
+	status, hints := "", keyHints(hintKeys...)
 	if m.worktrees.searching {
 		status = "/" + renderInput(m.worktrees.draft, m.worktrees.draftCursor, max(1, m.width-1))
 		hints = keyHints("↵", "filter", "esc", "cancel")
