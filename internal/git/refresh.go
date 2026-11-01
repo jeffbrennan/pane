@@ -295,7 +295,7 @@ func (r Repo) LoadChanges(previous *RefreshCache, deferOffscreen bool) (*Refresh
 		for _, c := range group.changes {
 			key := ChangeKey{c.Path, group.staged}
 			cached := next.Changes[key]
-			c.Generated = generatedByPath(c.Path)
+			c.Generated = GeneratedByPath(c.Path)
 			cached.Change = c
 			next.Changes[key] = cached
 		}

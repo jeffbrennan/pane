@@ -11,7 +11,7 @@ func (r Repo) GeneratedPaths(paths []string) map[string]bool {
 	generated := make(map[string]bool)
 	var candidates []string
 	for _, path := range paths {
-		if generatedByPath(path) {
+		if GeneratedByPath(path) {
 			generated[path] = true
 			continue
 		}
@@ -65,7 +65,7 @@ var generatedNames = map[string]bool{
 
 var generatedSuffixes = []string{".lock", ".snap", ".min.js", ".min.css"}
 
-func generatedByPath(path string) bool {
+func GeneratedByPath(path string) bool {
 	base := path[strings.LastIndex(path, "/")+1:]
 	if generatedNames[base] {
 		return true

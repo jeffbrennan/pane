@@ -1,38 +1,13 @@
 package main
 
 import (
+	"github.com/jeffbrennan/pane/internal/git"
+
 	"fmt"
 	"strings"
 )
 
-// Built-in generated and lock file names, for trees without .gitattributes.
-var generatedNames = map[string]bool{
-	"bun.lock":          true,
-	"bun.lockb":         true,
-	"package-lock.json": true,
-	"go.sum":            true,
-	"Cargo.lock":        true,
-	"yarn.lock":         true,
-	"pnpm-lock.yaml":    true,
-	"composer.lock":     true,
-	"poetry.lock":       true,
-	"Gemfile.lock":      true,
-}
-
-var generatedSuffixes = []string{".lock", ".snap", ".min.js", ".min.css"}
-
-func generatedByPath(path string) bool {
-	base := path[strings.LastIndex(path, "/")+1:]
-	if generatedNames[base] {
-		return true
-	}
-	for _, suffix := range generatedSuffixes {
-		if strings.HasSuffix(base, suffix) {
-			return true
-		}
-	}
-	return false
-}
+func generatedByPath(path string) bool { return git.GeneratedByPath(path) }
 
 func (m *model) collapseGenerated(changes []Change) {
 	for _, c := range changes {
