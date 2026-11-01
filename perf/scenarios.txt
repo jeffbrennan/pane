@@ -3,6 +3,7 @@
 # Pane arguments "-" mean "no arguments", which opens history in a clean tree.
 # Revisions are pinned so the numbers stay comparable between runs.
 huge-commit	../bun	a47a315
+mega-commit	../bun	23427dbc12f
 huge-file	../bun	e33c3722bb30d7a8b64e5fb8faed1dbbc096cb27
 long-lines	../bun	5502278f3ed8dae9180b97f91ace308105aed36a
 many-small	../bun	6673b8ebf2d60de2bbb9ce39a4e95b65560a4d0a

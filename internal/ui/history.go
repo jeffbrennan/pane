@@ -28,6 +28,7 @@ type historyState struct {
 	statsCache                        map[string]git.CommitInfo
 	changes                           []git.Change
 	rows                              []row
+	viewedFiles, totalFiles           int
 	gutterWidth                       int
 	list                              listState
 	pos, horizontal, viewTop, request int
@@ -154,6 +155,9 @@ func (m *model) appendCommitChanges(changes []git.Change, done bool) {
 					part[i].setHeaderRow(header)
 				}
 			}
+			viewed, total := viewedCountRows(part)
+			m.history.viewedFiles += viewed
+			m.history.totalFiles += total
 			rows = append(rows, part...)
 		}
 		m.history.rows = rows
@@ -181,6 +185,9 @@ func (m *model) appendCommitChanges(changes []git.Change, done bool) {
 			part[i].setHeaderRow(header + offset)
 		}
 	}
+	viewed, total := viewedCountRows(part)
+	m.history.viewedFiles += viewed
+	m.history.totalFiles += total
 	m.history.rows = append(rows, part...)
 }
 
@@ -599,6 +606,7 @@ func (m model) openCommit(commit git.CommitInfo) (tea.Model, tea.Cmd) {
 	m.history.fetching = false
 	m.history.statsFetching = false
 	m.history.changes, m.history.rows = nil, nil
+	m.history.viewedFiles, m.history.totalFiles = 0, 0
 	m.history.streamActive = true
 	m.history.streamPaths, m.history.streamLoaded, m.history.streamGutter = nil, 0, 0
 	m.history.streamError = ""
@@ -850,8 +858,8 @@ func (m model) commitModel() model {
 		}
 	}
 	view.viewHints = keyHints("esc", "back", "?", "help")
-	if viewed, total := viewedCountRows(m.history.rows); viewed > 0 {
-		view.viewBadge = stateBadges(position, fmt.Sprintf("%d/%d viewed", viewed, total), m.whitespaceBadge())
+	if m.history.viewedFiles > 0 {
+		view.viewBadge = stateBadges(position, fmt.Sprintf("%d/%d viewed", m.history.viewedFiles, m.history.totalFiles), m.whitespaceBadge())
 	}
 	view.message = ""
 	if m.history.loading && m.history.commitLoadingVisible {
@@ -877,6 +885,7 @@ func (m *model) rebuildCommit() {
 	view := m.commitModel()
 	view.rebuild()
 	m.history.rows, m.history.pos, m.history.viewTop = view.rows, view.pos, view.viewTop
+	m.history.viewedFiles, m.history.totalFiles = viewedCountRows(view.rows)
 	m.history.gutterWidth = view.gutterWidth
 	m.collapsedFiles, m.generatedHandled = view.collapsedFiles, view.generatedHandled
 }

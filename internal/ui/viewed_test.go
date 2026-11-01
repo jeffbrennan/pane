@@ -95,6 +95,9 @@ func TestToggleViewedCollapsesAndAdvances(t *testing.T) {
 	if viewed, total := viewedCountRows(m.history.rows); viewed != 1 || total != 2 {
 		t.Fatalf("viewed=%d total=%d", viewed, total)
 	}
+	if m.history.viewedFiles != 1 || m.history.totalFiles != 2 {
+		t.Fatalf("badge counts viewed=%d total=%d", m.history.viewedFiles, m.history.totalFiles)
+	}
 
 	// Toggling again reopens the file.
 	for i, row := range m.history.rows {
@@ -109,6 +112,9 @@ func TestToggleViewedCollapsesAndAdvances(t *testing.T) {
 	}
 	if m.viewed.marked(identity, "one.go", blob) {
 		t.Fatal("unmark was not persisted")
+	}
+	if m.history.viewedFiles != 0 || m.history.totalFiles != 2 {
+		t.Fatalf("badge counts after unmark: viewed=%d total=%d", m.history.viewedFiles, m.history.totalFiles)
 	}
 }
 
