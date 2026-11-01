@@ -12,7 +12,7 @@ import (
 	"github.com/jeffbrennan/pane/internal/git"
 )
 
-func hotFixture(t *testing.T) Repo {
+func hotFixture(t *testing.T) git.Repo {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	r := testRepo(t)
@@ -138,7 +138,7 @@ func drainHotspots(t *testing.T, m model, cmd tea.Cmd) model {
 	return m
 }
 
-func m0Files(t *testing.T, r Repo) []hotFile {
+func m0Files(t *testing.T, r git.Repo) []hotFile {
 	t.Helper()
 	files, _, err := hotspots(r, "2.year", "")
 	if err != nil {
@@ -147,7 +147,7 @@ func m0Files(t *testing.T, r Repo) []hotFile {
 	return files
 }
 
-func m0Authors(t *testing.T, r Repo) map[string]*hotAuthor {
+func m0Authors(t *testing.T, r git.Repo) map[string]*hotAuthor {
 	t.Helper()
 	_, authors, err := hotspots(r, "2.year", "")
 	if err != nil {

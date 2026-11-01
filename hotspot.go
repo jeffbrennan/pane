@@ -17,6 +17,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 const hotHalfLife = 90 * 24 * time.Hour
@@ -52,8 +54,8 @@ type hotspotState struct {
 	files            []hotFile
 	authors          map[string]*hotAuthor
 	items            *hotItemsCache
-	commits          []HotCacheCommit
-	stream           *HotSpotStream
+	commits          []git.HotCacheCommit
+	stream           *git.HotSpotStream
 	collapsed        map[string]bool
 	head             string
 	cachePath        string
@@ -81,7 +83,7 @@ type hotspotsLoaded struct {
 }
 
 type hotspotSequenceLoaded struct {
-	commits []CommitInfo
+	commits []git.CommitInfo
 	request int
 	err     error
 }
@@ -93,8 +95,8 @@ type hotspotsStarted struct {
 }
 
 type hotspotPageLoaded struct {
-	commits []HotCacheCommit
-	stream  *HotSpotStream
+	commits []git.HotCacheCommit
+	stream  *git.HotSpotStream
 	request int
 	done    bool
 	err     error
@@ -107,15 +109,15 @@ func hotSinceDefault() string { return "1.year" }
 type hotspotPlan struct {
 	head, cachePath, since, author string
 	cutoff                         int64
-	commits                        []HotCacheCommit
-	stream                         *HotSpotStream
+	commits                        []git.HotCacheCommit
+	stream                         *git.HotSpotStream
 	files                          []hotFile
 	authors                        map[string]*hotAuthor
 	items                          []hotItem
 	cacheHit                       bool
 }
 
-func planHotspots(r Repo, since, author string) (hotspotPlan, error) {
+func planHotspots(r git.Repo, since, author string) (hotspotPlan, error) {
 	head := ""
 	if out, err := r.Command("rev-parse", "--verify", "--quiet", "HEAD"); err == nil {
 		head = strings.TrimSpace(string(out))
@@ -150,14 +152,14 @@ func planHotspots(r Repo, since, author string) (hotspotPlan, error) {
 	} else if cutoff, ok := sinceCutoff(since, now); ok {
 		plan.cutoff = cutoff
 	}
-	plan.stream = NewHotSpotStream(r, since, author, revisionRange)
+	plan.stream = git.NewHotSpotStream(r, since, author, revisionRange)
 	generated := builtinGeneratedPaths(plan.commits)
 	plan.files, plan.authors = aggregateHotspots(plan.commits, generated, plan.cutoff, now)
 	return plan, nil
 }
 
 // Hotspots is the blocking form used by tests and non-interactive callers.
-func hotspots(r Repo, since, author string) ([]hotFile, map[string]*hotAuthor, error) {
+func hotspots(r git.Repo, since, author string) ([]hotFile, map[string]*hotAuthor, error) {
 	plan, err := planHotspots(r, since, author)
 	if err != nil {
 		return nil, nil, err
@@ -165,7 +167,7 @@ func hotspots(r Repo, since, author string) ([]hotFile, map[string]*hotAuthor, e
 	if plan.cacheHit {
 		return plan.files, plan.authors, nil
 	}
-	commits := append([]HotCacheCommit(nil), plan.commits...)
+	commits := append([]git.HotCacheCommit(nil), plan.commits...)
 	for {
 		page, done, err := plan.stream.NextPage(hotspotPageSize)
 		if err != nil {
@@ -191,7 +193,7 @@ var hotspotFirstPageSize = 1
 // rebuilt from the per-commit cache.
 var hotSummaryTTL = time.Hour
 
-func finishHotspots(r Repo, plan hotspotPlan, commits []HotCacheCommit) ([]hotFile, map[string]*hotAuthor, []hotItem, error) {
+func finishHotspots(r git.Repo, plan hotspotPlan, commits []git.HotCacheCommit) ([]hotFile, map[string]*hotAuthor, []hotItem, error) {
 	commits = pruneHotCommits(commits, plan.cutoff)
 	now := time.Now()
 	cutoff := plan.cutoff
@@ -208,7 +210,7 @@ func finishHotspots(r Repo, plan hotspotPlan, commits []HotCacheCommit) ([]hotFi
 	return files, authors, items, nil
 }
 
-func hotspotPaths(commits []HotCacheCommit) []string {
+func hotspotPaths(commits []git.HotCacheCommit) []string {
 	paths := make([]string, 0, len(commits))
 	seen := make(map[string]bool)
 	for _, commit := range commits {
@@ -222,11 +224,11 @@ func hotspotPaths(commits []HotCacheCommit) []string {
 	return paths
 }
 
-func builtinGeneratedPaths(commits []HotCacheCommit) map[string]bool {
+func builtinGeneratedPaths(commits []git.HotCacheCommit) map[string]bool {
 	generated := make(map[string]bool)
 	for _, commit := range commits {
 		for _, change := range commit.Changes {
-			if generatedByPath(change.Path) {
+			if git.GeneratedByPath(change.Path) {
 				generated[change.Path] = true
 			}
 		}
@@ -234,12 +236,12 @@ func builtinGeneratedPaths(commits []HotCacheCommit) map[string]bool {
 	return generated
 }
 
-func isAncestor(r Repo, ancestor, descendant string) bool {
+func isAncestor(r git.Repo, ancestor, descendant string) bool {
 	_, err := r.Command("merge-base", "--is-ancestor", ancestor, descendant)
 	return err == nil
 }
 
-func aggregateHotspots(commits []HotCacheCommit, generated map[string]bool, cutoff int64, now time.Time) ([]hotFile, map[string]*hotAuthor) {
+func aggregateHotspots(commits []git.HotCacheCommit, generated map[string]bool, cutoff int64, now time.Time) ([]hotFile, map[string]*hotAuthor) {
 	files := make(map[string]*hotFile)
 	authors := make(map[string]*hotAuthor)
 	for _, commit := range commits {
@@ -286,7 +288,7 @@ func aggregateHotspots(commits []HotCacheCommit, generated map[string]bool, cuto
 	return result, authors
 }
 
-func pruneHotCommits(commits []HotCacheCommit, cutoff int64) []HotCacheCommit {
+func pruneHotCommits(commits []git.HotCacheCommit, cutoff int64) []git.HotCacheCommit {
 	pruned := commits[:0]
 	for _, commit := range commits {
 		if commit.Time >= cutoff {
@@ -306,7 +308,7 @@ func advanceHotCutoff(since string, now time.Time) int64 {
 	return 0
 }
 
-func oldestHotCommit(commits []HotCacheCommit) int64 {
+func oldestHotCommit(commits []git.HotCacheCommit) int64 {
 	oldest := int64(0)
 	for _, commit := range commits {
 		if oldest == 0 || commit.Time < oldest {
@@ -366,13 +368,13 @@ func topDir(path string) string {
 const hotCacheVersion = 1
 
 type hotCache struct {
-	Version  int              `json:"version"`
-	Head     string           `json:"head"`
-	Since    string           `json:"since"`
-	Author   string           `json:"author"`
-	Cutoff   int64            `json:"cutoff"`
-	CachedAt int64            `json:"cached_at"`
-	Commits  []HotCacheCommit `json:"commits"`
+	Version  int                  `json:"version"`
+	Head     string               `json:"head"`
+	Since    string               `json:"since"`
+	Author   string               `json:"author"`
+	Cutoff   int64                `json:"cutoff"`
+	CachedAt int64                `json:"cached_at"`
+	Commits  []git.HotCacheCommit `json:"commits"`
 }
 
 type hotCacheFile struct {
@@ -510,7 +512,7 @@ func writeHotSummary(path, head, since, author string, cutoff, cachedAt int64, f
 	_ = gob.NewEncoder(file).Encode(summary)
 }
 
-func writeHotCache(path, head, since, author string, cutoff, cachedAt int64, commits []HotCacheCommit) {
+func writeHotCache(path, head, since, author string, cutoff, cachedAt int64, commits []git.HotCacheCommit) {
 	if path == "" {
 		return
 	}
@@ -540,7 +542,7 @@ func (m model) loadHotspots() tea.Cmd {
 	}
 }
 
-func (m model) waitHotspotPage(stream *HotSpotStream, request, limit int) tea.Cmd {
+func (m model) waitHotspotPage(stream *git.HotSpotStream, request, limit int) tea.Cmd {
 	return func() tea.Msg {
 		commits, done, err := stream.NextPage(limit)
 		return hotspotPageLoaded{commits: commits, stream: stream, request: request, done: done, err: err}
@@ -552,7 +554,7 @@ func (m model) finishHotspots(request int) tea.Cmd {
 		head: m.hotspots.head, cachePath: m.hotspots.cachePath,
 		since: m.hotspots.since, author: m.hotspots.author, cutoff: m.hotspots.cutoff,
 	}
-	commits := append([]HotCacheCommit(nil), m.hotspots.commits...)
+	commits := append([]git.HotCacheCommit(nil), m.hotspots.commits...)
 	repo := m.repo
 	return func() tea.Msg {
 		files, authors, items, err := finishHotspots(repo, plan, commits)
@@ -742,9 +744,9 @@ func (m model) hotspotSequence(path string) tea.Cmd {
 		args = append(args, "--", path)
 		out, err := repo.CommandStdout(args...)
 		if err != nil {
-			return hotspotSequenceLoaded{request: request, err: gitError(out, err)}
+			return hotspotSequenceLoaded{request: request, err: git.GitError(out, err)}
 		}
-		var commits []CommitInfo
+		var commits []git.CommitInfo
 		for _, field := range bytes.Split(out, []byte{0}) {
 			hash := strings.TrimSpace(string(field))
 			if hash == "" {
@@ -753,7 +755,7 @@ func (m model) hotspotSequence(path string) tea.Cmd {
 			if len(commits) == maxSequenceCommits {
 				break
 			}
-			commits = append(commits, CommitInfo{Hash: hash})
+			commits = append(commits, git.CommitInfo{Hash: hash})
 		}
 		return hotspotSequenceLoaded{commits: commits, request: request}
 	}
@@ -792,7 +794,7 @@ func (m model) hotView() string {
 	if m.hotspots.author != "" {
 		title += " · author " + m.hotspots.author
 	}
-	lines := []string{m.titleBar(" "+m.accent()+clean(title)+styleReset, styleDim+"read-only"+styleReset)}
+	lines := []string{m.titleBar(" "+m.accent()+syntax.Clean(title)+styleReset, styleDim+"read-only"+styleReset)}
 	now := time.Now()
 	if m.hotspots.mode == "authors" {
 		authors := m.hotAuthorList()
@@ -804,7 +806,7 @@ func (m model) hotView() string {
 				marker = "▸ "
 			}
 			dir := topAuthorDir(author)
-			row := fit(fmt.Sprintf("%s%s  %d commits  %d churn  %s", marker, clean(author.name), author.commits, author.churn, dir), m.width)
+			row := fit(fmt.Sprintf("%s%s  %d commits  %d churn  %s", marker, syntax.Clean(author.name), author.commits, author.churn, dir), m.width)
 			if i == m.hotspots.selected {
 				row = "\x1b[7m" + row + strings.Repeat(" ", max(0, m.width-stringWidth(row))) + styleReset
 			} else {
@@ -839,7 +841,7 @@ func (m model) hotView() string {
 			if i == m.hotspots.selected {
 				marker = "▸ "
 			}
-			name := item.branch + clean(item.name)
+			name := item.branch + syntax.Clean(item.name)
 			if item.directory {
 				arrow := "▾ "
 				if item.collapsed {
@@ -849,10 +851,10 @@ func (m model) hotView() string {
 			}
 			meta := hotBar(item.score, maxScore, 6) + fmt.Sprintf(" %d↻ %d±", item.commits, item.churn)
 			if !item.last.IsZero() {
-				meta += " " + historyCommitTime(item.last.Format(time.RFC3339), now)
+				meta += " " + git.HistoryCommitTime(item.last.Format(time.RFC3339), now)
 			}
 			if item.author != "" {
-				meta += " " + clean(item.author)
+				meta += " " + syntax.Clean(item.author)
 			}
 			row := fit(fmt.Sprintf("%s%s  %s", marker, name, meta), m.width)
 			if i == m.hotspots.selected {
@@ -868,7 +870,7 @@ func (m model) hotView() string {
 		hints = keyHints("tab", "files", "↵", "filter", "esc", "back")
 	}
 	if m.flash != "" {
-		status = clean(m.flash)
+		status = syntax.Clean(m.flash)
 	}
 	lines = append(lines, m.statusBar(status, hints))
 	for len(lines) < m.height {

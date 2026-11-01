@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func TestExpandFileContext(t *testing.T) {
@@ -65,7 +66,7 @@ func TestExpandFileContext(t *testing.T) {
 }
 
 func TestContextResponseAfterCollapseIsIgnored(t *testing.T) {
-	m := model{width: 40, height: 10, snapshot: Snapshot{Unstaged: []Change{longFile("file")}}}
+	m := model{width: 40, height: 10, snapshot: git.Snapshot{Unstaged: []git.Change{longFile("file")}}}
 	m.rebuild()
 	m.pos = 1
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
@@ -87,7 +88,7 @@ func TestContextKeysOnChangedAndHunkSeparatorRows(t *testing.T) {
 	base := "@@ -2 +2 @@\n-old\n+new\n@@ -12 +12 @@\n-before\n+after\n"
 	for _, kind := range []byte{'+', '@'} {
 		t.Run(string(kind), func(t *testing.T) {
-			m := model{width: 40, height: 10, wrap: true, snapshot: Snapshot{Unstaged: []Change{{Path: "first", Diff: base}, longFile("second")}}}
+			m := model{width: 40, height: 10, wrap: true, snapshot: git.Snapshot{Unstaged: []git.Change{{Path: "first", Diff: base}, longFile("second")}}}
 			m.rebuild()
 			for i, r := range m.rows {
 				if r.kind == kind {
@@ -139,7 +140,7 @@ func TestContextKeysOnChangedAndHunkSeparatorRows(t *testing.T) {
 
 func TestExpandDeletedFileWithContextKey(t *testing.T) {
 	diff := "diff --git a/file b/file\ndeleted file mode 100644\n@@ -1,2 +0,0 @@\n-first\n-second\n"
-	m := model{width: 40, height: 10, snapshot: Snapshot{Unstaged: []Change{{Path: "file", Diff: diff}}}}
+	m := model{width: 40, height: 10, snapshot: git.Snapshot{Unstaged: []git.Change{{Path: "file", Diff: diff}}}}
 	m.rebuild()
 	m.toggleDeletedFile()
 	if !strings.Contains(m.View(), "first") {
@@ -155,7 +156,7 @@ func TestExpandDeletedFileWithContextKey(t *testing.T) {
 func TestContextLoadKeepsSelectionAndRejectsStaleDiff(t *testing.T) {
 	base := "@@ -10,2 +10,2 @@\n same\n-old\n+new\n"
 	full := "@@ -1,11 +1,11 @@\n" + strings.Repeat(" earlier\n", 9) + " same\n-old\n+new\n"
-	m := model{width: 40, height: 10, wrap: true, snapshot: Snapshot{Unstaged: []Change{{Path: "file", Diff: base}}}}
+	m := model{width: 40, height: 10, wrap: true, snapshot: git.Snapshot{Unstaged: []git.Change{{Path: "file", Diff: base}}}}
 	m.rebuild()
 	m.pos = 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
@@ -176,7 +177,7 @@ func TestContextLoadKeepsSelectionAndRejectsStaleDiff(t *testing.T) {
 
 func TestExpandContextInCommitView(t *testing.T) {
 	base := "@@ -10 +10 @@\n-old\n+new\n"
-	m := model{width: 40, height: 10, wrap: true, screen: "commit", history: historyState{current: CommitInfo{Hash: "abc"}, changes: []Change{{Path: "file", Diff: base}}}}
+	m := model{width: 40, height: 10, wrap: true, screen: "commit", history: historyState{current: git.CommitInfo{Hash: "abc"}, changes: []git.Change{{Path: "file", Diff: base}}}}
 	m.rebuildCommit()
 	m.history.pos = 1
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})

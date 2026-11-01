@@ -3,13 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/jeffbrennan/pane/internal/git"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func renameFixture(t *testing.T, oldPath, newPath string, edit bool) (Repo, string) {
+func renameFixture(t *testing.T, oldPath, newPath string, edit bool) (git.Repo, string) {
 	t.Helper()
 	r := testRepo(t)
 	var content strings.Builder
@@ -156,10 +157,10 @@ func TestHistoryAndChangesIgnoreRenameLimitWarning(t *testing.T) {
 	if err != nil || len(stats) != 1 || stats[0].Added != 4 || stats[0].Deleted != 4 {
 		t.Fatalf("stats: %#v, %v", stats, err)
 	}
-	for name, load := range map[string]func() ([]Change, error){
-		"commit": func() ([]Change, error) { return r.CommitChangesWithoutSyntax("HEAD") },
-		"base": func() ([]Change, error) {
-			var loaded []Change
+	for name, load := range map[string]func() ([]git.Change, error){
+		"commit": func() ([]git.Change, error) { return r.CommitChangesWithoutSyntax("HEAD") },
+		"base": func() ([]git.Change, error) {
+			var loaded []git.Change
 			for chunk := range r.StreamBase(context.Background(), "HEAD~1", 200) {
 				if chunk.Err != nil {
 					return nil, chunk.Err
@@ -182,8 +183,8 @@ func TestHistoryAndChangesIgnoreRenameLimitWarning(t *testing.T) {
 }
 
 func TestRenameHeadersWrapAndBehaveAsOneFile(t *testing.T) {
-	c := Change{OldPath: "old/a/very/long/filename.go", Path: "new/a/very/long/filename.go", Diff: "similarity index 100%\n"}
-	m := model{width: 20, height: 8, wrap: true, snapshot: Snapshot{Unstaged: []Change{c}}}
+	c := git.Change{OldPath: "old/a/very/long/filename.go", Path: "new/a/very/long/filename.go", Diff: "similarity index 100%\n"}
+	m := model{width: 20, height: 8, wrap: true, snapshot: git.Snapshot{Unstaged: []git.Change{c}}}
 	m.rebuild()
 	if len(m.fileEntries()) != 1 {
 		t.Fatalf("duplicate picker entries: %#v", m.fileEntries())
@@ -223,7 +224,7 @@ func TestRenameUnstageDoesNotOverwriteRestagedSource(t *testing.T) {
 	if err := r.Stage("old", false); err != nil {
 		t.Fatal(err)
 	}
-	err := r.StageChange(Change{Path: "new", OldPath: "old"}, true)
+	err := r.StageChange(git.Change{Path: "new", OldPath: "old"}, true)
 	if err == nil || !strings.Contains(err.Error(), "separate staged changes") {
 		t.Fatalf("error: %v", err)
 	}

@@ -1,6 +1,10 @@
 package main
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/jeffbrennan/pane/internal/git"
+)
 
 func (m model) toggleWhitespace() (tea.Model, tea.Cmd) {
 	m.repo.IgnoreSpace = !m.repo.IgnoreSpace
@@ -48,7 +52,7 @@ func (m model) toggleWhitespace() (tea.Model, tea.Cmd) {
 		m.resetSequenceStream()
 		m.sequence.request++
 		m.sequence.rowCache = nil
-		m.sequence.changes = make([][]Change, len(m.sequence.commits))
+		m.sequence.changes = make([][]git.Change, len(m.sequence.commits))
 		m.sequence.states = make([]sequenceLoadState, len(m.sequence.commits))
 		m.sequence.errors = make([]string, len(m.sequence.commits))
 		m.sequence.loading = len(m.sequence.commits) > 0

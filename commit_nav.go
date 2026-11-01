@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 type commitPosition struct {
@@ -101,7 +102,7 @@ func (m model) stepCommit(direction int) (tea.Model, tea.Cmd) {
 	if direction > 0 && m.history.more {
 		m.history.pendingStep = direction
 		m.history.fetching = true
-		return m, m.fetchHistory(len(m.history.commits), historyPage)
+		return m, m.fetchHistory(len(m.history.commits), git.HistoryPage)
 	}
 	if direction > 0 {
 		m.flash = fmt.Sprintf("Last commit (%d)", len(commits))

@@ -2,6 +2,7 @@ package main
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func (m model) openFileHistory() (tea.Model, tea.Cmd) {
@@ -83,7 +84,7 @@ func (m model) leaveFileHistory() (tea.Model, tea.Cmd) {
 		previous.sequence.request++
 		if whitespaceChanged {
 			previous.sequence.rowCache = nil
-			previous.sequence.changes = make([][]Change, len(previous.sequence.commits))
+			previous.sequence.changes = make([][]git.Change, len(previous.sequence.commits))
 			previous.sequence.states = make([]sequenceLoadState, len(previous.sequence.commits))
 			previous.sequence.errors = make([]string, len(previous.sequence.commits))
 			previous.sequence.loading = len(previous.sequence.commits) > 0
@@ -115,12 +116,12 @@ func (m *model) jumpToHistoryFile() {
 	}
 }
 
-func initialFileHistory(repo Repo, path string) (model, error) {
-	resolved, err := fileHistoryPath(repo, path)
+func initialFileHistory(repo git.Repo, path string) (model, error) {
+	resolved, err := git.FileHistoryPath(repo, path)
 	if err != nil {
 		return model{}, err
 	}
-	return model{repo: repo, wrap: true, loading: true, startup: true, screen: "history", history: historyState{path: resolved, stream: NewHistoryStream(repo, resolved), loading: true, request: 1}}, nil
+	return model{repo: repo, wrap: true, loading: true, startup: true, screen: "history", history: historyState{path: resolved, stream: git.NewHistoryStream(repo, resolved), loading: true, request: 1}}, nil
 }
 
 func fileHistoryUsage() string {

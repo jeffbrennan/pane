@@ -8,31 +8,32 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func streamModel() model {
-	return model{width: 80, height: 12, wrap: true, screen: "commit", history: historyState{request: 1, loading: true, streamActive: true, current: CommitInfo{Hash: "commit"}}}
+	return model{width: 80, height: 12, wrap: true, screen: "commit", history: historyState{request: 1, loading: true, streamActive: true, current: git.CommitInfo{Hash: "commit"}}}
 }
 
-func deliverChunk(t *testing.T, m model, chunk CommitChunk) model {
+func deliverChunk(t *testing.T, m model, chunk git.CommitChunk) model {
 	t.Helper()
 	updated, _ := m.update(commitStreamLoaded{request: m.history.request, chunk: chunk})
 	return updated.(model)
 }
 
 func TestStreamedRowsMatchFullBuildAndWidenGutter(t *testing.T) {
-	changes := []Change{
+	changes := []git.Change{
 		{Path: "one", Diff: "@@ -0,0 +1,2 @@\n+first\n+second\n"},
 		{Path: "two", Diff: "@@ -1 +10001 @@\n-old\n+new\n"},
 		{Path: "three", Diff: "@@ -0,0 +1 @@\n+last\n"},
 	}
 	m := streamModel()
 	paths := []string{"one", "two", "three"}
-	m = deliverChunk(t, m, CommitChunk{Paths: paths, Changes: changes[:1], Loaded: 1})
+	m = deliverChunk(t, m, git.CommitChunk{Paths: paths, Changes: changes[:1], Loaded: 1})
 	if m.history.streamGutter != 4 || m.history.gutterWidth != 4 || len(m.history.rows) == 0 {
 		t.Fatal("first streaming chunk did not use a four-column gutter")
 	}
-	m = deliverChunk(t, m, CommitChunk{Paths: paths, Changes: changes[1:2], Loaded: 2})
+	m = deliverChunk(t, m, git.CommitChunk{Paths: paths, Changes: changes[1:2], Loaded: 2})
 	if m.history.streamGutter != 5 || m.history.gutterWidth != 5 {
 		t.Fatal("later large line number did not widen the gutter")
 	}
@@ -41,7 +42,7 @@ func TestStreamedRowsMatchFullBuildAndWidenGutter(t *testing.T) {
 			t.Fatal("existing rows did not adopt the wider gutter")
 		}
 	}
-	m = deliverChunk(t, m, CommitChunk{Paths: paths, Changes: changes[2:], Loaded: 3, Done: true})
+	m = deliverChunk(t, m, git.CommitChunk{Paths: paths, Changes: changes[2:], Loaded: 3, Done: true})
 	want, _ := buildRowsDisplay(changes, m.commitModel().diffContentWidth(), m.wrap, nil, 5, false)
 	if !reflect.DeepEqual(m.history.rows, want) {
 		t.Fatalf("streamed rows differ from a complete build:\ngot %#v\nwant %#v", m.history.rows, want)
@@ -52,7 +53,7 @@ func TestStreamedRowsMatchFullBuildAndWidenGutter(t *testing.T) {
 }
 
 func TestSingleChunkKeepsNormalGutter(t *testing.T) {
-	m := deliverChunk(t, streamModel(), CommitChunk{Paths: []string{"one"}, Changes: []Change{{Path: "one", Diff: "@@ -0,0 +1 @@\n+line\n"}}, Loaded: 1, Done: true})
+	m := deliverChunk(t, streamModel(), git.CommitChunk{Paths: []string{"one"}, Changes: []git.Change{{Path: "one", Diff: "@@ -0,0 +1 @@\n+line\n"}}, Loaded: 1, Done: true})
 	if m.history.streamGutter != 3 || m.history.gutterWidth != 3 {
 		t.Fatal("single chunk changed the normal gutter width")
 	}
@@ -61,12 +62,12 @@ func TestSingleChunkKeepsNormalGutter(t *testing.T) {
 func TestStreamedRowsRespectCollapsedFiles(t *testing.T) {
 	m := streamModel()
 	m.collapsedFiles = map[contextKey]bool{{commit: "commit", path: "two"}: true}
-	changes := []Change{
+	changes := []git.Change{
 		{Path: "one", Diff: "@@ -0,0 +1 @@\n+first\n"},
 		{Path: "two", Diff: "@@ -0,0 +1 @@\n+second\n"},
 	}
-	m = deliverChunk(t, m, CommitChunk{Paths: []string{"one", "two"}, Changes: changes[:1], Loaded: 1})
-	m = deliverChunk(t, m, CommitChunk{Paths: []string{"one", "two"}, Changes: changes[1:], Loaded: 2, Done: true})
+	m = deliverChunk(t, m, git.CommitChunk{Paths: []string{"one", "two"}, Changes: changes[:1], Loaded: 1})
+	m = deliverChunk(t, m, git.CommitChunk{Paths: []string{"one", "two"}, Changes: changes[1:], Loaded: 2, Done: true})
 	view := m.commitModel()
 	view.rebuild()
 	if !reflect.DeepEqual(m.history.rows, view.rows) {
@@ -78,7 +79,7 @@ func TestVeryLargeStreamAvoidsLateGutterRebuild(t *testing.T) {
 	m := streamModel()
 	paths := make([]string, 5000)
 	paths[0] = "one"
-	m = deliverChunk(t, m, CommitChunk{Paths: paths, Changes: []Change{{Path: "one", Diff: "@@ -0,0 +1 @@\n+line\n"}}, Loaded: 1})
+	m = deliverChunk(t, m, git.CommitChunk{Paths: paths, Changes: []git.Change{{Path: "one", Diff: "@@ -0,0 +1 @@\n+line\n"}}, Loaded: 1})
 	if m.history.streamGutter != 5 {
 		t.Fatal("very large stream did not reserve a wider gutter")
 	}
@@ -87,7 +88,7 @@ func TestVeryLargeStreamAvoidsLateGutterRebuild(t *testing.T) {
 func TestStreamPickerJumpAndSearch(t *testing.T) {
 	m := streamModel()
 	paths := []string{"one", "two"}
-	m = deliverChunk(t, m, CommitChunk{Paths: paths, Changes: []Change{{Path: "one", Diff: "@@ -0,0 +1 @@\n+first\n"}}, Loaded: 1})
+	m = deliverChunk(t, m, git.CommitChunk{Paths: paths, Changes: []git.Change{{Path: "one", Diff: "@@ -0,0 +1 @@\n+first\n"}}, Loaded: 1})
 	view := m.commitModel()
 	entries := view.fileEntries()
 	if len(entries) != 2 || entries[1].row != -1 {
@@ -100,14 +101,14 @@ func TestStreamPickerJumpAndSearch(t *testing.T) {
 		t.Fatal("unloaded picker selection did not wait")
 	}
 	m.picker = view.picker
-	m = deliverChunk(t, m, CommitChunk{Paths: paths, Changes: []Change{{Path: "two", Diff: "@@ -0,0 +1 @@\n+needle\n"}}, Loaded: 2, Done: true})
+	m = deliverChunk(t, m, git.CommitChunk{Paths: paths, Changes: []git.Change{{Path: "two", Diff: "@@ -0,0 +1 @@\n+needle\n"}}, Loaded: 2, Done: true})
 	if m.picker.pendingPath != "" || m.history.rows[m.history.pos].path != "two" {
 		t.Fatal("pending picker jump was not taken")
 	}
 	m = streamModel()
-	m = deliverChunk(t, m, CommitChunk{Paths: paths, Changes: []Change{{Path: "one", Diff: "@@ -0,0 +1 @@\n+first\n"}}, Loaded: 1})
+	m = deliverChunk(t, m, git.CommitChunk{Paths: paths, Changes: []git.Change{{Path: "one", Diff: "@@ -0,0 +1 @@\n+first\n"}}, Loaded: 1})
 	m = m.inDiff(func(view *model) { view.startSearch(); view.search.draft = "needle"; view.updateSearchDraft() })
-	m = deliverChunk(t, m, CommitChunk{Paths: paths, Changes: []Change{{Path: "two", Diff: "@@ -0,0 +1 @@\n+needle\n"}}, Loaded: 2, Done: true})
+	m = deliverChunk(t, m, git.CommitChunk{Paths: paths, Changes: []git.Change{{Path: "two", Diff: "@@ -0,0 +1 @@\n+needle\n"}}, Loaded: 2, Done: true})
 	if !strings.Contains(m.history.rows[m.history.pos].text, "needle") {
 		t.Fatal("search did not find a newly streamed match")
 	}
@@ -115,18 +116,18 @@ func TestStreamPickerJumpAndSearch(t *testing.T) {
 
 func TestStreamEndAndStaleMessages(t *testing.T) {
 	m := streamModel()
-	first := Change{Path: "one", Diff: "@@ -0,0 +1 @@\n+first\n"}
-	m = deliverChunk(t, m, CommitChunk{Paths: []string{"one", "two"}, Changes: []Change{first}, Loaded: 1})
+	first := git.Change{Path: "one", Diff: "@@ -0,0 +1 @@\n+first\n"}
+	m = deliverChunk(t, m, git.CommitChunk{Paths: []string{"one", "two"}, Changes: []git.Change{first}, Loaded: 1})
 	updated, _ := m.handleCommitKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
 	m = updated.(model)
 	if !m.history.streamEndPending {
 		t.Fatal("G did not follow the end while loading")
 	}
-	m = deliverChunk(t, m, CommitChunk{Paths: []string{"one", "two"}, Changes: []Change{{Path: "two", Diff: "@@ -0,0 +1 @@\n+last\n"}}, Loaded: 2, Done: true})
+	m = deliverChunk(t, m, git.CommitChunk{Paths: []string{"one", "two"}, Changes: []git.Change{{Path: "two", Diff: "@@ -0,0 +1 @@\n+last\n"}}, Loaded: 2, Done: true})
 	if m.history.pos != len(m.history.rows)-1 || m.history.streamEndPending {
 		t.Fatal("G did not finish at the end")
 	}
-	updated, _ = m.update(commitStreamLoaded{request: m.history.request - 1, chunk: CommitChunk{Changes: []Change{{Path: "stale"}}}})
+	updated, _ = m.update(commitStreamLoaded{request: m.history.request - 1, chunk: git.CommitChunk{Changes: []git.Change{{Path: "stale"}}}})
 	if len(updated.(model).history.changes) != 2 {
 		t.Fatal("stale chunk changed the commit")
 	}
@@ -135,7 +136,7 @@ func TestStreamEndAndStaleMessages(t *testing.T) {
 func TestStreamNavigationWaitsPastLoadedEnd(t *testing.T) {
 	for _, keys := range [][]string{{"J"}, {"]", "c"}} {
 		m := streamModel()
-		m = deliverChunk(t, m, CommitChunk{Paths: []string{"one", "two"}, Changes: []Change{{Path: "one", Diff: "@@ -0,0 +1 @@\n+first\n"}}, Loaded: 1})
+		m = deliverChunk(t, m, git.CommitChunk{Paths: []string{"one", "two"}, Changes: []git.Change{{Path: "one", Diff: "@@ -0,0 +1 @@\n+first\n"}}, Loaded: 1})
 		m.history.pos = len(m.history.rows) - 1
 		for _, key := range keys {
 			updated, _ := m.handleCommitKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
@@ -150,8 +151,8 @@ func TestStreamNavigationWaitsPastLoadedEnd(t *testing.T) {
 func TestCountedStreamNavigationWaitsPastLoadedEnd(t *testing.T) {
 	for _, keys := range [][]string{{"2", "J"}, {"2", "]", "c"}} {
 		m := streamModel()
-		changes := []Change{{Path: "one", Diff: "@@ -0,0 +1 @@\n+first\n"}, {Path: "two", Diff: "@@ -0,0 +1 @@\n+second\n"}}
-		m = deliverChunk(t, m, CommitChunk{Paths: []string{"one", "two", "three"}, Changes: changes, Loaded: 2})
+		changes := []git.Change{{Path: "one", Diff: "@@ -0,0 +1 @@\n+first\n"}, {Path: "two", Diff: "@@ -0,0 +1 @@\n+second\n"}}
+		m = deliverChunk(t, m, git.CommitChunk{Paths: []string{"one", "two", "three"}, Changes: changes, Loaded: 2})
 		m.history.pos = 1
 		for _, key := range keys {
 			updated, _ := m.handleCommitKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
@@ -165,8 +166,8 @@ func TestCountedStreamNavigationWaitsPastLoadedEnd(t *testing.T) {
 
 func TestStreamErrorKeepsLoadedRows(t *testing.T) {
 	m := streamModel()
-	m = deliverChunk(t, m, CommitChunk{Paths: []string{"one", "two"}, Changes: []Change{{Path: "one", Diff: "@@ -0,0 +1 @@\n+first\n"}}, Loaded: 1})
-	m = deliverChunk(t, m, CommitChunk{Paths: []string{"one", "two"}, Loaded: 1, Done: true, Err: errors.New("read failed")})
+	m = deliverChunk(t, m, git.CommitChunk{Paths: []string{"one", "two"}, Changes: []git.Change{{Path: "one", Diff: "@@ -0,0 +1 @@\n+first\n"}}, Loaded: 1})
+	m = deliverChunk(t, m, git.CommitChunk{Paths: []string{"one", "two"}, Loaded: 1, Done: true, Err: errors.New("read failed")})
 	if m.history.streamActive || len(m.history.rows) == 0 || !strings.Contains(m.View(), "read failed") {
 		t.Fatal("stream error did not retain the loaded diff and show the error")
 	}
@@ -175,7 +176,7 @@ func TestStreamErrorKeepsLoadedRows(t *testing.T) {
 func TestWhitespaceRestartsAndCancelsStream(t *testing.T) {
 	m := streamModel()
 	repo := m.startCommitLoad()
-	m = deliverChunk(t, m, CommitChunk{Paths: []string{"one"}, Changes: []Change{{Path: "one", Diff: "@@ -0,0 +1 @@\n+first\n"}}, Loaded: 1})
+	m = deliverChunk(t, m, git.CommitChunk{Paths: []string{"one"}, Changes: []git.Change{{Path: "one", Diff: "@@ -0,0 +1 @@\n+first\n"}}, Loaded: 1})
 	oldRequest := m.history.request
 	updated, cmd := m.toggleWhitespace()
 	m = updated.(model)
@@ -183,7 +184,7 @@ func TestWhitespaceRestartsAndCancelsStream(t *testing.T) {
 	if repo.Context.Err() == nil || m.history.request == oldRequest || !m.history.streamActive || len(m.history.rows) != 0 || cmd == nil {
 		t.Fatal("whitespace toggle did not cancel and restart the stream")
 	}
-	updated, _ = m.update(commitStreamLoaded{request: oldRequest, chunk: CommitChunk{Changes: []Change{{Path: "stale"}}}})
+	updated, _ = m.update(commitStreamLoaded{request: oldRequest, chunk: git.CommitChunk{Changes: []git.Change{{Path: "stale"}}}})
 	if len(updated.(model).history.rows) != 0 {
 		t.Fatal("old whitespace stream changed the new view")
 	}

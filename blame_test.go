@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/jeffbrennan/pane/internal/git"
 	"strings"
 	"testing"
 )
@@ -65,7 +66,7 @@ func TestBlameOpensPreviousCommitAtLine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m = deliverChunk(t, m, CommitChunk{Paths: []string{"file.txt"}, Changes: changes, Loaded: 1, Done: true, Meta: first})
+	m = deliverChunk(t, m, git.CommitChunk{Paths: []string{"file.txt"}, Changes: changes, Loaded: 1, Done: true, Meta: first})
 	if m.history.pos >= len(m.history.rows) || m.history.rows[m.history.pos].sourceLine != 2 {
 		t.Fatalf("blame did not select the line: %#v", m.history.rows[m.history.pos])
 	}

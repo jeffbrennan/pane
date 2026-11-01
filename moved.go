@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/jeffbrennan/pane/internal/git"
+	"github.com/jeffbrennan/pane/internal/syntax"
 	"os"
 	"sort"
 	"strings"
@@ -34,7 +36,7 @@ func newMovedIndex() *movedIndex {
 	}
 }
 
-func (idx *movedIndex) addChanges(changes []Change) {
+func (idx *movedIndex) addChanges(changes []git.Change) {
 	if idx == nil || !movedDetectionEnabled {
 		return
 	}
@@ -43,7 +45,7 @@ func (idx *movedIndex) addChanges(changes []Change) {
 	}
 }
 
-func (idx *movedIndex) addChange(c Change) {
+func (idx *movedIndex) addChange(c git.Change) {
 	if idx == nil || !movedDetectionEnabled {
 		return
 	}
@@ -74,7 +76,7 @@ func (idx *movedIndex) addChange(c Change) {
 		kind = 0
 	}
 	for _, line := range strings.Split(c.Diff, "\n") {
-		if match := matchHunkHeader(line); match != nil {
+		if match := syntax.MatchHunkHeader(line); match != nil {
 			flush()
 			oldLine, _ = atoiHeader(match[1])
 			newLine, _ = atoiHeader(match[3])

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 type pickerState struct {
@@ -410,12 +411,12 @@ func (m model) showFilesDialog(lines []string) {
 	items := m.pickerItems()
 	selected := min(m.picker.selected, max(0, len(items)-1))
 	if m.width < 20 || len(lines) < 8 {
-		status := "file: /" + clean(m.picker.query)
+		status := "file: /" + syntax.Clean(m.picker.query)
 		if m.picker.searching {
 			status = "file: /" + renderInput(m.picker.query, m.picker.cursor, max(1, m.width-7))
 		}
 		if len(items) > 0 {
-			status += "  " + clean(items[selected].path)
+			status += "  " + syntax.Clean(items[selected].path)
 		}
 		lines[len(lines)-1] = bar(m.width, status, "")
 		return
@@ -436,7 +437,7 @@ func (m model) showFilesDialog(lines []string) {
 		name = fit(name, nameWidth)
 		return number + " " + name + strings.Repeat(" ", max(0, nameWidth-stringWidth(name))) + " │ " + counts
 	}
-	query := sliceWidth(clean(m.picker.query), max(0, stringWidth(m.picker.query)-innerWidth+2), max(0, innerWidth-2))
+	query := sliceWidth(syntax.Clean(m.picker.query), max(0, stringWidth(m.picker.query)-innerWidth+2), max(0, innerWidth-2))
 	queryLine := styleDim + "/" + query + styleReset
 	if query == "" {
 		queryLine = styleDim + "/ to filter" + styleReset
@@ -484,7 +485,7 @@ func (m model) showFilesDialog(lines []string) {
 				arrow = "▸ "
 				counts = changeCounts(addedWidth, e.added, deletedWidth, e.deleted, i == selected)
 			}
-			name += arrow + clean(e.name) + "/"
+			name += arrow + syntax.Clean(e.name) + "/"
 		} else {
 			if e.file.row < 0 {
 				counts = "…"
@@ -495,7 +496,7 @@ func (m model) showFilesDialog(lines []string) {
 			if e.file.viewed {
 				mark = "✓ "
 			}
-			name += "  " + mark + clean(e.name)
+			name += "  " + mark + syntax.Clean(e.name)
 			if e.file.notes > 0 {
 				name += fmt.Sprintf(" ✎%d", e.file.notes)
 			}

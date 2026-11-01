@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 // Shared screen chrome: every view uses the same title bar, status bar, key
@@ -81,7 +82,7 @@ func keyHints(pairs ...string) string {
 }
 
 // prompt renders an editable line with a block cursor.
-func prompt(prefix, text string) string { return prefix + clean(text) + cursor }
+func prompt(prefix, text string) string { return prefix + syntax.Clean(text) + cursor }
 
 type dialog struct {
 	width      int

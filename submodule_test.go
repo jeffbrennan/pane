@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/jeffbrennan/pane/internal/git"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,11 +11,11 @@ func TestSplitPatchSubmoduleSections(t *testing.T) {
 	patch := "diff --git a/file b/file\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-a\n+b\n" +
 		"Submodule space name contains modified content\nSubmodule space name abc1234..def5678:\n  > subject\n" +
 		"Submodule new module 0000000...abcdef0 (new submodule)\n"
-	sections := splitPatch(patch)
+	sections := git.SplitPatch(patch)
 	if len(sections) != 3 || !strings.Contains(sections["space name"], "subject") || !strings.Contains(sections["new module"], "new submodule") || !strings.Contains(sections["file"], "+b") {
 		t.Fatalf("sections: %#v", sections)
 	}
-	rows := buildRows([]Change{{Path: "new module", Diff: sections["new module"]}}, 80, false)
+	rows := buildRows([]git.Change{{Path: "new module", Diff: sections["new module"]}}, 80, false)
 	if len(rows) != 2 || !rows[0].submodule || !strings.Contains(rows[1].text, "0000000 → abcdef0 (new submodule)") {
 		t.Fatalf("new submodule: %#v", rows)
 	}
@@ -33,7 +34,7 @@ func TestSubmoduleDiffsAndPicker(t *testing.T) {
 	if _, err := r.Action("commit", "-m", "add submodule"); err != nil {
 		t.Fatal(err)
 	}
-	nested := Repo{Root: filepath.Join(r.Root, "module name")}
+	nested := git.Repo{Root: filepath.Join(r.Root, "module name")}
 	for _, args := range [][]string{{"config", "user.email", "test@example.com"}, {"config", "user.name", "Test"}} {
 		if out, err := nested.Command(args...); err != nil {
 			t.Fatalf("config: %s: %v", out, err)
@@ -52,7 +53,7 @@ func TestSubmoduleDiffsAndPicker(t *testing.T) {
 	if !strings.Contains(c.Diff, "second subject") || !strings.Contains(c.Diff, "contains modified content") {
 		t.Fatalf("submodule diff: %q", c.Diff)
 	}
-	rows := buildRows([]Change{c}, 80, false)
+	rows := buildRows([]git.Change{c}, 80, false)
 	if len(rows) < 4 || !rows[0].submodule || !strings.Contains(rows[2].text, " → ") || !strings.Contains(rows[3].text, "second subject") {
 		t.Fatalf("submodule rows: %#v", rows)
 	}

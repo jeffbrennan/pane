@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func TestDefaultBaseUsesUpstream(t *testing.T) {
@@ -80,7 +81,7 @@ func TestHistoryRStartsBaseReview(t *testing.T) {
 	if _, err := r.Commit("two"); err != nil {
 		t.Fatal(err)
 	}
-	commits, err := r.History(0, historyPage)
+	commits, err := r.History(0, git.HistoryPage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +98,7 @@ func TestHistoryRStartsBaseReview(t *testing.T) {
 }
 
 func TestHistoryVisualSelectionOpensSequence(t *testing.T) {
-	commits := []CommitInfo{{Hash: "aaaa"}, {Hash: "bbbb"}, {Hash: "cccc"}}
+	commits := []git.CommitInfo{{Hash: "aaaa"}, {Hash: "bbbb"}, {Hash: "cccc"}}
 	m := model{width: 80, height: 20, screen: "history", history: historyState{commits: commits, selected: 0}}
 	updated, _ := m.handleHistoryKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("V")})
 	m = updated.(model)

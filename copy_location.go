@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func locationText(path string, line int) string {
@@ -47,7 +48,7 @@ func remotePermalink(remote, hash, path string, line int) string {
 	return u.String()
 }
 
-func copyLocationCmd(repo Repo, hash, path string, line int) tea.Cmd {
+func copyLocationCmd(repo git.Repo, hash, path string, line int) tea.Cmd {
 	return func() tea.Msg {
 		text := locationText(path, line)
 		if hash != "" {

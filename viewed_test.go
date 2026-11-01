@@ -5,9 +5,10 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
-func viewedTestModel(t *testing.T, r Repo) model {
+func viewedTestModel(t *testing.T, r git.Repo) model {
 	t.Helper()
 	commit, err := r.ResolveCommit("HEAD")
 	if err != nil {

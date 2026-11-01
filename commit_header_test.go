@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func headerText(rows []row) string {
@@ -65,8 +66,8 @@ func TestCommitDetailAndMergeParents(t *testing.T) {
 }
 
 func TestCommitHeaderSearchAndJumpToFirstFile(t *testing.T) {
-	commit := CommitInfo{Hash: "abcdef1234567890", Author: "Alice", Email: "alice@example.com", Date: time.Now().Add(-2 * time.Hour).Format(time.RFC3339), Subject: "subject line", Message: "subject line\n\nthe reason is in the body\n\nFixes: #12"}
-	m := model{width: 100, height: 30, wrap: true, screen: "commit", history: historyState{current: commit, meta: commit, changes: []Change{{Path: "file.go", Diff: "@@ -0,0 +1 @@\n+line\n"}}}}
+	commit := git.CommitInfo{Hash: "abcdef1234567890", Author: "Alice", Email: "alice@example.com", Date: time.Now().Add(-2 * time.Hour).Format(time.RFC3339), Subject: "subject line", Message: "subject line\n\nthe reason is in the body\n\nFixes: #12"}
+	m := model{width: 100, height: 30, wrap: true, screen: "commit", history: historyState{current: commit, meta: commit, changes: []git.Change{{Path: "file.go", Diff: "@@ -0,0 +1 @@\n+line\n"}}}}
 	m.rebuildCommit()
 	if !strings.Contains(headerText(m.history.rows), "the reason is in the body") || !strings.Contains(headerText(m.history.rows), "2h ago") {
 		t.Fatalf("header block missing: %s", headerText(m.history.rows))
@@ -83,8 +84,8 @@ func TestCommitHeaderSearchAndJumpToFirstFile(t *testing.T) {
 }
 
 func TestCommitHeaderCollapsesWithHL(t *testing.T) {
-	commit := CommitInfo{Hash: "abcdef1234567890", Author: "Alice", Email: "alice@example.com", Date: time.Now().Format(time.RFC3339), Subject: "subject", Message: "subject\n\nbody"}
-	m := model{width: 100, height: 30, wrap: true, screen: "commit", history: historyState{current: commit, meta: commit, changes: []Change{{Path: "file.go", Diff: "@@ -0,0 +1 @@\n+line\n"}}}}
+	commit := git.CommitInfo{Hash: "abcdef1234567890", Author: "Alice", Email: "alice@example.com", Date: time.Now().Format(time.RFC3339), Subject: "subject", Message: "subject\n\nbody"}
+	m := model{width: 100, height: 30, wrap: true, screen: "commit", history: historyState{current: commit, meta: commit, changes: []git.Change{{Path: "file.go", Diff: "@@ -0,0 +1 @@\n+line\n"}}}}
 	m.rebuildCommit()
 	expanded := len(m.history.rows)
 	updated, _ := m.handleCommitKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
@@ -109,7 +110,7 @@ func TestStreamCommitAttachesMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stream := r.StreamCommit(context.Background(), strings.TrimSpace(string(hash)), startupSyntaxLines)
+	stream := r.StreamCommit(context.Background(), strings.TrimSpace(string(hash)), git.StartupSyntaxLines)
 	first := <-stream
 	if first.Meta.Hash != strings.TrimSpace(string(hash)) || first.Meta.Author != "Test" || !strings.Contains(first.Meta.Message, "body text") {
 		t.Fatalf("first chunk metadata: %#v", first.Meta)

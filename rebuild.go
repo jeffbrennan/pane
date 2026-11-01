@@ -1,6 +1,10 @@
 package main
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/jeffbrennan/pane/internal/git"
+)
 
 func (m *model) rebuild() {
 	if m.screen == "sequence" {
@@ -156,7 +160,7 @@ func (m *model) reflowRows(oldContentWidth int) {
 	})
 	type rebuild struct {
 		index  int
-		change Change
+		change git.Change
 	}
 	var rebuilds []rebuild
 	for i := range changes {
@@ -253,7 +257,7 @@ func fileRows(rows []row, path string) ([]row, bool) {
 	return nil, false
 }
 
-func (m model) displayGutterWidth(changes []Change) int {
+func (m model) displayGutterWidth(changes []git.Change) int {
 	widths := make([]int, len(changes))
 	parallelEach(len(changes), func(i int) {
 		widths[i] = lineNumberWidth(strings.Split(changes[i].Diff, "\n"))
@@ -268,7 +272,7 @@ func (m model) displayGutterWidth(changes []Change) int {
 // spliceRows builds rows only for files whose diff changed and keeps the
 // previous rows for the rest. Context and collapse are view state, not change
 // state, so those views retain rows when their display diff is unchanged.
-func spliceRows(changes []Change, m model, previous func(path string) ([]row, bool), gutterWidth int) []row {
+func spliceRows(changes []git.Change, m model, previous func(path string) ([]row, bool), gutterWidth int) []row {
 	view := m
 	if m.screen == "commit" || m.screen == "base" {
 		view = m.commitModel()

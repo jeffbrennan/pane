@@ -97,9 +97,9 @@ func TestCachedRefreshRacyWrite(t *testing.T) {
 }
 
 func TestStaleUnchangedRefreshDoesNotReplaceCache(t *testing.T) {
-	current := &RefreshCache{}
+	current := &git.RefreshCache{}
 	m := model{generation: 2, loading: true, refreshCache: current}
-	updated, cmd := m.Update(loadedUnchanged{generation: 1, cache: &RefreshCache{}})
+	updated, cmd := m.Update(loadedUnchanged{generation: 1, cache: &git.RefreshCache{}})
 	next := updated.(model)
 	if next.refreshCache != current || !next.loading || cmd == nil {
 		t.Fatal("stale refresh should trigger a new load without replacing the cache")
@@ -107,7 +107,7 @@ func TestStaleUnchangedRefreshDoesNotReplaceCache(t *testing.T) {
 }
 
 func BenchmarkIdleRefresh(b *testing.B) {
-	r := Repo{Root: b.TempDir()}
+	r := git.Repo{Root: b.TempDir()}
 	for _, args := range [][]string{{"init"}, {"config", "user.email", "test@example.com"}, {"config", "user.name", "Test"}} {
 		if out, err := r.Command(args...); err != nil {
 			b.Fatalf("git %v: %s: %v", args, out, err)
@@ -229,7 +229,7 @@ func TestStatusUsesUntrackedCache(t *testing.T) {
 }
 
 func TestStatusSettings(t *testing.T) {
-	for config, want := range map[string]Repo{
+	for config, want := range map[string]git.Repo{
 		"":                                {UntrackedCache: true},
 		"core.untrackedcache false\n":     {},
 		"status.showuntrackedfiles no\n":  {UntrackedCache: true, UntrackedHidden: true},

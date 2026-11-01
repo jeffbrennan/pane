@@ -1,6 +1,10 @@
 package main
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/jeffbrennan/pane/internal/git"
+)
 
 // startupStatsCount is how many of the newest commits get line counts before
 // history first appears: enough to fill a tall terminal.
@@ -17,11 +21,11 @@ type startupPrefetch struct {
 	status  chan tea.Msg
 	clean   chan bool
 	history chan historyLoaded
-	stream  *HistoryStream
+	stream  *git.HistoryStream
 }
 
-func startPrefetch(repo Repo) *startupPrefetch {
-	p := &startupPrefetch{status: make(chan tea.Msg, 1), clean: make(chan bool, 1), history: make(chan historyLoaded, 1), stream: NewHistoryStream(repo, "")}
+func startPrefetch(repo git.Repo) *startupPrefetch {
+	p := &startupPrefetch{status: make(chan tea.Msg, 1), clean: make(chan bool, 1), history: make(chan historyLoaded, 1), stream: git.NewHistoryStream(repo, "")}
 	go func() {
 		msg := loadWith(repo, 0, nil, true)()
 		loadedMsg, ok := msg.(loaded)
@@ -29,10 +33,10 @@ func startPrefetch(repo Repo) *startupPrefetch {
 		p.status <- msg
 	}()
 	go func() {
-		commits, err := p.stream.NextPage(historyPage)
+		commits, err := p.stream.NextPage(git.HistoryPage)
 		repo.Stats.Fill(commits)
 		if !<-p.clean || err != nil {
-			p.history <- historyLoaded{commits: commits, err: err, limit: historyPage}
+			p.history <- historyLoaded{commits: commits, err: err, limit: git.HistoryPage}
 			return
 		}
 		count := make(chan int, 1)
@@ -52,13 +56,13 @@ func startPrefetch(repo Repo) *startupPrefetch {
 				applyStats(commits, stats)
 			}
 		}
-		p.history <- historyLoaded{commits: commits, err: err, limit: historyPage, stashCount: <-count}
+		p.history <- historyLoaded{commits: commits, err: err, limit: git.HistoryPage, stashCount: <-count}
 	}()
 	return p
 }
 
-func applyStats(commits, stats []CommitInfo) {
-	byHash := make(map[string]CommitInfo, len(stats))
+func applyStats(commits, stats []git.CommitInfo) {
+	byHash := make(map[string]git.CommitInfo, len(stats))
 	for _, s := range stats {
 		byHash[s.Hash] = s
 	}

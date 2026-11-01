@@ -12,6 +12,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
@@ -22,10 +23,10 @@ type historyState struct {
 	streamError                                         string
 	streamLoaded, streamGutter                          int
 	streamActive, streamEndPending                      bool
-	stream                                              *HistoryStream
-	commits                                             []CommitInfo
-	statsCache                                          map[string]CommitInfo
-	changes                                             []Change
+	stream                                              *git.HistoryStream
+	commits                                             []git.CommitInfo
+	statsCache                                          map[string]git.CommitInfo
+	changes                                             []git.Change
 	rows                                                []row
 	gutterWidth                                         int
 	selected, offset, pos, horizontal, viewTop, request int
@@ -38,8 +39,8 @@ type historyState struct {
 	commitLoadingVisible                                bool
 	statsFetching                                       bool
 	directCommit                                        bool
-	current                                             CommitInfo
-	meta                                                CommitInfo
+	current                                             git.CommitInfo
+	meta                                                git.CommitInfo
 	moved                                               *movedIndex
 	headerCollapsed                                     bool
 	positions                                           map[string]commitPosition
@@ -52,7 +53,7 @@ type historyState struct {
 	jumpIndex                                           int
 }
 
-func (m *model) startCommitLoad() Repo {
+func (m *model) startCommitLoad() git.Repo {
 	if m.history.commitCancel != nil {
 		m.history.commitCancel()
 	}
@@ -60,7 +61,7 @@ func (m *model) startCommitLoad() Repo {
 	return m.commitRepository()
 }
 
-func (m model) commitRepository() Repo {
+func (m model) commitRepository() git.Repo {
 	repo := m.repo
 	repo.Context = m.history.commitContext
 	return repo
@@ -75,7 +76,7 @@ func (m *model) cancelCommitLoad() {
 	m.history.streamActive = false
 }
 
-func (m *model) appendCommitChanges(changes []Change, done bool) {
+func (m *model) appendCommitChanges(changes []git.Change, done bool) {
 	if len(changes) == 0 {
 		return
 	}
@@ -186,55 +187,55 @@ func (m *model) appendCommitChanges(changes []Change, done bool) {
 }
 
 type historyLoaded struct {
-	commits     []CommitInfo
+	commits     []git.CommitInfo
 	err         error
 	request     int
 	skip, limit int
 	stashCount  int
 }
 type commitLoaded struct {
-	changes []Change
+	changes []git.Change
 	err     error
 	request int
 }
 
 type commitSyntaxLoaded struct {
-	changes []Change
+	changes []git.Change
 	request int
 }
 
 type commitLoadingDelay struct{ request int }
 
 type commitStreamLoaded struct {
-	chunk   CommitChunk
-	stream  <-chan CommitChunk
+	chunk   git.CommitChunk
+	stream  <-chan git.CommitChunk
 	request int
 }
 
-func startCommitStream(repo Repo, hash string, request, height int) tea.Cmd {
+func startCommitStream(repo git.Repo, hash string, request, height int) tea.Cmd {
 	return startStream(repo, hash, request, height, repo.StreamCommit)
 }
 
-func startBaseStream(repo Repo, hash string, request, height int) tea.Cmd {
+func startBaseStream(repo git.Repo, hash string, request, height int) tea.Cmd {
 	return startStream(repo, hash, request, height, repo.StreamBase)
 }
 
-func startStream(repo Repo, hash string, request, height int, open func(context.Context, string, int) <-chan CommitChunk) tea.Cmd {
+func startStream(repo git.Repo, hash string, request, height int, open func(context.Context, string, int) <-chan git.CommitChunk) tea.Cmd {
 	return func() tea.Msg {
 		ctx := repo.Context
 		if ctx == nil {
 			ctx = context.Background()
 		}
-		stream := open(ctx, hash, max(height, startupSyntaxLines))
+		stream := open(ctx, hash, max(height, git.StartupSyntaxLines))
 		return waitCommitStream(stream, request)()
 	}
 }
 
-func waitCommitStream(stream <-chan CommitChunk, request int) tea.Cmd {
+func waitCommitStream(stream <-chan git.CommitChunk, request int) tea.Cmd {
 	return func() tea.Msg {
 		chunk, ok := <-stream
 		if !ok {
-			chunk = CommitChunk{Done: true, Err: fmt.Errorf("commit stream ended unexpectedly")}
+			chunk = git.CommitChunk{Done: true, Err: fmt.Errorf("commit stream ended unexpectedly")}
 		}
 		return commitStreamLoaded{chunk: chunk, stream: stream, request: request}
 	}
@@ -248,10 +249,10 @@ func commitLoadingTimer(request int) tea.Cmd {
 
 // loadCommitSyntax highlights the changes that commitChangesFirstScreen left
 // plain.
-func loadCommitSyntax(repo Repo, hash string, request int, changes []Change) tea.Cmd {
-	changes = append([]Change(nil), changes...)
+func loadCommitSyntax(repo git.Repo, hash string, request int, changes []git.Change) tea.Cmd {
+	changes = append([]git.Change(nil), changes...)
 	var indexes []int
-	var plain []Change
+	var plain []git.Change
 	for i, c := range changes {
 		if c.SyntaxDiff == "" && !c.SyntaxSkipped && syntax.Lexable(c.Path) {
 			indexes = append(indexes, i)
@@ -263,7 +264,7 @@ func loadCommitSyntax(repo Repo, hash string, request int, changes []Change) tea
 	}
 	return func() tea.Msg {
 		repo.LoadSyntaxDiffs(plain, contextKey{commit: hash}.gitContext())
-		warmSyntax(plain)
+		git.WarmSyntax(plain)
 		for i, c := range plain {
 			changes[indexes[i]] = c
 		}
@@ -272,7 +273,7 @@ func loadCommitSyntax(repo Repo, hash string, request int, changes []Change) tea
 }
 
 type historyStatsLoaded struct {
-	commits []CommitInfo
+	commits []git.CommitInfo
 	hashes  []string
 	err     error
 	request int
@@ -284,7 +285,7 @@ const (
 )
 
 func (m *model) cacheHistoryStats() {
-	cache := make(map[string]CommitInfo)
+	cache := make(map[string]git.CommitInfo)
 	for _, c := range m.history.commits[:min(len(m.history.commits), historyStatsCacheSize)] {
 		if c.StatsLoaded {
 			cache[c.Hash] = c
@@ -319,8 +320,8 @@ func (m model) reloadHistory() (model, tea.Cmd) {
 		m.history.stream = prefetch.stream
 		return m, prefetch.loadHistory(m.history.request)
 	}
-	m.history.stream = NewHistoryStream(m.repo, m.history.path, m.history.since)
-	return m, m.fetchHistory(0, max(historyPage, len(m.history.commits)))
+	m.history.stream = git.NewHistoryStream(m.repo, m.history.path, m.history.since)
+	return m, m.fetchHistory(0, max(git.HistoryPage, len(m.history.commits)))
 }
 
 type worktreeHeadsLoaded struct {
@@ -402,7 +403,7 @@ func (m model) fetchHistory(skip, limit int) tea.Cmd {
 	return func() tea.Msg {
 		stream := requestStream
 		if stream == nil {
-			stream = NewHistoryStream(repo, path)
+			stream = git.NewHistoryStream(repo, path)
 			defer stream.Close()
 			if skip > 0 {
 				if _, err := stream.NextPage(skip); err != nil {
@@ -417,7 +418,7 @@ func (m model) fetchHistory(skip, limit int) tea.Cmd {
 
 // historyPageWithStashes reads the next page from stream with stored line
 // counts filled in, counting stashes alongside when stashes is set.
-func historyPageWithStashes(repo Repo, stream *HistoryStream, limit int, stashes bool) ([]CommitInfo, int, error) {
+func historyPageWithStashes(repo git.Repo, stream *git.HistoryStream, limit int, stashes bool) ([]git.CommitInfo, int, error) {
 	count := make(chan int, 1)
 	if stashes {
 		go func() {
@@ -442,13 +443,13 @@ func (m model) loadMoreHistory() (model, tea.Cmd) {
 	if m.screen != "history" || m.history.loading || m.history.fetching || !m.history.more {
 		return m, nil
 	}
-	if m.historyQuery() == "" && m.history.selected < len(m.history.commits)-historyPage/4 {
+	if m.historyQuery() == "" && m.history.selected < len(m.history.commits)-git.HistoryPage/4 {
 		return m, nil
 	}
 	m.history.fetching = true
-	limit := historyPage
+	limit := git.HistoryPage
 	if m.historyQuery() != "" {
-		limit = 5 * historyPage
+		limit = 5 * git.HistoryPage
 	}
 	return m, m.fetchHistory(len(m.history.commits), limit)
 }
@@ -460,12 +461,12 @@ func (m model) historyQuery() string {
 	return m.history.filter
 }
 
-func (m model) filteredHistory() []CommitInfo {
+func (m model) filteredHistory() []git.CommitInfo {
 	query := strings.ToLower(m.historyQuery())
 	if query == "" {
 		return m.history.commits
 	}
-	var matches []CommitInfo
+	var matches []git.CommitInfo
 	for _, c := range m.history.commits {
 		search := c.Search
 		if search == "" {
@@ -689,7 +690,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			lo, hi = max(0, lo), min(hi, len(matches)-1)
 			m.history.visualActive = false
-			next, err := newSequenceModel(m.repo, append([]CommitInfo(nil), matches[lo:hi+1]...))
+			next, err := newSequenceModel(m.repo, append([]git.CommitInfo(nil), matches[lo:hi+1]...))
 			if err != nil {
 				m.flash = err.Error()
 				break
@@ -708,7 +709,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // openCommit replaces the current view with a commit's read-only diff.
-func (m model) openCommit(commit CommitInfo) (tea.Model, tea.Cmd) {
+func (m model) openCommit(commit git.CommitInfo) (tea.Model, tea.Cmd) {
 	m.saveCommitPosition()
 	m.history.current = commit
 	if m.history.fetching {
@@ -726,7 +727,7 @@ func (m model) openCommit(commit CommitInfo) (tea.Model, tea.Cmd) {
 	m.history.streamPaths, m.history.streamLoaded, m.history.streamGutter = nil, 0, 0
 	m.history.streamError = ""
 	m.history.streamEndPending = false
-	m.history.meta = CommitInfo{}
+	m.history.meta = git.CommitInfo{}
 	m.history.moved = nil
 	if position, ok := m.history.positions[commit.Hash]; ok && commit.FilePath == "" {
 		m.history.pendingPosition = &position
@@ -954,11 +955,11 @@ func (m model) commitModel() model {
 		view.viewIdentity = "base:" + m.base.hash + ":" + m.base.revision
 	}
 	view.jumps, view.jumpIndex = m.history.jumps, m.history.jumpIndex
-	view.snapshot = Snapshot{Unstaged: m.history.changes}
+	view.snapshot = git.Snapshot{Unstaged: m.history.changes}
 	view.expandedDeleted = m.history.expandedDeleted
 	view.staged = false
 	view.rows, view.pos, view.horizontal, view.viewTop = m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop
-	view.viewTitle = m.accent() + shortHash(m.history.current.Hash) + styleReset + "  " + clean(m.history.current.Subject)
+	view.viewTitle = m.accent() + shortHash(m.history.current.Hash) + styleReset + "  " + syntax.Clean(m.history.current.Subject)
 	if index, total := m.commitListPosition(); index > 0 && total > 1 {
 		view.viewTitle += styleDim + fmt.Sprintf("  %d/%d", index, total) + styleReset
 	}
@@ -968,7 +969,7 @@ func (m model) commitModel() model {
 		view.searchProgress = "loading"
 	}
 	if m.screen == "base" {
-		view.viewTitle = clean(m.base.revision) + "…working tree"
+		view.viewTitle = syntax.Clean(m.base.revision) + "…working tree"
 		view.viewBadge = styleDim + shortHash(m.base.hash) + " · read-only" + styleReset
 		if m.history.streamActive && len(m.history.streamPaths) > 0 {
 			view.viewBadge = styleDim + shortHash(m.base.hash) + fmt.Sprintf(" · loading %d/%d files", m.history.streamLoaded, len(m.history.streamPaths)) + styleReset
@@ -1041,13 +1042,13 @@ func (m model) historyView() string {
 	now := time.Now()
 	for i := offset; i < len(matches); i++ {
 		c := matches[i]
-		subject := styleDim + "  " + fit(clean(c.Subject), max(0, m.width-2)) + styleReset
+		subject := styleDim + "  " + fit(syntax.Clean(c.Subject), max(0, m.width-2)) + styleReset
 		if i == selected {
-			subject = styleBold + m.accent() + "▸ " + styleReset + styleBold + fit(clean(c.Subject), max(0, m.width-2)) + styleReset
+			subject = styleBold + m.accent() + "▸ " + styleReset + styleBold + fit(syntax.Clean(c.Subject), max(0, m.width-2)) + styleReset
 		} else if i >= visualLo && i <= visualHi {
-			subject = styleBold + m.accent() + "│ " + styleReset + styleBold + fit(clean(c.Subject), max(0, m.width-2)) + styleReset
+			subject = styleBold + m.accent() + "│ " + styleReset + styleBold + fit(syntax.Clean(c.Subject), max(0, m.width-2)) + styleReset
 		}
-		date := historyCommitTime(c.Date, now)
+		date := git.HistoryCommitTime(c.Date, now)
 		meta := historyMetadata(c, date, m.width, i == selected, m.accent(), m.worktreeHeads)
 		content = append(content, subject, meta, "")
 		if len(content) >= available {
@@ -1080,10 +1081,10 @@ func (m model) historyView() string {
 	if m.history.searching {
 		status, hints = "/"+renderInput(m.history.draft, m.history.draftCursor, max(1, m.width-1)), keyHints("↵", "open", "esc", "cancel")
 	} else if m.history.filter != "" {
-		status, hints = "/"+clean(m.history.filter), keyHints("↵", "open", "/", "edit", "esc", "back")
+		status, hints = "/"+syntax.Clean(m.history.filter), keyHints("↵", "open", "/", "edit", "esc", "back")
 	}
 	if m.flash != "" {
-		status = clean(m.flash)
+		status = syntax.Clean(m.flash)
 	}
 	if m.modal == "branch-new" {
 		status, hints = "New branch from "+shortHash(m.branch.newFrom)+": "+renderInput(m.input, m.inputCursor, max(1, m.width-32)), keyHints("↵", "create", "esc", "cancel")
@@ -1134,7 +1135,7 @@ func (m *model) revealHistorySelection() {
 	}
 }
 
-func historyMetadata(c CommitInfo, date string, width int, selected bool, accent string, worktreeHeads map[string]string) string {
+func historyMetadata(c git.CommitInfo, date string, width int, selected bool, accent string, worktreeHeads map[string]string) string {
 	type segment struct{ text, style string }
 	green, red, cyan := "\x1b[32m", "\x1b[31m", accent
 	if !selected {
@@ -1150,12 +1151,12 @@ func historyMetadata(c CommitInfo, date string, width int, selected bool, accent
 		segments = append(segments, segment{fmt.Sprintf("  %d binary", c.Binary), "\x1b[2m"})
 	}
 	segments = append(segments,
-		segment{"  " + clean(date), "\x1b[2m"},
-		segment{"  " + clean(c.Author), "\x1b[2m"},
+		segment{"  " + syntax.Clean(date), "\x1b[2m"},
+		segment{"  " + syntax.Clean(c.Author), "\x1b[2m"},
 		segment{"  " + shortHash(c.Hash), cyan},
 	)
 	if name := worktreeHeads[c.Hash]; name != "" {
-		segments = append(segments, segment{"  ⌂ " + clean(name), "\x1b[2m"})
+		segments = append(segments, segment{"  ⌂ " + syntax.Clean(name), "\x1b[2m"})
 	}
 	var b strings.Builder
 	remaining := width

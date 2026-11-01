@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func TestFetchUpdatesHistoryStatus(t *testing.T) {
@@ -30,7 +31,7 @@ func TestFetchUpdatesHistoryStatus(t *testing.T) {
 	if out, err := exec.Command("git", "clone", "--branch", "main", remote, clone).CombinedOutput(); err != nil {
 		t.Fatalf("clone: %s: %v", out, err)
 	}
-	other := Repo{Root: clone}
+	other := git.Repo{Root: clone}
 	for _, args := range [][]string{{"config", "user.name", "Test"}, {"config", "user.email", "test@example.com"}} {
 		if _, err := other.Action(args...); err != nil {
 			t.Fatal(err)

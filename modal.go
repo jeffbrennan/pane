@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/jeffbrennan/pane/internal/git"
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 type shortcut struct{ keys, action string }
@@ -247,7 +249,7 @@ func (m model) showCommitDialog(lines []string) {
 		body = append(body, styleDim+"Body preserved"+styleReset)
 	}
 	if m.message != "" {
-		for _, line := range wrapLine(clean(m.message), innerWidth)[:min(2, len(wrapLine(clean(m.message), innerWidth)))] {
+		for _, line := range wrapLine(syntax.Clean(m.message), innerWidth)[:min(2, len(wrapLine(syntax.Clean(m.message), innerWidth)))] {
 			body = append(body, m.danger()+line+styleReset)
 		}
 	}
@@ -287,13 +289,13 @@ func (m model) showCommitDialog(lines []string) {
 			spaced := room >= 2*count-1
 			twoLines := room >= 3*count-1
 			for i, commit := range commits[:count] {
-				metadata := relativeCommitTime(commit.Date, time.Now()) + " · " + clean(commit.Author)
+				metadata := git.RelativeCommitTime(commit.Date, time.Now()) + " · " + syntax.Clean(commit.Author)
 				if twoLines {
-					content = append(content, fit("  "+clean(commit.Subject), boxWidth), styleDim+fit("  "+metadata, boxWidth)+styleReset)
+					content = append(content, fit("  "+syntax.Clean(commit.Subject), boxWidth), styleDim+fit("  "+metadata, boxWidth)+styleReset)
 				} else {
 					metadata = fit(metadata, max(1, boxWidth/2))
 					available := max(0, boxWidth-4-stringWidth(metadata))
-					content = append(content, "  "+fit(clean(commit.Subject), available)+"  "+styleDim+metadata+styleReset)
+					content = append(content, "  "+fit(syntax.Clean(commit.Subject), available)+"  "+styleDim+metadata+styleReset)
 				}
 				if spaced && i < count-1 {
 					content = append(content, "")
@@ -325,7 +327,7 @@ func (m model) showDiscardDialog(lines []string) {
 		width:      boxWidth,
 		title:      title,
 		titleStyle: m.danger(),
-		body:       []string{"", clean(m.discard.Change.Path), styleDim + "This cannot be undone." + styleReset, ""},
+		body:       []string{"", syntax.Clean(m.discard.Change.Path), styleDim + "This cannot be undone." + styleReset, ""},
 		hint:       keyHints("y", "discard", "n/esc", "cancel"),
 	}.render())
 }
@@ -350,7 +352,7 @@ func (m model) showBranchDelete(lines []string) {
 func (m model) showWorktreeDelete(lines []string) {
 	title := "Remove worktree?"
 	boxWidth := min(max(48, ansi.StringWidth(title)+6), m.width-2)
-	body := []string{"", clean(m.worktrees.confirm.Path), styleDim + "This cannot be undone." + styleReset, ""}
+	body := []string{"", syntax.Clean(m.worktrees.confirm.Path), styleDim + "This cannot be undone." + styleReset, ""}
 	if m.worktrees.confirmForce {
 		title = "Force remove worktree?"
 		note := "Uncommitted changes will be lost."
@@ -361,7 +363,7 @@ func (m model) showWorktreeDelete(lines []string) {
 			}
 			note = fmt.Sprintf("%d changed %s will be lost.", status.dirty, label)
 		}
-		body = []string{"", clean(m.worktrees.confirm.Path), styleDim + note + styleReset, ""}
+		body = []string{"", syntax.Clean(m.worktrees.confirm.Path), styleDim + note + styleReset, ""}
 	}
 	placeDialog(lines, m.width, dialog{
 		width: boxWidth, title: title, titleStyle: m.danger(), body: body,
@@ -373,7 +375,7 @@ func (m model) showWorktreeDelete(lines []string) {
 func (m model) errorLines(width int) []string {
 	var content []string
 	for _, line := range strings.Split(strings.TrimRight(m.errorText, "\n"), "\n") {
-		content = append(content, wrapLine(clean(line), max(1, width))...)
+		content = append(content, wrapLine(syntax.Clean(line), max(1, width))...)
 	}
 	return content
 }

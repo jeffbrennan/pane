@@ -5,26 +5,28 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 type stashState struct {
-	entries          []StashEntry
+	entries          []git.StashEntry
 	selected, offset int
 	request          int
 	loading, viewing bool
 	operation        string
-	target           StashEntry
+	target           git.StashEntry
 }
 
 type stashesLoaded struct {
-	entries []StashEntry
+	entries []git.StashEntry
 	request int
 	err     error
 }
 
 type stashDiffLoaded struct {
-	changes []Change
-	meta    CommitInfo
+	changes []git.Change
+	meta    git.CommitInfo
 	request int
 	err     error
 }
@@ -55,7 +57,7 @@ func (m model) startStashPush() (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m model) startStashAction(operation string, target StashEntry) (tea.Model, tea.Cmd) {
+func (m model) startStashAction(operation string, target git.StashEntry) (tea.Model, tea.Cmd) {
 	m.modal = ""
 	m.busy, m.activeAction = true, "stash-"+operation
 	m.generation++
@@ -89,8 +91,8 @@ func (m model) handleStashKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		entry := m.stash.entries[m.stash.selected]
 		m.stash.viewing = true
 		m.screen = "commit"
-		m.history.current = CommitInfo{Hash: entry.Hash, Subject: entry.Ref + " · " + entry.Message}
-		m.history.meta = CommitInfo{}
+		m.history.current = git.CommitInfo{Hash: entry.Hash, Subject: entry.Ref + " · " + entry.Message}
+		m.history.meta = git.CommitInfo{}
 		m.history.moved = nil
 		m.history.request++
 		repo := m.startCommitLoad()
@@ -144,7 +146,7 @@ func (m model) stashView() string {
 			if index == selected {
 				prefix = m.accent() + "▸ " + styleReset
 			}
-			line = prefix + clean(entry.Ref+"  "+relativeCommitTime(entry.Date, time.Now())+"  "+entry.Message)
+			line = prefix + syntax.Clean(entry.Ref+"  "+git.RelativeCommitTime(entry.Date, time.Now())+"  "+entry.Message)
 		} else if i == 0 {
 			line = " No stashes"
 			if m.stash.loading {
@@ -175,7 +177,7 @@ func (m model) showStashConfirm(lines []string) {
 	boxWidth := min(64, m.width-2)
 	placeDialog(lines, m.width, dialog{
 		width: boxWidth, title: action + " stash?", titleStyle: m.danger(),
-		body: []string{clean(m.stash.target.Ref + " · " + shortHash(m.stash.target.Hash)), clean(m.stash.target.Message), styleDim + warning + styleReset},
+		body: []string{syntax.Clean(m.stash.target.Ref + " · " + shortHash(m.stash.target.Hash)), syntax.Clean(m.stash.target.Message), styleDim + warning + styleReset},
 		hint: keyHints("y", strings.ToLower(action), "n/esc", "cancel"),
 	}.render())
 }

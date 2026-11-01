@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/jeffbrennan/pane/internal/syntax"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -132,9 +133,9 @@ func (m model) View() string {
 		}
 		rendered++
 	}
-	status := clean(strings.ReplaceAll(m.message, "\n", " | "))
+	status := syntax.Clean(strings.ReplaceAll(m.message, "\n", " | "))
 	if m.flash != "" {
-		status = clean(strings.ReplaceAll(m.flash, "\n", " | "))
+		status = syntax.Clean(strings.ReplaceAll(m.flash, "\n", " | "))
 	}
 	if m.repo.IgnoreSpace && m.modal == "" {
 		badge := styleDim + "ignoring whitespace" + styleReset
@@ -174,7 +175,7 @@ func (m model) View() string {
 	}
 	if m.searchProgress != "" && m.activeSearch() != "" && (m.modal == "" || m.modal == "search") {
 		if m.modal == "" && m.flash == "" {
-			status = "/" + clean(m.search.query)
+			status = "/" + syntax.Clean(m.search.query)
 		}
 		status += styleDim + "  · " + m.searchProgress + styleReset
 	}
@@ -378,7 +379,7 @@ func rowGutter(r row, width int) string {
 func (m model) renderDiffRowWithGutter(r row, active bool, gutter string) string {
 	margin := diffMargin(m.width)
 	text := r.text
-	syntax, inline := r.syntaxSpans(), r.inlineSpans()
+	spans, inline := r.syntaxSpans(), r.inlineSpans()
 	contentWidth := max(0, m.width-margin)
 	if r.kind == 'f' || r.kind == 'F' || r.kind == 'm' || r.kind == 'M' || r.kind == 'n' {
 		text = fit(text, contentWidth)
@@ -432,13 +433,13 @@ func (m model) renderDiffRowWithGutter(r row, active bool, gutter string) string
 				highlight = "\x1b[48;2;175;220;181m"
 			}
 		}
-		text = color + gutter + renderSyntaxWithHighlight(text[len(gutter):], nil, inline, 0, query, color, m.lightTheme, highlight) + "\x1b[0m"
+		text = color + gutter + syntax.RenderWithHighlight(text[len(gutter):], nil, inline, 0, query, color, m.lightTheme, highlight) + "\x1b[0m"
 		color = ""
-	} else if (syntax != nil || r.kind == '+' || r.kind == '-' || r.kind == 'd') && !r.isMoved() && strings.HasPrefix(text, gutter) {
+	} else if (spans != nil || r.kind == '+' || r.kind == '-' || r.kind == 'd') && !r.isMoved() && strings.HasPrefix(text, gutter) {
 		visible := text[len(gutter):]
 		start := 0
 		if !m.wrap {
-			start = sliceStart(r.text, m.horizontal, max(0, contentWidth-stringWidth(gutter)))
+			start = syntax.SliceStart(r.text, m.horizontal, max(0, contentWidth-stringWidth(gutter)))
 		}
 		background := ""
 		switch r.kind {
@@ -457,7 +458,7 @@ func (m model) renderDiffRowWithGutter(r row, active bool, gutter string) string
 		if background != "" {
 			padding = strings.Repeat(" ", max(0, contentWidth-stringWidth(gutter+visible)))
 		}
-		text = background + gutter + renderSyntax(visible, syntax, inline, start, query, background, m.lightTheme) + padding + "\x1b[0m"
+		text = background + gutter + syntax.Render(visible, spans, inline, start, query, background, m.lightTheme) + padding + "\x1b[0m"
 		color = ""
 	} else if query != "" && strings.HasPrefix(text, gutter) {
 		text = gutter + highlightMatches(text[len(gutter):], query)

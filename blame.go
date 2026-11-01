@@ -2,13 +2,14 @@ package main
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 type blameLoaded struct {
 	hash      string
 	path      string
 	line      int
-	commit    CommitInfo
+	commit    git.CommitInfo
 	jumps     []jumpLocation
 	jumpIndex int
 	before    jumpLocation

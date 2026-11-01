@@ -6,17 +6,18 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 type loaded struct {
-	snapshot   Snapshot
+	snapshot   git.Snapshot
 	err        error
 	generation int
-	cache      *RefreshCache
+	cache      *git.RefreshCache
 }
 type loadedUnchanged struct {
 	generation int
-	cache      *RefreshCache
+	cache      *git.RefreshCache
 }
 type tick struct{}
 type resizeRebuild struct{ request int }
@@ -29,21 +30,21 @@ type completed struct {
 }
 
 type recentCommitsLoaded struct {
-	commits []CommitInfo
+	commits []git.CommitInfo
 	err     error
 	request int
 }
 
 type model struct {
-	repo                  Repo
-	refreshCache          *RefreshCache
-	snapshot              Snapshot
+	repo                  git.Repo
+	refreshCache          *git.RefreshCache
+	snapshot              git.Snapshot
 	rows                  []row
 	width, height         int
 	gutterFloor           int
 	gutterWidth           int
 	sequenceGutters       bool
-	previousChanges       []Change
+	previousChanges       []git.Change
 	syntaxWarmPath        string
 	syntaxWarmCommit      string
 	tickStopped           bool
@@ -102,11 +103,11 @@ type model struct {
 	contextRequest        int
 	contextCommit         string
 	syntaxDemand          *syntaxDemand
-	recentCommits         []CommitInfo
+	recentCommits         []git.CommitInfo
 	recentCommitRequest   int
 	recentCommitLoading   bool
 	recentCommitError     bool
-	discard               DiscardRequest
+	discard               git.DiscardRequest
 	stageCursor           *stagingCursor
 	sequence              sequenceState
 	stash                 stashState
@@ -128,7 +129,7 @@ func (m model) closeHistoryStreams() {
 	}
 }
 
-func initialModel(repo Repo, args []string) (model, error) {
+func initialModel(repo git.Repo, args []string) (model, error) {
 	if len(args) == 2 && args[0] == "--" {
 		return initialFileHistory(repo, args[1])
 	}
@@ -195,7 +196,7 @@ func initialModel(repo Repo, args []string) (model, error) {
 	if strings.Contains(args[0], "..") {
 		out, err := repo.Command("rev-list", fmt.Sprintf("--max-count=%d", maxSequenceCommits+1), "--end-of-options", args[0], "--")
 		if err != nil {
-			return model{}, fmt.Errorf("invalid commit range %q: %w", args[0], gitError(out, err))
+			return model{}, fmt.Errorf("invalid commit range %q: %w", args[0], git.GitError(out, err))
 		}
 		if len(out) == 0 {
 			return model{}, fmt.Errorf("commit range %q contains no commits", args[0])
@@ -224,7 +225,7 @@ func (m model) Init() tea.Cmd {
 	}
 	commands := []tea.Cmd{initial, nextTick(), m.queryTheme()}
 	if m.screen == "history" && m.history.path != "" && m.history.loading {
-		commands = append(commands, m.fetchHistory(0, historyPage))
+		commands = append(commands, m.fetchHistory(0, git.HistoryPage))
 	}
 	if m.screen == "commit" && m.history.loading && m.history.directCommit {
 		repo, hash, request := m.commitRepository(), m.history.current.Hash, m.history.request
@@ -270,11 +271,11 @@ func (m model) queryThemeOnTick() tea.Cmd {
 	return m.queryTheme()
 }
 
-func load(repo Repo, generation int, cache *RefreshCache) tea.Cmd {
+func load(repo git.Repo, generation int, cache *git.RefreshCache) tea.Cmd {
 	return loadWith(repo, generation, cache, false)
 }
 
-func loadWith(repo Repo, generation int, cache *RefreshCache, deferOffscreen bool) tea.Cmd {
+func loadWith(repo git.Repo, generation int, cache *git.RefreshCache, deferOffscreen bool) tea.Cmd {
 	return func() tea.Msg {
 		next, unchanged, err := repo.LoadChanges(cache, deferOffscreen)
 		if err != nil {

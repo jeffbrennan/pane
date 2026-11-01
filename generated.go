@@ -9,7 +9,7 @@ import (
 
 func generatedByPath(path string) bool { return git.GeneratedByPath(path) }
 
-func (m *model) collapseGenerated(changes []Change) {
+func (m *model) collapseGenerated(changes []git.Change) {
 	for _, c := range changes {
 		if !c.Generated {
 			continue

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 type commitEditorClosed struct {
@@ -36,7 +37,7 @@ func (m model) openCommitEditor() (tea.Model, tea.Cmd) {
 func (m model) prepareCommitEditor() (string, error) {
 	out, err := m.repo.Command("rev-parse", "--git-path", "PANE_COMMIT_EDITMSG")
 	if err != nil {
-		return "", gitError(out, err)
+		return "", git.GitError(out, err)
 	}
 	path := strings.TrimSpace(string(out))
 	if !filepath.IsAbs(path) {

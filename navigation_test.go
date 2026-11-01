@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func TestDiffVerticalMotions(t *testing.T) {
@@ -26,7 +27,7 @@ func TestDiffVerticalMotions(t *testing.T) {
 
 func TestViewportAlignmentSurvivesRefresh(t *testing.T) {
 	diff := "@@ -0,0 +1,40 @@\n" + strings.Repeat("+line\n", 40)
-	s := Snapshot{Unstaged: []Change{{Path: "file", Diff: diff}}}
+	s := git.Snapshot{Unstaged: []git.Change{{Path: "file", Diff: diff}}}
 	m := model{width: 40, height: 12, wrap: true, snapshot: s}
 	m.rebuild()
 	m.move(20)
@@ -112,7 +113,7 @@ func TestCommitDiffNavigation(t *testing.T) {
 }
 
 func TestHistoryNavigationAndSearchInput(t *testing.T) {
-	m := model{screen: "history", height: 15, history: historyState{commits: make([]CommitInfo, 20), selected: 10}}
+	m := model{screen: "history", height: 15, history: historyState{commits: make([]git.CommitInfo, 20), selected: 10}}
 	for _, key := range []string{"g", "g"} {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
 		m = updated.(model)
@@ -133,7 +134,7 @@ func TestHistoryNavigationAndSearchInput(t *testing.T) {
 }
 
 func TestCountedMotionsAndSourceLines(t *testing.T) {
-	m := model{width: 40, height: 10, wrap: true, snapshot: Snapshot{Unstaged: []Change{
+	m := model{width: 40, height: 10, wrap: true, snapshot: git.Snapshot{Unstaged: []git.Change{
 		{Path: "first", Diff: "@@ -10,3 +10,3 @@\n ten\n-old\n+new\n twelve\n"},
 		{Path: "second", Diff: "@@ -30 +30 @@\n-other\n+next\n"},
 	}}}
@@ -165,7 +166,7 @@ func TestCountedMotionsAndSourceLines(t *testing.T) {
 }
 
 func TestChangeBlockMotionsAndJumpList(t *testing.T) {
-	m := model{width: 50, height: 12, wrap: true, snapshot: Snapshot{Unstaged: []Change{
+	m := model{width: 50, height: 12, wrap: true, snapshot: git.Snapshot{Unstaged: []git.Change{
 		{Path: "first", Diff: "@@ -1,5 +1,5 @@\n keep\n-old\n+new\n middle\n-before\n+after\n"},
 		{Path: "second", Diff: "@@ -1 +1 @@\n-old\n+new\n"},
 	}}}
@@ -235,7 +236,7 @@ func TestReverseSearchAndJumpBack(t *testing.T) {
 }
 
 func TestHistoryCounts(t *testing.T) {
-	m := model{screen: "history", height: 15, history: historyState{commits: make([]CommitInfo, 30)}}
+	m := model{screen: "history", height: 15, history: historyState{commits: make([]git.CommitInfo, 30)}}
 	m = keys(t, m, "1", "0", "j")
 	if m.history.selected != 10 {
 		t.Fatalf("10j: %d", m.history.selected)

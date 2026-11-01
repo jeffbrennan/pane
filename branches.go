@@ -9,10 +9,12 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 type branchState struct {
-	entries          []BranchEntry
+	entries          []git.BranchEntry
 	selected, offset int
 	filter, draft    string
 	draftCursor      int
@@ -21,12 +23,12 @@ type branchState struct {
 	loading          bool
 	remote           bool
 	newFrom          string
-	confirm          BranchEntry
+	confirm          git.BranchEntry
 	confirmForce     bool
 }
 
 type branchesLoaded struct {
-	entries []BranchEntry
+	entries []git.BranchEntry
 	request int
 	err     error
 }
@@ -52,12 +54,12 @@ func (m model) loadBranches() tea.Cmd {
 	}
 }
 
-func (m model) filteredBranches() []BranchEntry {
+func (m model) filteredBranches() []git.BranchEntry {
 	query := strings.ToLower(strings.TrimSpace(m.branch.filter))
 	if query == "" {
 		return m.branch.entries
 	}
-	var matches []BranchEntry
+	var matches []git.BranchEntry
 	for _, entry := range m.branch.entries {
 		if matchesPicker(entry.Name, query) {
 			matches = append(matches, entry)
@@ -122,7 +124,7 @@ func (m model) branchView() string {
 		if entry.Worktree != "" {
 			meta = append(meta, "⌂ "+filepath.Base(entry.Worktree))
 		}
-		meta = append(meta, historyCommitTime(entry.Date, now), clean(entry.Subject))
+		meta = append(meta, git.HistoryCommitTime(entry.Date, now), syntax.Clean(entry.Subject))
 		var parts []string
 		for _, part := range meta {
 			if part == "" {
@@ -130,7 +132,7 @@ func (m model) branchView() string {
 			}
 			parts = append(parts, part)
 		}
-		row := fit(fmt.Sprintf("%s%s %s  %s", marker, current, clean(name), strings.Join(parts, "  ")), m.width)
+		row := fit(fmt.Sprintf("%s%s %s  %s", marker, current, syntax.Clean(name), strings.Join(parts, "  ")), m.width)
 		if i == m.branch.selected {
 			row = "\x1b[7m" + row + strings.Repeat(" ", max(0, m.width-stringWidth(row))) + styleReset
 		} else {
@@ -143,10 +145,10 @@ func (m model) branchView() string {
 		status = "/" + renderInput(m.branch.draft, m.branch.draftCursor, max(1, m.width-1))
 		hints = keyHints("↵", "filter", "esc", "cancel")
 	} else if m.branch.filter != "" {
-		status = "/" + clean(m.branch.filter)
+		status = "/" + syntax.Clean(m.branch.filter)
 	}
 	if m.flash != "" {
-		status = clean(m.flash)
+		status = syntax.Clean(m.flash)
 	}
 	if m.modal == "branch-new" {
 		status, hints = "New branch from "+shortHash(m.branch.newFrom)+": "+renderInput(m.input, m.inputCursor, max(1, m.width-32)), keyHints("↵", "create", "esc", "cancel")
@@ -249,7 +251,7 @@ func (m model) promptNewBranch(from string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) confirmDeleteBranch(entry BranchEntry, force bool) (tea.Model, tea.Cmd) {
+func (m model) confirmDeleteBranch(entry git.BranchEntry, force bool) (tea.Model, tea.Cmd) {
 	if entry.Remote {
 		m.flash = "Remote branches cannot be deleted here"
 		return m, nil
@@ -267,7 +269,7 @@ func (m model) confirmDeleteBranch(entry BranchEntry, force bool) (tea.Model, te
 	return m, nil
 }
 
-func (m model) runBranchAction(message string, stay bool, action func(Repo) (string, error)) (tea.Model, tea.Cmd) {
+func (m model) runBranchAction(message string, stay bool, action func(git.Repo) (string, error)) (tea.Model, tea.Cmd) {
 	repo := m.repo
 	return m, func() tea.Msg {
 		out, err := action(repo)
@@ -278,12 +280,12 @@ func (m model) runBranchAction(message string, stay bool, action func(Repo) (str
 	}
 }
 
-func (m model) switchBranch(entry BranchEntry) (tea.Model, tea.Cmd) {
+func (m model) switchBranch(entry git.BranchEntry) (tea.Model, tea.Cmd) {
 	if entry.Worktree != "" {
 		m.flash = "Checked out in " + entry.Worktree
 		return m, nil
 	}
-	return m.runBranchAction("Switched to "+entry.Name, false, func(r Repo) (string, error) {
+	return m.runBranchAction("Switched to "+entry.Name, false, func(r git.Repo) (string, error) {
 		args := []string{"switch"}
 		if entry.Remote {
 			remote, local, ok := strings.Cut(entry.Name, "/")
@@ -308,17 +310,17 @@ func (m model) createBranch(name, from string) (tea.Model, tea.Cmd) {
 		m.flash = "Branch name must be a single word"
 		return m, nil
 	}
-	return m.runBranchAction("Created branch "+name, false, func(r Repo) (string, error) {
+	return m.runBranchAction("Created branch "+name, false, func(r git.Repo) (string, error) {
 		return r.Action("switch", "-c", name, from)
 	})
 }
 
-func (m model) deleteBranch(entry BranchEntry, force bool) (tea.Model, tea.Cmd) {
+func (m model) deleteBranch(entry git.BranchEntry, force bool) (tea.Model, tea.Cmd) {
 	flag := "-d"
 	if force {
 		flag = "-D"
 	}
-	return m.runBranchAction("Deleted branch "+entry.Name, true, func(r Repo) (string, error) {
+	return m.runBranchAction("Deleted branch "+entry.Name, true, func(r git.Repo) (string, error) {
 		return r.Action("branch", flag, entry.Name)
 	})
 }
@@ -330,7 +332,7 @@ func (m model) reloadBranches() (model, tea.Cmd) {
 }
 
 // branchNames presents branches in a stable order for tests.
-func branchNames(entries []BranchEntry) []string {
+func branchNames(entries []git.BranchEntry) []string {
 	names := make([]string, len(entries))
 	for i, entry := range entries {
 		names[i] = entry.Name

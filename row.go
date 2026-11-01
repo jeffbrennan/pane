@@ -1,5 +1,9 @@
 package main
 
+import (
+	"github.com/jeffbrennan/pane/internal/syntax"
+)
+
 type row struct {
 	path, oldPath, text        string
 	spans                      *rowSpans
@@ -15,7 +19,7 @@ type row struct {
 }
 
 type rowSpans struct {
-	syntax, inline []syntaxSpan
+	syntax, inline []syntax.Span
 	// Rare indexes that do not fit the compact fields share this optional storage.
 	wide *wideRowIndexes
 }
@@ -30,7 +34,7 @@ type wideRowIndexes struct {
 // The sentinel preserves full native-int values, including MinInt32 itself.
 const wideRowIndex int32 = -1 << 31
 
-func newRowSpans(syntax, inline []syntaxSpan, wide *wideRowIndexes) *rowSpans {
+func newRowSpans(syntax, inline []syntax.Span, wide *wideRowIndexes) *rowSpans {
 	if len(syntax) == 0 && len(inline) == 0 && wide == nil {
 		return nil
 	}
@@ -130,29 +134,29 @@ func (r *row) setHeaderRow(value int) {
 	r.headerIndex = wideRowIndex
 }
 
-func (r row) syntaxSpans() []syntaxSpan {
+func (r row) syntaxSpans() []syntax.Span {
 	if !r.syntaxPresent {
 		return nil
 	}
 	if r.spans == nil || r.spans.syntax == nil {
-		return []syntaxSpan{}
+		return []syntax.Span{}
 	}
 	return r.spans.syntax
 }
 
-func (r row) inlineSpans() []syntaxSpan {
+func (r row) inlineSpans() []syntax.Span {
 	if r.spans == nil {
 		return nil
 	}
 	return r.spans.inline
 }
 
-func (r *row) setSyntaxSpans(spans []syntaxSpan) {
+func (r *row) setSyntaxSpans(spans []syntax.Span) {
 	r.syntaxPresent = spans != nil
 	// Rows are copied into caches, so replacing the span object avoids mutating copies.
 	r.spans = newRowSpans(spans, r.inlineSpans(), r.wideIndexes())
 }
 
-func (r *row) setInlineSpans(spans []syntaxSpan) {
+func (r *row) setInlineSpans(spans []syntax.Span) {
 	r.spans = newRowSpans(r.syntaxSpans(), spans, r.wideIndexes())
 }

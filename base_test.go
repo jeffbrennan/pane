@@ -5,9 +5,10 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
-func baseFixture(t *testing.T) (Repo, string) {
+func baseFixture(t *testing.T) (git.Repo, string) {
 	t.Helper()
 	r := testRepo(t)
 	writeFile(t, r, "file", "base\n")

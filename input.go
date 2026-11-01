@@ -4,6 +4,7 @@ import (
 	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 func renderInput(text string, cursor, width int) string {
@@ -12,12 +13,12 @@ func renderInput(text string, cursor, width int) string {
 	}
 	runes := []rune(text)
 	pos := max(0, min(cursor, len(runes)))
-	before := clean(string(runes[:pos]))
+	before := syntax.Clean(string(runes[:pos]))
 	after := ""
 	cell := " "
 	if pos < len(runes) {
-		cell = clean(string(runes[pos]))
-		after = clean(string(runes[pos+1:]))
+		cell = syntax.Clean(string(runes[pos]))
+		after = syntax.Clean(string(runes[pos+1:]))
 	}
 	cellWidth := max(1, stringWidth(cell))
 	if cellWidth > width {

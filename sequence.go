@@ -9,11 +9,13 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 type sequenceState struct {
-	commits         []CommitInfo
-	changes         [][]Change
+	commits         []git.CommitInfo
+	changes         [][]git.Change
 	states          []sequenceLoadState
 	errors          []string
 	rowCache        [][]row
@@ -46,15 +48,15 @@ const (
 
 type sequenceLoaded struct {
 	index   int
-	commit  CommitInfo
-	changes []Change
+	commit  git.CommitInfo
+	changes []git.Change
 	request int
 	err     error
 }
 
-func initialSequence(repo Repo, input io.Reader) (model, error) {
+func initialSequence(repo git.Repo, input io.Reader) (model, error) {
 	scanner := bufio.NewScanner(io.LimitReader(input, 1024*1024+1))
-	var commits []CommitInfo
+	var commits []git.CommitInfo
 	total := 0
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -73,7 +75,7 @@ func initialSequence(repo Repo, input io.Reader) (model, error) {
 		if len(commits) >= maxSequenceCommits {
 			return model{}, fmt.Errorf("commit input exceeds %d commits", maxSequenceCommits)
 		}
-		commits = append(commits, CommitInfo{Hash: hash})
+		commits = append(commits, git.CommitInfo{Hash: hash})
 	}
 	if err := scanner.Err(); err != nil {
 		return model{}, fmt.Errorf("reading commit input: %w", err)
@@ -85,14 +87,14 @@ func initialSequence(repo Repo, input io.Reader) (model, error) {
 }
 
 // newSequenceModel starts the multi-commit review for already parsed commits.
-func newSequenceModel(repo Repo, commits []CommitInfo) (model, error) {
+func newSequenceModel(repo git.Repo, commits []git.CommitInfo) (model, error) {
 	if len(commits) == 0 {
 		return model{}, fmt.Errorf("no commits in input; use git log --oneline | pane")
 	}
 	if len(commits) > maxSequenceCommits {
 		return model{}, fmt.Errorf("commit input exceeds %d commits", maxSequenceCommits)
 	}
-	state := sequenceState{commits: commits, changes: make([][]Change, len(commits)), states: make([]sequenceLoadState, len(commits)), errors: make([]string, len(commits)), loading: true, request: 1}
+	state := sequenceState{commits: commits, changes: make([][]git.Change, len(commits)), states: make([]sequenceLoadState, len(commits)), errors: make([]string, len(commits)), loading: true, request: 1}
 	state.states[0] = sequenceLoading
 	state.states[len(commits)-1] = sequenceLoading
 	return model{
@@ -104,15 +106,15 @@ func newSequenceModel(repo Repo, commits []CommitInfo) (model, error) {
 type sequenceChunkLoaded struct {
 	index   int
 	request int
-	chunk   CommitChunk
-	stream  <-chan CommitChunk
+	chunk   git.CommitChunk
+	stream  <-chan git.CommitChunk
 }
 
-func waitSequenceChunk(stream <-chan CommitChunk, index, request int) tea.Cmd {
+func waitSequenceChunk(stream <-chan git.CommitChunk, index, request int) tea.Cmd {
 	return func() tea.Msg {
 		chunk, ok := <-stream
 		if !ok {
-			chunk = CommitChunk{Done: true, Err: fmt.Errorf("commit stream ended unexpectedly")}
+			chunk = git.CommitChunk{Done: true, Err: fmt.Errorf("commit stream ended unexpectedly")}
 		}
 		return sequenceChunkLoaded{index: index, request: request, chunk: chunk, stream: stream}
 	}
@@ -132,7 +134,7 @@ func (m *model) startSequenceStream(index int) tea.Cmd {
 	ctx := m.sequence.streamContext
 	request, height := m.sequence.request, m.height
 	return func() tea.Msg {
-		stream := repo.StreamCommit(ctx, hash, max(height, startupSyntaxLines))
+		stream := repo.StreamCommit(ctx, hash, max(height, git.StartupSyntaxLines))
 		return waitSequenceChunk(stream, index, request)()
 	}
 }
@@ -195,7 +197,7 @@ func (m *model) rebuildSequence() {
 	now := time.Now()
 	for i := range m.sequence.commits {
 		if len(m.sequence.states) > 0 && m.sequence.states[i] == sequenceFailed {
-			rows = append(rows, row{kind: '@', text: "  " + clean(m.sequence.errors[i]), commitIndex: uint16(i)})
+			rows = append(rows, row{kind: '@', text: "  " + syntax.Clean(m.sequence.errors[i]), commitIndex: uint16(i)})
 			continue
 		}
 		if i >= len(m.sequence.changes) || (len(m.sequence.states) > 0 && m.sequence.states[i] != sequenceReady) {
@@ -302,7 +304,7 @@ func (m model) sequenceView() string {
 		index := int(m.rows[start].commitIndex)
 		if index < len(m.sequence.commits) {
 			commit := m.sequence.commits[index]
-			view.viewTitle = m.accent() + shortHash(commit.Hash) + styleReset + "  " + clean(commit.Subject)
+			view.viewTitle = m.accent() + shortHash(commit.Hash) + styleReset + "  " + syntax.Clean(commit.Subject)
 			view.viewBadge = styleDim + fmt.Sprintf("read-only · %d/%d", index+1, len(m.sequence.commits)) + styleReset
 			if viewed, total := viewedCountRows(m.rows); viewed > 0 {
 				view.viewBadge += styleDim + fmt.Sprintf(" · %d/%d viewed", viewed, total) + styleReset

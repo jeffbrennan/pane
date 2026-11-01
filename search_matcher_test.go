@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/jeffbrennan/pane/internal/syntax"
 	"math/rand"
 	"runtime"
 	"strings"
@@ -12,7 +13,7 @@ func TestSearchMatcherMatchesOriginalSemantics(t *testing.T) {
 	queries := []string{"", "hello", "WORLD", "world", "é", "kelvin", "K", "aba", "missing", "istanbul"}
 	for _, text := range texts {
 		for _, query := range queries {
-			want := query != "" && strings.Contains(searchFold(text, query), searchFold(query, query))
+			want := query != "" && strings.Contains(syntax.Fold(text, query), syntax.Fold(query, query))
 			if got := searchMatches(text, query); got != want {
 				t.Errorf("searchMatches(%q, %q) = %v, want %v", text, query, got, want)
 			}
@@ -32,7 +33,7 @@ func TestSearchMatcherRandomText(t *testing.T) {
 	}
 	for i := 0; i < 5000; i++ {
 		text, query := makeText(), makeText()
-		want := query != "" && strings.Contains(searchFold(text, query), searchFold(query, query))
+		want := query != "" && strings.Contains(syntax.Fold(text, query), syntax.Fold(query, query))
 		if got := searchMatches(text, query); got != want {
 			t.Fatalf("text=%q query=%q got %t want %t", text, query, got, want)
 		}

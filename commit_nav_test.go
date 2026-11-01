@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
+	"github.com/jeffbrennan/pane/internal/git"
 	"strings"
 	"testing"
 )
 
 func TestStepBetweenCommits(t *testing.T) {
-	commits := []CommitInfo{{Hash: "newest"}, {Hash: "middle"}, {Hash: "oldest"}}
+	commits := []git.CommitInfo{{Hash: "newest"}, {Hash: "middle"}, {Hash: "oldest"}}
 	m := model{width: 80, height: 20, wrap: true, screen: "commit", history: historyState{commits: commits, current: commits[0]}}
 	updated, _ := m.stepCommit(1)
 	next := updated.(model)
@@ -29,7 +30,7 @@ func TestStepBetweenCommits(t *testing.T) {
 }
 
 func TestStepAtLoadedEndFetchesPage(t *testing.T) {
-	commits := []CommitInfo{{Hash: "a"}, {Hash: "b"}}
+	commits := []git.CommitInfo{{Hash: "a"}, {Hash: "b"}}
 	m := model{width: 80, height: 20, wrap: true, screen: "commit", history: historyState{commits: commits, current: commits[1], more: true}}
 	updated, cmd := m.stepCommit(1)
 	next := updated.(model)
@@ -50,7 +51,7 @@ func TestStepRestoresPosition(t *testing.T) {
 	if _, err := r.Commit("second"); err != nil {
 		t.Fatal(err)
 	}
-	commits, err := r.History(0, historyPage)
+	commits, err := r.History(0, git.HistoryPage)
 	if err != nil || len(commits) != 2 {
 		t.Fatalf("history: %v %v", commits, err)
 	}
@@ -80,7 +81,7 @@ func TestStepRestoresPosition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	next = deliverChunk(t, next, CommitChunk{Paths: []string{"file.txt"}, Changes: changes, Loaded: 1, Done: true})
+	next = deliverChunk(t, next, git.CommitChunk{Paths: []string{"file.txt"}, Changes: changes, Loaded: 1, Done: true})
 	if next.history.current.Hash != commits[1].Hash {
 		t.Fatalf("stepped to %s", next.history.current.Hash)
 	}
@@ -91,14 +92,14 @@ func TestStepRestoresPosition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	back = deliverChunk(t, back, CommitChunk{Paths: []string{"file.txt"}, Changes: changes, Loaded: 1, Done: true})
+	back = deliverChunk(t, back, git.CommitChunk{Paths: []string{"file.txt"}, Changes: changes, Loaded: 1, Done: true})
 	if back.history.pos >= len(back.history.rows) || back.history.rows[back.history.pos].sourceLine != 8 {
 		t.Fatalf("position not restored: row %#v", back.history.rows[back.history.pos])
 	}
 }
 
 func TestStepKeepsFileInFileHistory(t *testing.T) {
-	commits := []CommitInfo{{Hash: "newer", FilePath: "file.txt"}, {Hash: "older", FilePath: "file.txt"}}
+	commits := []git.CommitInfo{{Hash: "newer", FilePath: "file.txt"}, {Hash: "older", FilePath: "file.txt"}}
 	m := model{width: 80, height: 20, wrap: true, screen: "commit", history: historyState{commits: commits, current: commits[0], path: "file.txt"}}
 	updated, _ := m.stepCommit(1)
 	next := updated.(model)
@@ -111,7 +112,7 @@ func TestStepKeepsFileInFileHistory(t *testing.T) {
 }
 
 func TestCommitTitleShowsListPosition(t *testing.T) {
-	commits := []CommitInfo{{Hash: "aaaa", Subject: "one"}, {Hash: "bbbb", Subject: "two"}}
+	commits := []git.CommitInfo{{Hash: "aaaa", Subject: "one"}, {Hash: "bbbb", Subject: "two"}}
 	m := model{width: 120, height: 30, wrap: true, screen: "commit", history: historyState{commits: commits, current: commits[1]}}
 	view := m.commitModel()
 	if !strings.Contains(view.viewTitle, fmt.Sprintf("%d/%d", 2, 2)) {

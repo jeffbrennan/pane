@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"github.com/jeffbrennan/pane/internal/git"
 	"os"
 	"path/filepath"
 	"strings"
@@ -123,7 +124,7 @@ func diffBlob(diff string) string {
 }
 
 // applyViewed marks file headers and collapses files already marked viewed.
-func (m *model) applyViewed(rows []row, changes []Change) {
+func (m *model) applyViewed(rows []row, changes []git.Change) {
 	if m.viewed == nil || m.viewIdentity == "" {
 		return
 	}
@@ -161,7 +162,7 @@ func (m *model) collapseViewed(path string) {
 
 // seedViewedCollapse collapses newly seen viewed files before rows are built,
 // so streaming chunks do not append their contents first.
-func (m *model) seedViewedCollapse(changes []Change) {
+func (m *model) seedViewedCollapse(changes []git.Change) {
 	if m.viewed == nil || m.viewIdentity == "" {
 		return
 	}

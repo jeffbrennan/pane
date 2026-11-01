@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func TestCommitDialogCenteredAndEditable(t *testing.T) {
@@ -72,12 +73,12 @@ func TestCommitDialogHidesBackground(t *testing.T) {
 func TestCommitDialogRequiresChanges(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
-		snapshot Snapshot
+		snapshot git.Snapshot
 		wantOpen bool
 	}{
 		{name: "clean"},
-		{name: "unstaged", snapshot: Snapshot{Unstaged: []Change{{Path: "file"}}}, wantOpen: true},
-		{name: "staged", snapshot: Snapshot{Staged: []Change{{Path: "file"}}}, wantOpen: true},
+		{name: "unstaged", snapshot: git.Snapshot{Unstaged: []git.Change{{Path: "file"}}}, wantOpen: true},
+		{name: "staged", snapshot: git.Snapshot{Staged: []git.Change{{Path: "file"}}}, wantOpen: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			m := model{width: 60, height: 20, snapshot: tt.snapshot}
@@ -101,7 +102,7 @@ func TestCommitDialogLoadsRecentCommits(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	m := model{repo: r, width: 60, height: 20, snapshot: Snapshot{Unstaged: []Change{{Path: "file"}}}}
+	m := model{repo: r, width: 60, height: 20, snapshot: git.Snapshot{Unstaged: []git.Change{{Path: "file"}}}}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	m = updated.(model)
 	if cmd == nil || !strings.Contains(m.View(), "Loading…") {
@@ -143,7 +144,7 @@ func TestRelativeCommitTime(t *testing.T) {
 		{2 * 365 * 24 * time.Hour, "2y ago"}, {-time.Hour, "0s ago"},
 	} {
 		date := now.Add(-tt.age).Format(time.RFC3339)
-		if got := relativeCommitTime(date, now); got != tt.want {
+		if got := git.RelativeCommitTime(date, now); got != tt.want {
 			t.Errorf("age %v: got %q, want %q", tt.age, got, tt.want)
 		}
 	}
@@ -151,7 +152,7 @@ func TestRelativeCommitTime(t *testing.T) {
 
 func TestCommitDialogRecentHistoryEmptyAndStale(t *testing.T) {
 	r := testRepo(t)
-	m := model{repo: r, width: 60, height: 15, snapshot: Snapshot{Unstaged: []Change{{Path: "file"}}}}
+	m := model{repo: r, width: 60, height: 15, snapshot: git.Snapshot{Unstaged: []git.Change{{Path: "file"}}}}
 	updated, oldCmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	m = keys(t, updated.(model), "esc", "esc")
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})

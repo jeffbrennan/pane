@@ -1,11 +1,12 @@
 package main
 
 import (
+	"github.com/jeffbrennan/pane/internal/git"
 	"strings"
 	"testing"
 )
 
-func movedFixture(t *testing.T) (model, []Change) {
+func movedFixture(t *testing.T) (model, []git.Change) {
 	t.Helper()
 	r := testRepo(t)
 	writeFile(t, r, "a.go", "package a\n\nfunc one() {}\nfunc two() {}\nfunc three() {}\nfunc four() {}\n")
@@ -72,7 +73,7 @@ func TestMovedHintRendersOnlyWhenVisible(t *testing.T) {
 
 func TestShortMovedRunsStayNormal(t *testing.T) {
 	index := newMovedIndex()
-	index.addChange(Change{Path: "b", Diff: "@@ -1,2 +1,2 @@\n-one\n-two\n+one\n+two\n"})
+	index.addChange(git.Change{Path: "b", Diff: "@@ -1,2 +1,2 @@\n-one\n-two\n+one\n+two\n"})
 	row := row{path: "b", kind: '+', target: 1, sourceLine: 1, text: "one"}
 	if moved, _, _ := index.lookup(row); moved {
 		t.Fatal("a two-line move should not be marked")

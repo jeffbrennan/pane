@@ -8,6 +8,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/jeffbrennan/pane/internal/git"
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 var styles = regexp.MustCompile(`\x1b\[[0-9;]*m`)
@@ -28,10 +30,10 @@ func TestBarAlignsAndDropsRightSide(t *testing.T) {
 }
 
 func TestEveryScreenSharesTitleAndStatusBars(t *testing.T) {
-	diff := model{width: 60, height: 10, snapshot: Snapshot{Unstaged: []Change{{Path: "a.go", Diff: "@@ -1 +1 @@\n-a\n+b\n"}}}}
+	diff := model{width: 60, height: 10, snapshot: git.Snapshot{Unstaged: []git.Change{{Path: "a.go", Diff: "@@ -1 +1 @@\n-a\n+b\n"}}}}
 	diff.rebuild()
 	history := model{width: 60, height: 10, screen: "history"}
-	commit := model{width: 60, height: 10, screen: "commit", history: historyState{current: CommitInfo{Hash: "123456789", Subject: "subject"}}}
+	commit := model{width: 60, height: 10, screen: "commit", history: historyState{current: git.CommitInfo{Hash: "123456789", Subject: "subject"}}}
 	for name, tt := range map[string]struct {
 		m            model
 		title, hints string
@@ -57,7 +59,7 @@ func TestBusyActionShowsInTitleBar(t *testing.T) {
 }
 
 func TestEmptyDiffPointsToOtherView(t *testing.T) {
-	m := model{width: 60, height: 10, snapshot: Snapshot{Staged: []Change{{Path: "a.go", Diff: "@@ -1 +1 @@\n-a\n+b\n"}}}}
+	m := model{width: 60, height: 10, snapshot: git.Snapshot{Staged: []git.Change{{Path: "a.go", Diff: "@@ -1 +1 @@\n-a\n+b\n"}}}}
 	m.rebuild()
 	if !strings.Contains(m.View(), "No unstaged changes · tab shows 1 staged") {
 		t.Fatalf("missing empty state hint: %q", m.View())
@@ -69,7 +71,7 @@ func TestEmptyDiffPointsToOtherView(t *testing.T) {
 }
 
 func TestDiscardAndErrorUseDialogs(t *testing.T) {
-	m := model{width: 60, height: 12, modal: "discard", discard: DiscardRequest{Change: Change{Path: "a.go"}}}
+	m := model{width: 60, height: 12, modal: "discard", discard: git.DiscardRequest{Change: git.Change{Path: "a.go"}}}
 	view := plain(m.View())
 	if !strings.Contains(view, "┌") || !strings.Contains(view, "Discard hunk?") || !strings.Contains(view, "y discard  n/esc cancel") || !strings.HasPrefix(view, " unstaged 0") {
 		t.Fatalf("discard is not a dialog: %q", view)
@@ -89,11 +91,11 @@ func TestDiscardAndErrorUseDialogs(t *testing.T) {
 }
 
 func TestCommitDialogShowsScope(t *testing.T) {
-	m := model{width: 60, height: 20, modal: "commit", snapshot: Snapshot{Unstaged: []Change{{Path: "a"}, {Path: "b"}}}}
+	m := model{width: 60, height: 20, modal: "commit", snapshot: git.Snapshot{Unstaged: []git.Change{{Path: "a"}, {Path: "b"}}}}
 	if !strings.Contains(plain(m.View()), "all 2 files") {
 		t.Fatalf("missing stage-all scope: %q", m.View())
 	}
-	m.snapshot.Staged = []Change{{Path: "a"}}
+	m.snapshot.Staged = []git.Change{{Path: "a"}}
 	if !strings.Contains(plain(m.View()), "1 file staged") {
 		t.Fatalf("missing staged scope: %q", m.View())
 	}
@@ -115,7 +117,7 @@ func TestFilePickerKeepsSizeWhileFiltering(t *testing.T) {
 }
 
 func TestHeaderNumberAlignsWithLineNumbers(t *testing.T) {
-	changes := []Change{{Path: "a.go", Diff: "@@ -1000,2 +1000,2 @@\n x\n y\n"}}
+	changes := []git.Change{{Path: "a.go", Diff: "@@ -1000,2 +1000,2 @@\n x\n y\n"}}
 	m := model{width: 40, height: 10, wrap: true, screen: "commit", history: historyState{changes: changes}}
 	m.rebuildCommit()
 	m.history.pos = 2
@@ -126,7 +128,7 @@ func TestHeaderNumberAlignsWithLineNumbers(t *testing.T) {
 }
 
 func TestNumberColumnSharedAcrossFiles(t *testing.T) {
-	changes := []Change{
+	changes := []git.Change{
 		{Path: "small.go", Diff: "@@ -1,1 +1,1 @@\n x\n"},
 		{Path: "large.go", Diff: "@@ -1000,1 +1000,1 @@\n y\n"},
 	}
@@ -140,8 +142,8 @@ func TestNumberColumnSharedAcrossFiles(t *testing.T) {
 
 func TestSyntaxLinesAreCached(t *testing.T) {
 	diff := "@@ -1,1 +1,1 @@\n-func a() {}\n+func b() {}\n"
-	old, _ := syntaxLines("cached.go", diff)
-	again, _ := syntaxLines("cached.go", diff)
+	old, _ := syntax.Lines("cached.go", diff)
+	again, _ := syntax.Lines("cached.go", diff)
 	if len(old) == 0 || fmt.Sprintf("%p", old) != fmt.Sprintf("%p", again) {
 		t.Fatal("tokenized diff was not reused")
 	}

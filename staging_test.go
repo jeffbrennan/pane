@@ -7,9 +7,10 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
-func stagingModel(t *testing.T, r Repo, staged bool) model {
+func stagingModel(t *testing.T, r git.Repo, staged bool) model {
 	t.Helper()
 	s, err := r.Load()
 	if err != nil {
@@ -196,12 +197,12 @@ func TestStageContentHunkLeavesModeUnstaged(t *testing.T) {
 }
 
 func TestStageConflictAndBinaryGuards(t *testing.T) {
-	conflict := model{snapshot: Snapshot{Unstaged: []Change{{Path: "file", Conflict: true}}}, rows: []row{{path: "file", kind: 'f'}}}
+	conflict := model{snapshot: git.Snapshot{Unstaged: []git.Change{{Path: "file", Conflict: true}}}, rows: []row{{path: "file", kind: 'f'}}}
 	updated, cmd := conflict.stageSelection(true)
 	if cmd != nil || updated.(model).flash != "Resolve conflicts outside pane" {
 		t.Fatalf("conflict: %#v", updated)
 	}
-	binary := model{snapshot: Snapshot{Unstaged: []Change{{Path: "file", Diff: "Binary files differ"}}}, rows: []row{{path: "file", kind: '@'}}}
+	binary := model{snapshot: git.Snapshot{Unstaged: []git.Change{{Path: "file", Diff: "Binary files differ"}}}, rows: []row{{path: "file", kind: '@'}}}
 	updated, cmd = binary.stageSelection(true)
 	if cmd != nil || updated.(model).flash == "" {
 		t.Fatalf("binary: %#v", updated)

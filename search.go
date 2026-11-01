@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/jeffbrennan/pane/internal/syntax"
 	"runtime"
 	"strings"
 	"sync"
@@ -298,7 +299,7 @@ func highlightMatches(text, query string) string {
 	if query == "" {
 		return text
 	}
-	folded, needle := searchFold(text, query), searchFold(query, query)
+	folded, needle := syntax.Fold(text, query), syntax.Fold(query, query)
 	if len(folded) != len(text) {
 		return text
 	}

@@ -1,5 +1,9 @@
 package main
 
+import (
+	"github.com/jeffbrennan/pane/internal/syntax"
+)
+
 func (m model) fileHeaderAt(index int) *row {
 	if index < 0 || index >= len(m.rows) || m.rows[index].kind == 'f' || m.rows[index].kind == 'F' {
 		return nil
@@ -10,7 +14,7 @@ func (m model) fileHeaderAt(index int) *row {
 			pinned := m.rows[header]
 			pinned.renameAdded = true
 			pinned.text = " → " + displayPath(pinned.path, m.shortPaths)
-			_, inline := renamePathSpans(pinned.oldPath, pinned.path, m.shortPaths)
+			_, inline := syntax.RenamePathSpans(pinned.oldPath, pinned.path, m.shortPaths)
 			for i := range inline {
 				inline[i].Start += len(" → ")
 				inline[i].End += len(" → ")

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"github.com/jeffbrennan/pane/internal/git"
+	"github.com/jeffbrennan/pane/internal/syntax"
 	"strings"
 	"testing"
 )
 
-func highlightedText(text string, spans []syntaxSpan) string {
+func highlightedText(text string, spans []syntax.Span) string {
 	var result strings.Builder
 	for _, span := range spans {
 		if span.Start >= 0 && span.End <= len(text) && span.Start < span.End {
@@ -17,14 +19,14 @@ func highlightedText(text string, spans []syntaxSpan) string {
 
 func TestRenamePathHighlights(t *testing.T) {
 	old, new := "src/old-name/file.go", "src/new-name/file.go"
-	removed, added := renamePathSpans(old, new, false)
+	removed, added := syntax.RenamePathSpans(old, new, false)
 	if got := highlightedText(old, removed); got != "old" {
 		t.Fatalf("old highlighted %q", got)
 	}
 	if got := highlightedText(new, added); got != "new" {
 		t.Fatalf("new highlighted %q", got)
 	}
-	removed, added = renamePathSpans(old, new, true)
+	removed, added = syntax.RenamePathSpans(old, new, true)
 	if got := highlightedText(displayPath(old, true), removed); got != "old" {
 		t.Fatalf("short old highlighted %q", got)
 	}
@@ -35,7 +37,7 @@ func TestRenamePathHighlights(t *testing.T) {
 
 func TestRenameHighlightMarksHiddenDifferences(t *testing.T) {
 	old, new := "one/shared/file.go", "two/shared/file.go"
-	removed, added := renamePathSpans(old, new, true)
+	removed, added := syntax.RenamePathSpans(old, new, true)
 	if got := highlightedText(displayPath(old, true), removed); got != "…" {
 		t.Fatalf("old hidden difference: %q", got)
 	}
@@ -45,8 +47,8 @@ func TestRenameHighlightMarksHiddenDifferences(t *testing.T) {
 }
 
 func TestRenameHighlightWrapAndRendering(t *testing.T) {
-	c := Change{OldPath: "prefix/old-name/файл.go", Path: "prefix/new-name/файл.go", Diff: "similarity index 100%\n"}
-	m := model{width: 16, height: 20, wrap: true, snapshot: Snapshot{Unstaged: []Change{c}}}
+	c := git.Change{OldPath: "prefix/old-name/файл.go", Path: "prefix/new-name/файл.go", Diff: "similarity index 100%\n"}
+	m := model{width: 16, height: 20, wrap: true, snapshot: git.Snapshot{Unstaged: []git.Change{c}}}
 	m.rebuild()
 	var removed, added strings.Builder
 	newPath := false

@@ -5,9 +5,10 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
-func whitespaceRepo(t *testing.T) Repo {
+func whitespaceRepo(t *testing.T) git.Repo {
 	t.Helper()
 	r := testRepo(t)
 	writeFile(t, r, "file", "one\ntwo\nthree\n")
@@ -115,7 +116,7 @@ func TestWhitespaceInCommitAndSequence(t *testing.T) {
 	if err != nil || len(changes) != 1 || strings.Contains(changes[0].Diff, "+  one") || !strings.Contains(changes[0].Diff, "+two changed") {
 		t.Fatalf("historical diff: %#v %v", changes, err)
 	}
-	m := sequenceStreamModel([]CommitInfo{{Hash: commit.Hash}})
+	m := sequenceStreamModel([]git.CommitInfo{{Hash: commit.Hash}})
 	m.repo = r
 	m.sequence.states[0] = sequenceLoading
 	message := m.startSequenceStream(0)().(sequenceChunkLoaded)
@@ -157,7 +158,7 @@ func TestWhitespaceToggleReloadsHistoricalViews(t *testing.T) {
 	}
 	for _, screen := range []string{"commit", "sequence"} {
 		t.Run(screen, func(t *testing.T) {
-			m := model{repo: r, width: 80, height: 15, screen: screen, history: historyState{current: commit, request: 3}, sequence: sequenceState{commits: []CommitInfo{commit}, states: []sequenceLoadState{sequenceReady}, changes: [][]Change{{}}, request: 3}}
+			m := model{repo: r, width: 80, height: 15, screen: screen, history: historyState{current: commit, request: 3}, sequence: sequenceState{commits: []git.CommitInfo{commit}, states: []sequenceLoadState{sequenceReady}, changes: [][]git.Change{{}}, request: 3}}
 			updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("W")})
 			m = updated.(model)
 			if cmd == nil || !m.repo.IgnoreSpace {
@@ -167,7 +168,7 @@ func TestWhitespaceToggleReloadsHistoricalViews(t *testing.T) {
 				if m.history.request != 4 || !m.history.loading {
 					t.Fatalf("commit not reloading: %#v", m.history)
 				}
-				updated, _ = m.Update(commitLoaded{request: 3, changes: []Change{{Path: "stale"}}})
+				updated, _ = m.Update(commitLoaded{request: 3, changes: []git.Change{{Path: "stale"}}})
 				if len(updated.(model).history.changes) != 0 {
 					t.Fatal("accepted stale commit load")
 				}
@@ -175,7 +176,7 @@ func TestWhitespaceToggleReloadsHistoricalViews(t *testing.T) {
 				if m.sequence.request != 4 || m.sequence.states[0] != sequenceLoading {
 					t.Fatalf("sequence not reloading: %#v", m.sequence)
 				}
-				updated, _ = m.Update(sequenceLoaded{request: 3, index: 0, changes: []Change{{Path: "stale"}}})
+				updated, _ = m.Update(sequenceLoaded{request: 3, index: 0, changes: []git.Change{{Path: "stale"}}})
 				if updated.(model).sequence.states[0] != sequenceLoading {
 					t.Fatal("accepted stale sequence load")
 				}

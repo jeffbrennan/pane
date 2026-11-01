@@ -6,10 +6,12 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 func TestNavigationAndRefreshAnchor(t *testing.T) {
-	m := model{width: 20, height: 10, wrap: true, snapshot: Snapshot{Unstaged: []Change{{Path: "one", Diff: "@@ -0,0 +1,2 @@\n+first\n+second\n"}, {Path: "two", Diff: "@@ -0,0 +1 @@\n+other\n"}}}}
+	m := model{width: 20, height: 10, wrap: true, snapshot: git.Snapshot{Unstaged: []git.Change{{Path: "one", Diff: "@@ -0,0 +1,2 @@\n+first\n+second\n"}, {Path: "two", Diff: "@@ -0,0 +1 @@\n+other\n"}}}}
 	m.rebuild()
 	m.jump(1)
 	if m.rows[m.pos].path != "two" {
@@ -27,7 +29,7 @@ func TestNavigationAndRefreshAnchor(t *testing.T) {
 }
 
 func TestFileHeadersSeparateChangesAndFileJumps(t *testing.T) {
-	m := model{width: 24, height: 12, wrap: true, snapshot: Snapshot{Unstaged: []Change{
+	m := model{width: 24, height: 12, wrap: true, snapshot: git.Snapshot{Unstaged: []git.Change{
 		{Path: "first.go", Diff: "@@ -0,0 +1 @@\n+first\n"},
 		{Path: "second.go", Diff: "@@ -0,0 +1 @@\n+second\n"},
 	}}}
@@ -63,7 +65,7 @@ func TestActiveLineShowsContext(t *testing.T) {
 }
 
 func TestWrappedActiveLineSurvivesRefreshAndResize(t *testing.T) {
-	s := Snapshot{Unstaged: []Change{{Path: "long", Diff: "@@ -0,0 +1 @@\n+abcdefghijklmnopqrstuvwxyz0123456789\n"}}}
+	s := git.Snapshot{Unstaged: []git.Change{{Path: "long", Diff: "@@ -0,0 +1 @@\n+abcdefghijklmnopqrstuvwxyz0123456789\n"}}}
 	m := model{width: 16, height: 10, wrap: true, snapshot: s}
 	m.rebuild()
 	if len(m.rows) < 4 {
@@ -85,7 +87,7 @@ func TestWrappedActiveLineSurvivesRefreshAndResize(t *testing.T) {
 }
 
 func TestCommitWrappedLineSurvivesResize(t *testing.T) {
-	m := model{width: 16, height: 10, wrap: true, screen: "commit", history: historyState{changes: []Change{{Path: "long", Diff: "@@ -0,0 +1 @@\n+abcdefghijklmnopqrstuvwxyz0123456789\n"}}}}
+	m := model{width: 16, height: 10, wrap: true, screen: "commit", history: historyState{changes: []git.Change{{Path: "long", Diff: "@@ -0,0 +1 @@\n+abcdefghijklmnopqrstuvwxyz0123456789\n"}}}}
 	m.rebuildCommit()
 	m.history.pos = 3
 	original := m.history.rows[m.history.pos]
@@ -119,7 +121,7 @@ func TestHeightOnlyResizeKeepsRows(t *testing.T) {
 
 func TestLargeWidthResizeCoalesces(t *testing.T) {
 	rows := make([]row, 50000)
-	m := model{width: 80, height: 20, rows: rows, wrap: true, snapshot: Snapshot{Unstaged: []Change{{Path: "file", Diff: "@@ -0,0 +1 @@\n+abcdef\n"}}}}
+	m := model{width: 80, height: 20, rows: rows, wrap: true, snapshot: git.Snapshot{Unstaged: []git.Change{{Path: "file", Diff: "@@ -0,0 +1 @@\n+abcdef\n"}}}}
 	for _, width := range []int{70, 60, 50} {
 		updated, cmd := m.Update(tea.WindowSizeMsg{Width: width, Height: 20})
 		m = updated.(model)
@@ -142,12 +144,12 @@ func TestLargeWidthResizeCoalesces(t *testing.T) {
 func TestStartupViewSelection(t *testing.T) {
 	tests := []struct {
 		name     string
-		snapshot Snapshot
+		snapshot git.Snapshot
 		want     string
 	}{
 		{name: "clean", want: "history"},
-		{name: "unstaged", snapshot: Snapshot{Unstaged: []Change{{Path: "file", Diff: "changed"}}}},
-		{name: "staged", snapshot: Snapshot{Staged: []Change{{Path: "file", Diff: "changed"}}}},
+		{name: "unstaged", snapshot: git.Snapshot{Unstaged: []git.Change{{Path: "file", Diff: "changed"}}}},
+		{name: "staged", snapshot: git.Snapshot{Staged: []git.Change{{Path: "file", Diff: "changed"}}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -213,7 +215,7 @@ func TestWrapAndSanitize(t *testing.T) {
 	if len(parts) != 2 || parts[0] != "ab界" || parts[1] != "cd" {
 		t.Fatalf("%q", parts)
 	}
-	if got := clean("a\x1b[31m"); got != "a�[31m" {
+	if got := syntax.Clean("a\x1b[31m"); got != "a�[31m" {
 		t.Fatalf("unsafe text: %q", got)
 	}
 }
@@ -246,7 +248,7 @@ func TestParagraphDiffJumps(t *testing.T) {
 
 func TestFileJumpPlacesHeaderAtTop(t *testing.T) {
 	long := "@@ -0,0 +1,30 @@\n" + strings.Repeat("+line\n", 30)
-	m := model{width: 40, height: 12, wrap: true, snapshot: Snapshot{Unstaged: []Change{
+	m := model{width: 40, height: 12, wrap: true, snapshot: git.Snapshot{Unstaged: []git.Change{
 		{Path: "one", Diff: long}, {Path: "two", Diff: long}, {Path: "three", Diff: long},
 	}}}
 	m.rebuild()

@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 func TestLightThemeFromEnv(t *testing.T) {
@@ -44,7 +46,7 @@ func TestTerminalBackgroundResponse(t *testing.T) {
 
 func TestLightThemeDiffRendering(t *testing.T) {
 	m := model{width: 80, height: 12, lightTheme: true}
-	rows := buildRows([]Change{{Path: "file.go", Diff: "@@ -1 +1 @@\n-old\n+new\n"}}, 78, true)
+	rows := buildRows([]git.Change{{Path: "file.go", Diff: "@@ -1 +1 @@\n-old\n+new\n"}}, 78, true)
 	for _, tc := range []struct {
 		index int
 		want  string
@@ -57,7 +59,7 @@ func TestLightThemeDiffRendering(t *testing.T) {
 		{"\x1b[48;2;221;242;224m", "\x1b[48;2;175;220;181m"},
 		{"\x1b[48;2;250;225;225m", "\x1b[48;2;239;182;182m"},
 	} {
-		got := renderSyntax("abc", []syntaxSpan{{Start: 0, End: 3, Color: "\x1b[35m"}}, []syntaxSpan{{Start: 0, End: 3}}, 0, "", tc.background, true)
+		got := syntax.Render("abc", []syntax.Span{{Start: 0, End: 3, Color: "\x1b[35m"}}, []syntax.Span{{Start: 0, End: 3}}, 0, "", tc.background, true)
 		if !strings.Contains(got, tc.want) || !strings.Contains(got, "\x1b[38;2;128;35;108m") {
 			t.Errorf("missing light inline or syntax color: %q", got)
 		}

@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"github.com/jeffbrennan/pane/internal/git"
+	"github.com/jeffbrennan/pane/internal/syntax"
 	"strings"
 	"time"
 )
@@ -37,15 +39,15 @@ func (m model) commitHeaderRows(rows []row) []row {
 
 // commitHeaderBlock lays out the author, dates, parents, refs and message body.
 // The last row of the block is blank, which separates it from the first file.
-func commitHeaderBlock(commit CommitInfo, width int, collapsed bool, now time.Time) []row {
-	age := relativeCommitTime(commit.Date, now)
+func commitHeaderBlock(commit git.CommitInfo, width int, collapsed bool, now time.Time) []row {
+	age := git.RelativeCommitTime(commit.Date, now)
 	if collapsed {
-		summary := fmt.Sprintf("  %s · %s · commit details · l expand", clean(commit.Author), age)
+		summary := fmt.Sprintf("  %s · %s · commit details · l expand", syntax.Clean(commit.Author), age)
 		return []row{{text: fit(summary, max(1, width)), kind: 'M'}}
 	}
 	var rows []row
 	add := func(text string, kind byte) {
-		for _, part := range wrapLine(clean(text), max(1, width)) {
+		for _, part := range wrapLine(syntax.Clean(text), max(1, width)) {
 			rows = append(rows, row{text: part, kind: kind})
 		}
 	}

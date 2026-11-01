@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -134,7 +135,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		changed := !m.snapshot.Equal(msg.snapshot)
 		splice := changed && m.screen == "" && m.rows != nil
 		if splice {
-			m.previousChanges = append([]Change(nil), m.currentChanges()...)
+			m.previousChanges = append([]git.Change(nil), m.currentChanges()...)
 		}
 		m.snapshot = msg.snapshot
 		if changed {
@@ -274,7 +275,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.recentCommitError = msg.err != nil
 		m.recentCommits = msg.commits
 		if msg.err == nil && m.recentCommits == nil {
-			m.recentCommits = []CommitInfo{}
+			m.recentCommits = []git.CommitInfo{}
 		}
 	case worktreeHeadsLoaded:
 		if msg.request == m.worktreeHeadRequest {
@@ -336,7 +337,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.modal = "error"
 			break
 		}
-		stats := make(map[string]CommitInfo, len(msg.commits))
+		stats := make(map[string]git.CommitInfo, len(msg.commits))
 		for _, c := range msg.commits {
 			stats[c.Hash] = c
 		}

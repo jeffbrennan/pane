@@ -72,13 +72,13 @@ func TestWorktreesShareStatsCache(t *testing.T) {
 }
 
 func TestReleaseLargeCommitRows(t *testing.T) {
-	m := model{history: historyState{rows: make([]row, 500001), changes: []Change{{Path: "file"}}}}
+	m := model{history: historyState{rows: make([]row, 500001), changes: []git.Change{{Path: "file"}}}}
 	m.releaseLargeCommitRows()
 	if len(m.history.rows) != 0 || m.history.changes != nil {
 		t.Fatalf("rows=%d changes=%d", len(m.history.rows), len(m.history.changes))
 	}
 	t.Setenv("PANE_KEEP_COMMIT_ROWS", "1")
-	kept := model{history: historyState{rows: make([]row, 500001), changes: []Change{{Path: "file"}}}}
+	kept := model{history: historyState{rows: make([]row, 500001), changes: []git.Change{{Path: "file"}}}}
 	kept.releaseLargeCommitRows()
 	if len(kept.history.rows) != 500001 {
 		t.Fatal("PANE_KEEP_COMMIT_ROWS did not retain the rows")

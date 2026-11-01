@@ -8,41 +8,42 @@ import (
 	"sync/atomic"
 
 	"github.com/jeffbrennan/pane/internal/git"
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 func submoduleLine(line string) (string, string, bool) { return git.SubmoduleLine(line) }
 
-func buildRows(changes []Change, width int, wrap bool) []row {
+func buildRows(changes []git.Change, width int, wrap bool) []row {
 	return buildRowsExpanded(changes, width, wrap, nil)
 }
 
-func buildRowsExpanded(changes []Change, width int, wrap bool, expanded map[string]bool) []row {
+func buildRowsExpanded(changes []git.Change, width int, wrap bool, expanded map[string]bool) []row {
 	return buildRowsNumbered(changes, width, wrap, expanded, 0)
 }
 
 // buildRowsNumbered builds rows whose line numbers are at least gutterWidth
 // wide, so rows rebuilt for one file line up with the rest of the diff.
-func buildRowsNumbered(changes []Change, width int, wrap bool, expanded map[string]bool, gutterWidth int) []row {
+func buildRowsNumbered(changes []git.Change, width int, wrap bool, expanded map[string]bool, gutterWidth int) []row {
 	rows, _ := buildRowsDisplay(changes, width, wrap, expanded, gutterWidth, false)
 	return rows
 }
 
 func displayPath(path string, shortened bool) string {
 	if !shortened {
-		return clean(path)
+		return syntax.Clean(path)
 	}
 	parts := strings.Split(path, "/")
 	if len(parts) <= 2 {
-		return clean(path)
+		return syntax.Clean(path)
 	}
-	return "…/" + clean(strings.Join(parts[len(parts)-2:], "/"))
+	return "…/" + syntax.Clean(strings.Join(parts[len(parts)-2:], "/"))
 }
 
-func buildRowsDisplay(changes []Change, width int, wrap bool, expanded map[string]bool, gutterWidth int, shortPaths bool) ([]row, int) {
+func buildRowsDisplay(changes []git.Change, width int, wrap bool, expanded map[string]bool, gutterWidth int, shortPaths bool) ([]row, int) {
 	return buildRowsDisplayReuse(changes, width, wrap, expanded, gutterWidth, shortPaths, nil)
 }
 
-func buildRowsDisplayReuse(changes []Change, width int, wrap bool, expanded map[string]bool, gutterWidth int, shortPaths bool, reuse []row) ([]row, int) {
+func buildRowsDisplayReuse(changes []git.Change, width int, wrap bool, expanded map[string]bool, gutterWidth int, shortPaths bool, reuse []row) ([]row, int) {
 	// Share one line number width across files so the number column stays
 	// put when moving between them.
 	widths := make([]int, len(changes))
@@ -100,10 +101,10 @@ func parallelEach(n int, f func(int)) {
 
 // changeRows lays out one file; separated adds the blank row that divides it
 // from the file before.
-func changeRows(c Change, separated bool, width int, wrap bool, expanded bool, gutterWidth int, shortPaths bool) []row {
+func changeRows(c git.Change, separated bool, width int, wrap bool, expanded bool, gutterWidth int, shortPaths bool) []row {
 	// Most lines take one row; sizing for them avoids regrowing large files.
 	rows := make([]row, 0, strings.Count(c.Diff, "\n")+3)
-	oldSyntax, newSyntax := syntaxLinesFor(c.Path, c.SyntaxDiff, c.Diff)
+	oldSyntax, newSyntax := syntax.LinesFor(c.Path, c.SyntaxDiff, c.Diff)
 	if separated {
 		rows = append(rows, row{path: c.Path, lineIndex: -2, kind: 's'})
 	}
@@ -118,7 +119,7 @@ func changeRows(c Change, separated bool, width int, wrap bool, expanded bool, g
 	if c.OldPath != "" {
 		name = displayPath(c.OldPath, shortPaths)
 	}
-	_, _, submodule := submoduleLine(strings.SplitN(c.Diff, "\n", 2)[0])
+	_, _, submodule := git.SubmoduleLine(strings.SplitN(c.Diff, "\n", 2)[0])
 	header := row{path: c.Path, oldPath: c.OldPath, lineIndex: -1, text: " " + name, kind: 'f', submodule: submodule, generated: c.Generated}
 	if c.Generated {
 		added, deleted := countGeneratedLines(c.Diff)
@@ -130,23 +131,23 @@ func changeRows(c Change, separated bool, width int, wrap bool, expanded bool, g
 	if c.OldPath == "" {
 		rows = append(rows, header)
 	} else {
-		removed, added := renamePathSpans(c.OldPath, c.Path, shortPaths)
+		removed, added := syntax.RenamePathSpans(c.OldPath, c.Path, shortPaths)
 		parts := []struct {
 			prefix, path string
-			spans        []syntaxSpan
+			spans        []syntax.Span
 		}{{"  ", displayPath(c.OldPath, shortPaths), removed}, {"→ ", displayPath(c.Path, shortPaths), added}}
 		offset := 0
 		for side, item := range parts {
 			text := item.prefix + item.path
 			header.renameAdded = side == 1
-			var spans []syntaxSpan
+			var spans []syntax.Span
 			for _, span := range item.spans {
-				spans = append(spans, syntaxSpan{Start: span.Start + len(item.prefix), End: span.End + len(item.prefix)})
+				spans = append(spans, syntax.Span{Start: span.Start + len(item.prefix), End: span.End + len(item.prefix)})
 			}
 			byteOffset := 0
 			for _, part := range wrapLine(text, max(1, width-5)) {
 				header.text, header.offset = " "+part, offset
-				inline := clipSyntax(spans, byteOffset, byteOffset+len(part))
+				inline := syntax.Clip(spans, byteOffset, byteOffset+len(part))
 				for i := range inline {
 					inline[i].Start++
 					inline[i].End++
@@ -182,7 +183,7 @@ func changeRows(c Change, separated bool, width int, wrap bool, expanded bool, g
 	for i := 0; i < lineCount; i++ {
 		line, next, _ := strings.Cut(remaining, "\n")
 		remaining = next
-		if match := matchHunkHeader(line); match != nil {
+		if match := syntax.MatchHunkHeader(line); match != nil {
 			oldLine, _ = strconv.Atoi(match[1])
 			newLine, _ = strconv.Atoi(match[3])
 			if hunks > 0 {
@@ -195,21 +196,21 @@ func changeRows(c Change, separated bool, width int, wrap bool, expanded bool, g
 		if !inHunk {
 			switch {
 			case submodule:
-				if _, text, ok := submoduleLine(line); ok {
-					metadata = append(metadata, clean(text))
+				if _, text, ok := git.SubmoduleLine(line); ok {
+					metadata = append(metadata, syntax.Clean(text))
 				} else if strings.TrimSpace(line) != "" {
-					metadata = append(metadata, clean(strings.TrimSpace(line)))
+					metadata = append(metadata, syntax.Clean(strings.TrimSpace(line)))
 				}
 			case strings.HasPrefix(line, "Binary files ") || strings.HasPrefix(line, "GIT binary patch"):
 				metadata = append(metadata, "Binary file changed")
 			case strings.HasPrefix(line, "old mode "), strings.HasPrefix(line, "new mode "):
-				metadata = append(metadata, clean(line))
+				metadata = append(metadata, syntax.Clean(line))
 			case strings.HasPrefix(line, "new file mode "):
 				metadata = append(metadata, "New empty file")
 			case strings.HasPrefix(line, "deleted file mode "):
 				metadata = append(metadata, "Deleted empty file")
 			case !strings.HasPrefix(c.Diff, "diff --git ") && line != "":
-				metadata = append(metadata, clean(line))
+				metadata = append(metadata, syntax.Clean(line))
 			}
 			continue
 		}
@@ -218,7 +219,7 @@ func changeRows(c Change, separated bool, width int, wrap bool, expanded bool, g
 		}
 		kind := line[0]
 		if kind == '\\' {
-			rows = append(rows, (row{path: c.Path, target: max(1, newLine-1), text: "  " + clean(line[2:]), kind: '@'}).withLineNumber(i))
+			rows = append(rows, (row{path: c.Path, target: max(1, newLine-1), text: "  " + syntax.Clean(line[2:]), kind: '@'}).withLineNumber(i))
 			continue
 		}
 		if kind != ' ' && kind != '+' && kind != '-' {
@@ -237,7 +238,7 @@ func changeRows(c Change, separated bool, width int, wrap bool, expanded bool, g
 		if deletedFile && kind == '-' {
 			kind = 'd'
 		}
-		text := clean(strings.ReplaceAll(line[1:], "\t", "    "))
+		text := syntax.Clean(strings.ReplaceAll(line[1:], "\t", "    "))
 		lineSyntax, syntaxOK := newSyntax[number]
 		if kind == '-' || kind == 'd' {
 			lineSyntax, syntaxOK = oldSyntax[number]
@@ -247,18 +248,18 @@ func changeRows(c Change, separated bool, width int, wrap bool, expanded bool, g
 		// A line that already fits stays one row, which avoids allocating a
 		// parts slice for the common case.
 		if !wrap || (printableASCII(text) && len(text) <= limit) {
-			var spans []syntaxSpan
+			var spans []syntax.Span
 			if syntaxMatches {
-				spans = clipSyntax(lineSyntax.Spans, 0, len(text))
+				spans = syntax.Clip(lineSyntax.Spans, 0, len(text))
 			}
 			rows = append(rows, (row{path: c.Path, target: target, sourceLine: number, text: text, kind: kind, spans: newRowSpans(spans, nil, nil), syntaxPresent: spans != nil}).withLineNumber(i))
 		} else {
 			offset := 0
 			byteOffset := 0
 			for _, part := range wrapLine(text, limit) {
-				var spans []syntaxSpan
+				var spans []syntax.Span
 				if syntaxMatches {
-					spans = clipSyntax(lineSyntax.Spans, byteOffset, byteOffset+len(part))
+					spans = syntax.Clip(lineSyntax.Spans, byteOffset, byteOffset+len(part))
 				}
 				rows = append(rows, (row{path: c.Path, offset: offset, target: target, sourceLine: number, text: part, kind: kind, spans: newRowSpans(spans, nil, nil), syntaxPresent: spans != nil}).withLineNumber(i))
 				byteOffset += len(part)
@@ -525,7 +526,7 @@ func countDeletedLines(diff string) int {
 	for rest := diff; rest != ""; {
 		line, next, _ := strings.Cut(rest, "\n")
 		rest = next
-		if matchHunkHeader(line) != nil {
+		if syntax.MatchHunkHeader(line) != nil {
 			inHunk = true
 		} else if inHunk && strings.HasPrefix(line, "-") {
 			count++
@@ -539,7 +540,7 @@ func lineNumberWidthText(diff string) int {
 	for rest := diff; rest != ""; {
 		line, next, _ := strings.Cut(rest, "\n")
 		rest = next
-		match := matchHunkHeader(line)
+		match := syntax.MatchHunkHeader(line)
 		if match == nil {
 			continue
 		}
@@ -558,7 +559,7 @@ func lineNumberWidthText(diff string) int {
 func lineNumberWidth(lines []string) int {
 	largest := 0
 	for _, line := range lines {
-		match := matchHunkHeader(line)
+		match := syntax.MatchHunkHeader(line)
 		if match == nil {
 			continue
 		}

@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jeffbrennan/pane/internal/git"
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 type worktreeStatus struct {
@@ -18,7 +19,7 @@ type worktreeStatus struct {
 }
 
 type worktreeState struct {
-	entries          []WorktreeEntry
+	entries          []git.WorktreeEntry
 	status           map[string]worktreeStatus
 	selected, offset int
 	filter, draft    string
@@ -26,7 +27,7 @@ type worktreeState struct {
 	request          int
 	searching        bool
 	loading          bool
-	confirm          WorktreeEntry
+	confirm          git.WorktreeEntry
 	confirmForce     bool
 	newPath          string
 	newBranch        string
@@ -35,7 +36,7 @@ type worktreeState struct {
 }
 
 type worktreesLoaded struct {
-	entries []WorktreeEntry
+	entries []git.WorktreeEntry
 	request int
 	err     error
 }
@@ -67,18 +68,18 @@ func (m model) loadWorktrees() tea.Cmd {
 	}
 }
 
-func loadWorktreeStatus(repo Repo, path string, request int) tea.Cmd {
+func loadWorktreeStatus(repo git.Repo, path string, request int) tea.Cmd {
 	return func() tea.Msg {
 		dirty, activity, err := repo.StatusCount(path)
 		return worktreeStatusLoaded{path: path, request: request, err: err, status: worktreeStatus{dirty: dirty, activity: activity, loaded: true}}
 	}
 }
 
-func (m model) sortedWorktrees() []WorktreeEntry {
-	entries := append([]WorktreeEntry(nil), m.worktrees.entries...)
+func (m model) sortedWorktrees() []git.WorktreeEntry {
+	entries := append([]git.WorktreeEntry(nil), m.worktrees.entries...)
 	query := strings.ToLower(strings.TrimSpace(m.worktrees.filter))
 	if query != "" {
-		var filtered []WorktreeEntry
+		var filtered []git.WorktreeEntry
 		for _, entry := range entries {
 			if matchesPicker(entry.Path, query) || matchesPicker(entry.Branch, query) {
 				filtered = append(filtered, entry)
@@ -145,7 +146,7 @@ func (m model) worktreeView() string {
 				parts = append(parts, "clean")
 			}
 			if !status.activity.IsZero() {
-				parts = append(parts, historyCommitTime(status.activity.Format(time.RFC3339), now))
+				parts = append(parts, git.HistoryCommitTime(status.activity.Format(time.RFC3339), now))
 			}
 		} else {
 			parts = append(parts, "…")
@@ -157,7 +158,7 @@ func (m model) worktreeView() string {
 			parts = append(parts, "prunable")
 		}
 		path := git.WorktreeDisplayPath(m.worktrees.entries, entry.Path)
-		row := fit(fmt.Sprintf("%s%s %s  %s  %s", marker, here, clean(path), clean(strings.Join(parts, "  ")), ""), m.width)
+		row := fit(fmt.Sprintf("%s%s %s  %s  %s", marker, here, syntax.Clean(path), syntax.Clean(strings.Join(parts, "  ")), ""), m.width)
 		if i == m.worktrees.selected {
 			row = "\x1b[7m" + row + strings.Repeat(" ", max(0, m.width-stringWidth(row))) + styleReset
 		} else {
@@ -174,10 +175,10 @@ func (m model) worktreeView() string {
 		status = "/" + renderInput(m.worktrees.draft, m.worktrees.draftCursor, max(1, m.width-1))
 		hints = keyHints("↵", "filter", "esc", "cancel")
 	} else if m.worktrees.filter != "" {
-		status = "/" + clean(m.worktrees.filter)
+		status = "/" + syntax.Clean(m.worktrees.filter)
 	}
 	if m.flash != "" {
-		status = clean(m.flash)
+		status = syntax.Clean(m.flash)
 	}
 	if m.modal == "worktree-new" {
 		status, hints = "New worktree (path  branch): "+renderInput(m.input, m.inputCursor, max(1, m.width-34)), keyHints("↵", "create", "esc", "cancel")
@@ -257,7 +258,7 @@ func (m model) handleWorktreeKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "p":
 		if m.anyPrunable() {
-			return m.runWorktreeAction("Pruned worktrees", func(r Repo) (string, error) {
+			return m.runWorktreeAction("Pruned worktrees", func(r git.Repo) (string, error) {
 				return r.Action("worktree", "prune")
 			})
 		}
@@ -291,7 +292,7 @@ func (m model) promptNewWorktree(branch, start string, existing bool) (tea.Model
 	return m, nil
 }
 
-func (m model) confirmRemoveWorktree(entry WorktreeEntry, force bool) (tea.Model, tea.Cmd) {
+func (m model) confirmRemoveWorktree(entry git.WorktreeEntry, force bool) (tea.Model, tea.Cmd) {
 	current, _ := os.Getwd()
 	if entry.Path == current {
 		m.flash = "Cannot remove the current worktree"
@@ -302,7 +303,7 @@ func (m model) confirmRemoveWorktree(entry WorktreeEntry, force bool) (tea.Model
 	return m, nil
 }
 
-func (m model) runWorktreeAction(message string, action func(Repo) (string, error)) (tea.Model, tea.Cmd) {
+func (m model) runWorktreeAction(message string, action func(git.Repo) (string, error)) (tea.Model, tea.Cmd) {
 	repo := m.repo
 	return m, func() tea.Msg {
 		out, err := action(repo)
@@ -325,7 +326,7 @@ func (m model) createWorktree() (tea.Model, tea.Cmd) {
 	if start == "" {
 		start = "HEAD"
 	}
-	return m.runWorktreeAction("Created worktree "+path, func(r Repo) (string, error) {
+	return m.runWorktreeAction("Created worktree "+path, func(r git.Repo) (string, error) {
 		if _, err := os.Stat(path); err == nil {
 			return "", fmt.Errorf("%s already exists", path)
 		}
@@ -343,13 +344,13 @@ func (m model) createWorktree() (tea.Model, tea.Cmd) {
 	})
 }
 
-func (m model) removeWorktree(entry WorktreeEntry, force bool) (tea.Model, tea.Cmd) {
+func (m model) removeWorktree(entry git.WorktreeEntry, force bool) (tea.Model, tea.Cmd) {
 	args := []string{"worktree", "remove"}
 	if force {
 		args = append(args, "--force")
 	}
 	args = append(args, entry.Path)
-	return m.runWorktreeAction("Removed worktree "+git.WorktreeDisplayPath(m.worktrees.entries, entry.Path), func(r Repo) (string, error) {
+	return m.runWorktreeAction("Removed worktree "+git.WorktreeDisplayPath(m.worktrees.entries, entry.Path), func(r git.Repo) (string, error) {
 		return r.Action(args...)
 	})
 }
@@ -385,7 +386,7 @@ func (m model) reloadWorktrees() (model, tea.Cmd) {
 	return m, m.loadWorktrees()
 }
 
-func worktreeEntryFor(entries []WorktreeEntry, path string) *WorktreeEntry {
+func worktreeEntryFor(entries []git.WorktreeEntry, path string) *git.WorktreeEntry {
 	for i := range entries {
 		if entries[i].Path == path {
 			return &entries[i]

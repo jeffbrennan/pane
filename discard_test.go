@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func TestDiscardSelectedHunkPreservesOtherChanges(t *testing.T) {
@@ -68,7 +69,7 @@ func TestDiscardFileKeepsStagedChangesAndRejectsStale(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := DiscardRequest{Change: s.Unstaged[0], Whole: true}
+	request := git.DiscardRequest{Change: s.Unstaged[0], Whole: true}
 	writeFile(t, r, "file.txt", "newer\n")
 	if err := r.Discard(request); err == nil {
 		t.Fatal("discard accepted a stale diff")
@@ -109,7 +110,7 @@ func TestDiscardUntrackedConfirmationAndStaleBinary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Discard(DiscardRequest{Change: s.Unstaged[0], Whole: true}); err != nil {
+	if err := r.Discard(git.DiscardRequest{Change: s.Unstaged[0], Whole: true}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Lstat(filepath.Join(r.Root, "new.bin")); !os.IsNotExist(err) {
@@ -153,7 +154,7 @@ func TestDiscardHunkRestoresDeletedFile(t *testing.T) {
 	if patch == "" {
 		t.Fatal("missing deleted file hunk")
 	}
-	if err := r.Discard(DiscardRequest{Change: s.Unstaged[0], Patch: patch}); err != nil {
+	if err := r.Discard(git.DiscardRequest{Change: s.Unstaged[0], Patch: patch}); err != nil {
 		t.Fatal(err)
 	}
 	content, err := os.ReadFile(filepath.Join(r.Root, "deleted file.txt"))

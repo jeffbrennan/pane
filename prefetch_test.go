@@ -8,10 +8,11 @@ import (
 
 	"github.com/alecthomas/chroma/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/jeffbrennan/pane/internal/git"
 	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
-func commitFile(t *testing.T, r Repo, path, content, message string) {
+func commitFile(t *testing.T, r git.Repo, path, content, message string) {
 	t.Helper()
 	writeFile(t, r, path, content)
 	for _, args := range [][]string{{"add", "--all"}, {"commit", "-m", message}} {
@@ -24,7 +25,7 @@ func commitFile(t *testing.T, r Repo, path, content, message string) {
 func TestStatsStorePersistsAcrossLaunches(t *testing.T) {
 	r := testRepo(t)
 	commitFile(t, r, "a.txt", "one\ntwo\n", "first")
-	r.Stats = &StatsStore{Path: filepath.Join(t.TempDir(), "pane", "stats")}
+	r.Stats = &git.StatsStore{Path: filepath.Join(t.TempDir(), "pane", "stats")}
 	if _, err := r.HistoryStats([]string{"HEAD"}); err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +33,7 @@ func TestStatsStorePersistsAcrossLaunches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	relaunched := &StatsStore{Path: r.Stats.Path}
+	relaunched := &git.StatsStore{Path: r.Stats.Path}
 	relaunched.Fill(commits)
 	if !commits[0].StatsLoaded || commits[0].Added != 2 || commits[0].Deleted != 0 {
 		t.Fatalf("stored stats not restored: %+v", commits[0])
@@ -44,8 +45,8 @@ func TestStatsStoreIgnoresCorruptLines(t *testing.T) {
 	if err := os.WriteFile(path, []byte("garbage\nabc 1 2 0\npartial 3\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	commits := []CommitInfo{{Hash: "abc"}, {Hash: "partial"}}
-	(&StatsStore{Path: path}).Fill(commits)
+	commits := []git.CommitInfo{{Hash: "abc"}, {Hash: "partial"}}
+	(&git.StatsStore{Path: path}).Fill(commits)
 	if !commits[0].StatsLoaded || commits[0].Added != 1 || commits[0].Deleted != 2 || commits[1].StatsLoaded {
 		t.Fatalf("unexpected fill: %+v", commits)
 	}
@@ -119,7 +120,7 @@ func TestDirtyStartupFirstScreenIsHighlighted(t *testing.T) {
 func TestStartupDefersOffscreenHighlighting(t *testing.T) {
 	r := testRepo(t)
 	body := func(word string) string {
-		return "package main\n" + strings.Repeat("var "+word+" = 1\n", startupSyntaxLines)
+		return "package main\n" + strings.Repeat("var "+word+" = 1\n", git.StartupSyntaxLines)
 	}
 	commitFile(t, r, "a.go", body("a"), "first")
 	writeFile(t, r, "b.go", body("b"))

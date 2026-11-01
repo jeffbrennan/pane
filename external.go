@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 type flashed struct{ text string }
@@ -79,7 +81,7 @@ func (m model) openEditor() (model, tea.Cmd) {
 	r := m.rows[m.pos]
 	path := filepath.Join(m.repo.Root, r.path)
 	if _, err := os.Stat(path); err != nil {
-		m.flash = clean(r.path) + " does not exist in the working tree"
+		m.flash = syntax.Clean(r.path) + " does not exist in the working tree"
 		return m, nil
 	}
 	editor := os.Getenv("VISUAL")
@@ -110,7 +112,7 @@ func copyToClipboard(text string) error {
 		cmd := exec.Command(path, args[1:]...)
 		cmd.Stdin = strings.NewReader(text)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			return gitError(out, err)
+			return git.GitError(out, err)
 		}
 		return nil
 	}

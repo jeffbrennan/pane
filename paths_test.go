@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func TestDisplayPath(t *testing.T) {
@@ -24,19 +25,19 @@ func TestDisplayPath(t *testing.T) {
 }
 
 func TestShortPathsToggleInDiffViews(t *testing.T) {
-	c := Change{OldPath: "old/root/file.go", Path: "new/parent/file.go", Diff: "similarity index 100%\n"}
+	c := git.Change{OldPath: "old/root/file.go", Path: "new/parent/file.go", Diff: "similarity index 100%\n"}
 	for _, screen := range []string{"", "commit", "sequence"} {
 		t.Run(map[string]string{"": "working", "commit": "commit", "sequence": "sequence"}[screen], func(t *testing.T) {
 			m := model{width: 80, height: 12, wrap: true, screen: screen}
 			switch screen {
 			case "":
-				m.snapshot.Unstaged = []Change{c}
+				m.snapshot.Unstaged = []git.Change{c}
 				m.rebuild()
 			case "commit":
-				m.history.changes = []Change{c}
+				m.history.changes = []git.Change{c}
 				m.rebuildCommit()
 			case "sequence":
-				m.sequence = sequenceState{commits: []CommitInfo{{Hash: "abcd"}}, changes: [][]Change{{c}}, states: []sequenceLoadState{sequenceReady}}
+				m.sequence = sequenceState{commits: []git.CommitInfo{{Hash: "abcd"}}, changes: [][]git.Change{{c}}, states: []sequenceLoadState{sequenceReady}}
 				m.rebuildSequence()
 			}
 			key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("B")}
@@ -76,8 +77,8 @@ func TestShortPathsToggleInDiffViews(t *testing.T) {
 }
 
 func TestShortPinnedRenameUsesDestination(t *testing.T) {
-	c := Change{OldPath: "old/root/file.go", Path: "new/parent/file.go", Diff: "@@ -1 +1 @@\n-old\n+new\n"}
-	m := model{width: 40, height: 8, wrap: true, shortPaths: true, snapshot: Snapshot{Unstaged: []Change{c}}}
+	c := git.Change{OldPath: "old/root/file.go", Path: "new/parent/file.go", Diff: "@@ -1 +1 @@\n-old\n+new\n"}
+	m := model{width: 40, height: 8, wrap: true, shortPaths: true, snapshot: git.Snapshot{Unstaged: []git.Change{c}}}
 	m.rebuild()
 	pinned := m.fileHeaderAt(len(m.rows) - 1)
 	if pinned == nil || !strings.Contains(pinned.text, "…/parent/file.go") {

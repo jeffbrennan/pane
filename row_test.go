@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/jeffbrennan/pane/internal/git"
+	"github.com/jeffbrennan/pane/internal/syntax"
 	"math"
 	"strconv"
 	"testing"
@@ -8,17 +10,17 @@ import (
 
 func TestRowSpansAreSparseAndCopyOnWrite(t *testing.T) {
 	var original row
-	original.setSyntaxSpans([]syntaxSpan{})
+	original.setSyntaxSpans([]syntax.Span{})
 	if original.spans != nil || original.syntaxSpans() == nil {
 		t.Fatal("empty syntax should preserve its presence without allocating span storage")
 	}
-	original.setInlineSpans([]syntaxSpan{{Start: 1, End: 2}})
+	original.setInlineSpans([]syntax.Span{{Start: 1, End: 2}})
 	copy := original
-	copy.setSyntaxSpans([]syntaxSpan{{Start: 0, End: 1, Color: "red"}})
+	copy.setSyntaxSpans([]syntax.Span{{Start: 0, End: 1, Color: "red"}})
 	if len(original.syntaxSpans()) != 0 || len(copy.syntaxSpans()) != 1 || original.spans == copy.spans {
 		t.Fatal("updating copied row syntax changed the original")
 	}
-	copy.setInlineSpans([]syntaxSpan{{Start: 3, End: 4}})
+	copy.setInlineSpans([]syntax.Span{{Start: 3, End: 4}})
 	if original.inlineSpans()[0].Start != 1 || copy.inlineSpans()[0].Start != 3 {
 		t.Fatal("updating copied inline spans changed the original")
 	}
@@ -30,10 +32,10 @@ func TestRowSpansAreSparseAndCopyOnWrite(t *testing.T) {
 
 func TestHighlightRowsDoesNotModifyCopiedRows(t *testing.T) {
 	diff := "diff --git a/file.go b/file.go\n@@ -1 +1 @@\n-var total = 1\n+var total = 2\n"
-	original := buildRows([]Change{{Path: "file.go", Diff: diff}}, 80, false)
+	original := buildRows([]git.Change{{Path: "file.go", Diff: diff}}, 80, false)
 	for i := range original {
 		if original[i].kind == '+' {
-			original[i].setInlineSpans([]syntaxSpan{{Start: 4, End: 9}})
+			original[i].setInlineSpans([]syntax.Span{{Start: 4, End: 9}})
 		}
 	}
 	copied := append([]row(nil), original...)
@@ -82,8 +84,8 @@ func TestWideRowIndexesSurviveSpanChangesAndCopies(t *testing.T) {
 	var original row
 	original.setLineNumber(math.MinInt32)
 	original.setHeaderRow(math.MinInt32)
-	original.setSyntaxSpans([]syntaxSpan{{Start: 0, End: 1, Color: "red"}})
-	original.setInlineSpans([]syntaxSpan{{Start: 1, End: 2}})
+	original.setSyntaxSpans([]syntax.Span{{Start: 0, End: 1, Color: "red"}})
+	original.setInlineSpans([]syntax.Span{{Start: 1, End: 2}})
 	copy := original
 	copy.setLineNumber(math.MinInt32 + 1)
 	copy.setHeaderRow(math.MaxInt32)
@@ -113,7 +115,7 @@ func TestLargeSourceLinesAndOutOfRangeHeaders(t *testing.T) {
 	}
 	large := int64(math.MaxInt32) + 1
 	diff := "@@ -0,0 +" + strconv.FormatInt(large, 10) + " @@\n+large line\n"
-	rows := buildRows([]Change{{Path: "file", Diff: diff}}, 80, false)
+	rows := buildRows([]git.Change{{Path: "file", Diff: diff}}, 80, false)
 	m := model{width: 80, height: 10, gutterWidth: 10, rows: rows}
 	m.sourceLineJump(int(large))
 	if got := m.rows[m.pos]; got.sourceLine != int(large) || got.target != int(large) {

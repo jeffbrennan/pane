@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 type contextKey struct {
@@ -55,11 +56,11 @@ func (m model) foldContextFiles(rows []row) []row {
 	return folded
 }
 
-func (m model) localContextRows(rows []row, changes []Change) []row {
+func (m model) localContextRows(rows []row, changes []git.Change) []row {
 	if len(m.contextFiles) == 0 {
 		return rows
 	}
-	byPath := make(map[string]Change, len(changes))
+	byPath := make(map[string]git.Change, len(changes))
 	for _, c := range changes {
 		byPath[c.Path] = c
 	}
@@ -89,7 +90,7 @@ func (m model) localContextRows(rows []row, changes []Change) []row {
 			}
 		}
 		c.Diff = file.diff
-		full, _ := buildRowsDisplay([]Change{c}, m.diffContentWidth(), m.wrap, m.expandedDeleted, m.gutterWidth, m.shortPaths)
+		full, _ := buildRowsDisplay([]git.Change{c}, m.diffContentWidth(), m.wrap, m.expandedDeleted, m.gutterWidth, m.shortPaths)
 		var gap *row
 		for _, r := range full {
 			show := r.kind != ' ' || visible[r.target]
@@ -284,4 +285,8 @@ func (m model) rebuildContext() model {
 			}
 		}
 	})
+}
+
+func (k contextKey) gitContext() git.Context {
+	return git.Context{Path: k.path, Commit: k.commit, Staged: k.staged, Base: k.base}
 }

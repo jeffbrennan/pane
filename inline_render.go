@@ -1,5 +1,9 @@
 package main
 
+import (
+	"github.com/jeffbrennan/pane/internal/syntax"
+)
+
 // Changed-line blocks are paired only up to inlinePairs lines. Bounding the
 // search keeps rendering independent of a huge contiguous change.
 const inlinePairs = 32
@@ -13,7 +17,7 @@ type inlineLine struct {
 // inlineSpansForRow computes changed-word spans for the visible row at index.
 // Building every changed line eagerly dominated large diffs; a screen needs
 // spans only for the lines it draws.
-func (m model) inlineSpansForRow(index int) []syntaxSpan {
+func (m model) inlineSpansForRow(index int) []syntax.Span {
 	if index < 0 || index >= len(m.rows) {
 		return nil
 	}
@@ -37,7 +41,7 @@ func (m model) inlineSpansForRow(index int) []syntaxSpan {
 		if oldLines[j].line != row.lineNumber() && newLines[j].line != row.lineNumber() {
 			continue
 		}
-		removed, added := changedSpans(oldLines[j].text, newLines[j].text)
+		removed, added := syntax.ChangedSpans(oldLines[j].text, newLines[j].text)
 		if oldLines[j].line == row.lineNumber() {
 			return clipRowSpan(m.rows, oldStart, index, removed)
 		}
@@ -116,7 +120,7 @@ func (m model) inlineLines(start, end int) []inlineLine {
 	return lines
 }
 
-func clipRowSpan(rows []row, blockStart, index int, spans []syntaxSpan) []syntaxSpan {
+func clipRowSpan(rows []row, blockStart, index int, spans []syntax.Span) []syntax.Span {
 	if len(spans) == 0 {
 		return nil
 	}
@@ -126,5 +130,5 @@ func clipRowSpan(rows []row, blockStart, index int, spans []syntaxSpan) []syntax
 			offset += len(rows[i].text)
 		}
 	}
-	return clipSyntax(spans, offset, offset+len(rows[index].text))
+	return syntax.Clip(spans, offset, offset+len(rows[index].text))
 }

@@ -5,9 +5,10 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
-func changeFor(t *testing.T, r Repo, hash, path string) Change {
+func changeFor(t *testing.T, r git.Repo, hash, path string) git.Change {
 	t.Helper()
 	changes, err := r.CommitChanges(hash)
 	if err != nil {
@@ -19,17 +20,17 @@ func changeFor(t *testing.T, r Repo, hash, path string) Change {
 		}
 	}
 	t.Fatalf("no change for %s", path)
-	return Change{}
+	return git.Change{}
 }
 
 func TestGeneratedByPath(t *testing.T) {
 	for _, path := range []string{"go.sum", "bun.lock", "package-lock.json", "Cargo.lock", "sub/dir/yarn.lock", "app.min.js", "test.snap", "styles.min.css"} {
-		if !generatedByPath(path) {
+		if !git.GeneratedByPath(path) {
 			t.Errorf("%s should be generated", path)
 		}
 	}
 	for _, path := range []string{"main.go", "README.md", "go.mod", "lockfile.go", "snapshot_test.go"} {
-		if generatedByPath(path) {
+		if git.GeneratedByPath(path) {
 			t.Errorf("%s should not be generated", path)
 		}
 	}

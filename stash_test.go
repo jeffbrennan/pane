@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func TestStashPushInspectAndPop(t *testing.T) {
@@ -122,7 +123,7 @@ func TestStashDropAndHistoryCount(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := model{repo: r, snapshot: snapshot, width: 80, height: 15, screen: "history", history: historyState{request: 1, loading: true}}
-	updated, _ := m.Update(m.fetchHistory(0, historyPage)())
+	updated, _ := m.Update(m.fetchHistory(0, git.HistoryPage)())
 	m = updated.(model)
 	if m.history.stashCount != 1 || !strings.Contains(m.View(), "1 stashed") {
 		t.Fatalf("stash count missing: %q", m.View())

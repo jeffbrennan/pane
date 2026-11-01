@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 func (m model) startDiscard() (tea.Model, tea.Cmd) {
@@ -36,7 +38,7 @@ func (m model) startDiscard() (tea.Model, tea.Cmd) {
 			m.flash = "Cannot verify untracked file; discard it outside pane"
 			return m, nil
 		}
-		request := DiscardRequest{Change: c, Whole: selected.kind == 'f' || selected.kind == 'F' || c.Untracked}
+		request := git.DiscardRequest{Change: c, Whole: selected.kind == 'f' || selected.kind == 'F' || c.Untracked}
 		if selected.kind != 'f' && selected.kind != 'F' {
 			if selected.kind != '+' && selected.kind != '-' && selected.kind != 'd' && selected.kind != ' ' {
 				m.flash = "Select a diff line or file header"
@@ -64,7 +66,7 @@ func selectedHunk(diff string, selected row) string {
 	lines := strings.SplitAfter(diff, "\n")
 	first := -1
 	for i, line := range lines {
-		if matchHunkHeader(line) != nil {
+		if syntax.MatchHunkHeader(line) != nil {
 			first = i
 			break
 		}
@@ -79,7 +81,7 @@ func selectedHunk(diff string, selected row) string {
 		}
 	}
 	for i := first; i < len(lines); {
-		match := matchHunkHeader(lines[i])
+		match := syntax.MatchHunkHeader(lines[i])
 		if match == nil {
 			i++
 			continue
@@ -94,7 +96,7 @@ func selectedHunk(diff string, selected row) string {
 			lineCount, _ = strconv.Atoi(count)
 		}
 		end := i + 1
-		for end < len(lines) && matchHunkHeader(lines[end]) == nil && !strings.HasPrefix(lines[end], "diff --git ") {
+		for end < len(lines) && syntax.MatchHunkHeader(lines[end]) == nil && !strings.HasPrefix(lines[end], "diff --git ") {
 			end++
 		}
 		if selected.sourceLine >= lineStart && selected.sourceLine < lineStart+lineCount {
@@ -113,7 +115,7 @@ func (m model) discardView() string {
 	if m.discard.Change.Untracked {
 		action = "Delete untracked file from disk"
 	}
-	content := []string{" " + action + "?", " " + clean(m.discard.Change.Path), " This cannot be undone.", " y confirm  n/esc cancel"}
+	content := []string{" " + action + "?", " " + syntax.Clean(m.discard.Change.Path), " This cannot be undone.", " y confirm  n/esc cancel"}
 	lines := make([]string, max(1, m.height))
 	for i, line := range content {
 		if i >= len(lines) {

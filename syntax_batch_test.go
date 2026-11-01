@@ -3,12 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/jeffbrennan/pane/internal/git"
 	"strings"
 	"sync/atomic"
 	"testing"
 )
 
-func syntaxBatchFixture(t *testing.T) (Repo, []Change) {
+func syntaxBatchFixture(t *testing.T) (git.Repo, []git.Change) {
 	t.Helper()
 	r := testRepo(t)
 	paths := []string{"a.go", "b.go", "c.go", "space name.go", "q\"t.go", "é.go", "old.go"}
@@ -77,14 +78,14 @@ func TestFullContextsMatchesWorkingAndStagedLoads(t *testing.T) {
 		writeFile(t, r, path, "package main\nvar working = 2\n")
 	}
 	for _, key := range []contextKey{{}, {staged: true}, {base: true, commit: "HEAD~1"}} {
-		changes := make([]Change, len(paths))
+		changes := make([]git.Change, len(paths))
 		want := make([]string, len(paths))
 		for i, path := range paths {
 			diff, err := r.DiffPaths(path, "", key.staged)
 			if err != nil {
 				t.Fatal(err)
 			}
-			changes[i] = Change{Path: path, Diff: diff}
+			changes[i] = git.Change{Path: path, Diff: diff}
 			fileKey := key
 			fileKey.path = path
 			want[i], err = r.FullContext(fileKey.gitContext(), diff, "")
@@ -109,7 +110,7 @@ func TestFullContextsMatchesWorkingAndStagedLoads(t *testing.T) {
 
 func TestFullContextsFallsBackForMissingAndCancelledPaths(t *testing.T) {
 	r, changes := syntaxBatchFixture(t)
-	changes = append(changes, Change{Path: "missing.go", Diff: "whitespace-only"})
+	changes = append(changes, git.Change{Path: "missing.go", Diff: "whitespace-only"})
 	got := r.FullContexts(changes, contextKey{commit: "HEAD"}.gitContext())
 	if result := got[len(got)-1]; result.Err != nil || result.Diff != "" {
 		t.Fatalf("missing path fallback: %#v", result)
@@ -133,7 +134,7 @@ func TestFullContextsFallsBackForCustomDiffPrefixes(t *testing.T) {
 	if out, err := r.Command("config", "diff.noprefix", "true"); err != nil {
 		t.Fatalf("configure prefixes: %s: %v", out, err)
 	}
-	var regular []Change
+	var regular []git.Change
 	for _, c := range changes {
 		if c.Path == "a.go" || c.Path == "b.go" || c.Path == "c.go" {
 			regular = append(regular, c)
@@ -197,7 +198,7 @@ func TestFullContextsLimitsBatchSize(t *testing.T) {
 
 func TestSyntaxDemandBatchesOnlyMatchingContexts(t *testing.T) {
 	r, changes := syntaxBatchFixture(t)
-	var regular []Change
+	var regular []git.Change
 	for _, c := range changes {
 		if c.Path == "a.go" || c.Path == "b.go" {
 			regular = append(regular, c)

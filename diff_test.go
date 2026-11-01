@@ -7,11 +7,12 @@ import (
 	"unsafe"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func TestUnifiedDiffPresentation(t *testing.T) {
 	diff := "diff --git a/x b/x\nindex 123..456 100644\n--- a/x\n+++ b/x\n@@ -10,3 +10,3 @@ section\n context\n-old\n+new\n +++literal\n@@ -30 +30 @@\n-removed\n+added\n\\ No newline at end of file\n"
-	rows := buildRows([]Change{{Path: "x", Diff: diff}}, 80, true)
+	rows := buildRows([]git.Change{{Path: "x", Diff: diff}}, 80, true)
 	var displayed []string
 	for _, row := range rows {
 		displayed = append(displayed, rowGutter(row, 3)+row.text)
@@ -36,24 +37,24 @@ func TestRowSize(t *testing.T) {
 }
 
 func TestWorkingTreeRefreshSplicesUnchangedFiles(t *testing.T) {
-	changes := []Change{
+	changes := []git.Change{
 		{Path: "one", Diff: "@@ -0,0 +1,2 @@\n+first\n+second\n"},
 		{Path: "two", Diff: "@@ -0,0 +1,2 @@\n+first\n+second\n"},
 		{Path: "three", Diff: "@@ -0,0 +1,2 @@\n+first\n+second\n"},
 	}
-	m := model{width: 80, height: 20, wrap: true, snapshot: Snapshot{Unstaged: changes}}
+	m := model{width: 80, height: 20, wrap: true, snapshot: git.Snapshot{Unstaged: changes}}
 	m.rebuild()
 	m.pos = 4
 	kept := m.rows[0]
 	m.previousChanges = changes
-	updated := append([]Change(nil), changes...)
+	updated := append([]git.Change(nil), changes...)
 	updated[1].Diff = "@@ -0,0 +1 @@\n+changed\n"
-	m.snapshot = Snapshot{Unstaged: updated}
+	m.snapshot = git.Snapshot{Unstaged: updated}
 	m.refreshRows()
 	if m.rows[0] != kept || m.rows[m.pos].path != "two" {
 		t.Fatal("refresh did not retain unchanged rows or follow the cursor")
 	}
-	want := model{width: 80, height: 20, wrap: true, snapshot: Snapshot{Unstaged: updated}}
+	want := model{width: 80, height: 20, wrap: true, snapshot: git.Snapshot{Unstaged: updated}}
 	want.rebuild()
 	if !reflect.DeepEqual(m.rows, want.rows) {
 		t.Fatalf("spliced rows differ from a full rebuild:\ngot %#v\nwant %#v", m.rows, want.rows)
@@ -61,19 +62,19 @@ func TestWorkingTreeRefreshSplicesUnchangedFiles(t *testing.T) {
 }
 
 func TestWorkingTreeRefreshSpliceMatchesFullRebuild(t *testing.T) {
-	base := []Change{
+	base := []git.Change{
 		{Path: "one", Diff: "@@ -0,0 +1,2 @@\n+first\n+second\n"},
 		{Path: "two", Diff: "@@ -0,0 +1,2 @@\n+first\n+second\n"},
 		{Path: "three", Diff: "@@ -0,0 +1,2 @@\n+first\n+second\n"},
 	}
-	changed := func(index int, diff string) []Change {
-		updated := append([]Change(nil), base...)
+	changed := func(index int, diff string) []git.Change {
+		updated := append([]git.Change(nil), base...)
 		updated[index].Diff = diff
 		return updated
 	}
 	for _, tc := range []struct {
 		name     string
-		updated  []Change
+		updated  []git.Change
 		staged   bool
 		context  bool
 		collapse bool
@@ -81,18 +82,18 @@ func TestWorkingTreeRefreshSpliceMatchesFullRebuild(t *testing.T) {
 		{name: "first", updated: changed(0, "@@ -0,0 +1 @@\n+changed\n")},
 		{name: "middle", updated: changed(1, "@@ -0,0 +1 @@\n+changed\n")},
 		{name: "last", updated: changed(2, "@@ -0,0 +1 @@\n+changed\n")},
-		{name: "added", updated: append(append([]Change(nil), base...), Change{Path: "four", Diff: "@@ -0,0 +1 @@\n+four\n"})},
-		{name: "removed", updated: append([]Change(nil), base[:2]...)},
-		{name: "reordered", updated: []Change{base[2], base[0], base[1]}},
+		{name: "added", updated: append(append([]git.Change(nil), base...), git.Change{Path: "four", Diff: "@@ -0,0 +1 @@\n+four\n"})},
+		{name: "removed", updated: append([]git.Change(nil), base[:2]...)},
+		{name: "reordered", updated: []git.Change{base[2], base[0], base[1]}},
 		{name: "wider gutter", updated: changed(2, "@@ -0,0 +10000 @@\n+changed\n")},
 		{name: "staged", updated: changed(0, "@@ -0,0 +1 @@\n+changed\n"), staged: true},
 		{name: "context", updated: changed(1, "@@ -0,0 +1 @@\n+changed\n"), context: true},
 		{name: "collapsed", updated: changed(1, "@@ -0,0 +1 @@\n+changed\n"), collapse: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			initial := Snapshot{Unstaged: base}
+			initial := git.Snapshot{Unstaged: base}
 			if tc.staged {
-				initial = Snapshot{Staged: base}
+				initial = git.Snapshot{Staged: base}
 			}
 			m := model{width: 80, height: 20, wrap: true, snapshot: initial, staged: tc.staged}
 			if tc.context {
@@ -103,9 +104,9 @@ func TestWorkingTreeRefreshSpliceMatchesFullRebuild(t *testing.T) {
 			}
 			m.rebuild()
 			m.previousChanges = base
-			next := Snapshot{Unstaged: tc.updated}
+			next := git.Snapshot{Unstaged: tc.updated}
 			if tc.staged {
-				next = Snapshot{Staged: tc.updated}
+				next = git.Snapshot{Staged: tc.updated}
 			}
 			m.snapshot = next
 			m.refreshRows()
@@ -120,18 +121,18 @@ func TestWorkingTreeRefreshSpliceMatchesFullRebuild(t *testing.T) {
 }
 
 func TestWorkingTreeRefreshMessageSplicesRows(t *testing.T) {
-	base := []Change{
+	base := []git.Change{
 		{Path: "one", Diff: "@@ -0,0 +1 @@\n+first\n"},
 		{Path: "two", Diff: "@@ -0,0 +1 @@\n+second\n"},
 	}
-	m := model{width: 80, height: 10, wrap: true, snapshot: Snapshot{Unstaged: base}}
+	m := model{width: 80, height: 10, wrap: true, snapshot: git.Snapshot{Unstaged: base}}
 	m.rebuild()
 	m.pos = len(m.rows) - 1
-	updated := append([]Change(nil), base...)
+	updated := append([]git.Change(nil), base...)
 	updated[1].Diff = "@@ -0,0 +1 @@\n+changed\n"
-	next, _ := m.Update(loaded{snapshot: Snapshot{Unstaged: updated}})
+	next, _ := m.Update(loaded{snapshot: git.Snapshot{Unstaged: updated}})
 	got := next.(model)
-	want := model{width: 80, height: 10, wrap: true, snapshot: Snapshot{Unstaged: updated}}
+	want := model{width: 80, height: 10, wrap: true, snapshot: git.Snapshot{Unstaged: updated}}
 	want.rebuild()
 	if !reflect.DeepEqual(got.rows, want.rows) || got.rows[got.pos].path != "two" {
 		t.Fatal("loaded refresh did not match a full rebuild")
@@ -139,7 +140,7 @@ func TestWorkingTreeRefreshMessageSplicesRows(t *testing.T) {
 }
 
 func TestWidthReflowMatchesFullRebuild(t *testing.T) {
-	changes := []Change{
+	changes := []git.Change{
 		{Path: "short.go", Diff: "@@ -0,0 +1 @@\n+short\n"},
 		{Path: "long.go", Diff: "@@ -0,0 +1 @@\n+" + strings.Repeat("abcdefghij", 20) + "\n"},
 		{Path: "wrapped.go", Diff: "@@ -0,0 +1 @@\n+" + strings.Repeat("wxyz", 50) + "\n"},
@@ -158,12 +159,12 @@ func TestWidthReflowMatchesFullRebuild(t *testing.T) {
 	for _, wrap := range []bool{true, false} {
 		for _, from := range []int{220, 160, 96} {
 			for _, to := range []int{260, 150, 110, 72} {
-				m := model{width: from, height: 20, wrap: wrap, snapshot: Snapshot{Unstaged: changes}}
+				m := model{width: from, height: 20, wrap: wrap, snapshot: git.Snapshot{Unstaged: changes}}
 				m.rebuild()
 				oldWidth := m.diffContentWidth()
 				m.width = to
 				m.reflowRows(oldWidth)
-				want := model{width: to, height: 20, wrap: wrap, snapshot: Snapshot{Unstaged: changes}}
+				want := model{width: to, height: 20, wrap: wrap, snapshot: git.Snapshot{Unstaged: changes}}
 				want.rebuild()
 				if !reflect.DeepEqual(m.rows, want.rows) {
 					t.Fatalf("wrap=%v width %d->%d reflow differs from full rebuild", wrap, from, to)
@@ -178,11 +179,11 @@ func TestWidthReflowMatchesFullRebuild(t *testing.T) {
 func TestWidthReflowMatchesFullRebuildWithSyntax(t *testing.T) {
 	hunk := "@@ -1,3 +1,3 @@\n package main\n-var old = " + strings.Repeat("x", 120) + "\n+var new = " + strings.Repeat("y", 120) + "\n"
 	full := "diff --git a/file.go b/file.go\n" + hunk
-	changes := []Change{
+	changes := []git.Change{
 		{Path: "file.go", Diff: hunk, SyntaxDiff: full},
 		{Path: "plain.go", Diff: "@@ -0,0 +1 @@\n+short\n"},
 	}
-	m := model{width: 200, height: 20, wrap: true, snapshot: Snapshot{Unstaged: changes}}
+	m := model{width: 200, height: 20, wrap: true, snapshot: git.Snapshot{Unstaged: changes}}
 	m.rebuild()
 	syntaxRows := false
 	for _, r := range m.rows {
@@ -197,7 +198,7 @@ func TestWidthReflowMatchesFullRebuildWithSyntax(t *testing.T) {
 	oldWidth := m.diffContentWidth()
 	m.width = 90
 	m.reflowRows(oldWidth)
-	want := model{width: 90, height: 20, wrap: true, snapshot: Snapshot{Unstaged: changes}}
+	want := model{width: 90, height: 20, wrap: true, snapshot: git.Snapshot{Unstaged: changes}}
 	want.rebuild()
 	if !reflect.DeepEqual(m.rows, want.rows) {
 		t.Fatal("syntax file reflow differs from full rebuild")
@@ -205,11 +206,11 @@ func TestWidthReflowMatchesFullRebuildWithSyntax(t *testing.T) {
 }
 
 func TestWidthReflowKeepsShortFileRows(t *testing.T) {
-	changes := []Change{
+	changes := []git.Change{
 		{Path: "short.go", Diff: "@@ -0,0 +1 @@\n+short\n"},
 		{Path: "long.go", Diff: "@@ -0,0 +1 @@\n+" + strings.Repeat("abcdefghij", 20) + "\n"},
 	}
-	m := model{width: 200, height: 20, wrap: true, snapshot: Snapshot{Unstaged: changes}}
+	m := model{width: 200, height: 20, wrap: true, snapshot: git.Snapshot{Unstaged: changes}}
 	m.rebuild()
 	oldWidth := m.diffContentWidth()
 	short := m.rows[1]
@@ -278,9 +279,9 @@ func TestAssembleRowPlansReusesBacking(t *testing.T) {
 }
 
 func TestWorkingTreeGutterWidthFollowsSelectedChanges(t *testing.T) {
-	m := model{width: 80, height: 10, wrap: true, snapshot: Snapshot{
-		Unstaged: []Change{{Path: "one", Diff: "@@ -0,0 +1 @@\n+first\n"}},
-		Staged:   []Change{{Path: "two", Diff: "@@ -0,0 +10000 @@\n+second\n"}},
+	m := model{width: 80, height: 10, wrap: true, snapshot: git.Snapshot{
+		Unstaged: []git.Change{{Path: "one", Diff: "@@ -0,0 +1 @@\n+first\n"}},
+		Staged:   []git.Change{{Path: "two", Diff: "@@ -0,0 +10000 @@\n+second\n"}},
 	}}
 	m.rebuild()
 	if m.gutterWidth != 3 {
@@ -296,7 +297,7 @@ func TestWorkingTreeGutterWidthFollowsSelectedChanges(t *testing.T) {
 func TestToggleDeletedFileInDiffViews(t *testing.T) {
 	diff := "diff --git a/x b/x\ndeleted file mode 100644\n--- a/x\n+++ /dev/null\n@@ -1 +0,0 @@\n-old\n"
 	for _, screen := range []string{"", "commit"} {
-		m := model{width: 80, height: 20, screen: screen, snapshot: Snapshot{Unstaged: []Change{{Path: "x", Diff: diff}}}}
+		m := model{width: 80, height: 20, screen: screen, snapshot: git.Snapshot{Unstaged: []git.Change{{Path: "x", Diff: diff}}}}
 		if screen == "commit" {
 			m.history.changes = m.snapshot.Unstaged
 			m.rebuildCommit()
@@ -318,7 +319,7 @@ func TestToggleDeletedFileInDiffViews(t *testing.T) {
 }
 
 func TestWrappedLinesKeepGutter(t *testing.T) {
-	rows := buildRows([]Change{{Path: "x", Diff: "@@ -0,0 +1 @@\n+abcdefgh\n"}}, 10, true)
+	rows := buildRows([]git.Change{{Path: "x", Diff: "@@ -0,0 +1 @@\n+abcdefgh\n"}}, 10, true)
 	if len(rows) != 3 || rowGutter(rows[1], 3) != "  1 + " || rows[1].text != "abcd" || rowGutter(rows[2], 3) != "      " || rows[2].text != "efgh" {
 		t.Fatalf("rows: %#v", rows)
 	}
@@ -348,7 +349,7 @@ func TestRowGutterRendersLineKindsAndContinuations(t *testing.T) {
 }
 
 func TestSourceLineJumpUsesDerivedGutter(t *testing.T) {
-	changes := []Change{{Path: "file", Diff: "@@ -10,2 +10,2 @@\n first\n-old\n+new\n"}}
+	changes := []git.Change{{Path: "file", Diff: "@@ -10,2 +10,2 @@\n first\n-old\n+new\n"}}
 	rows := buildRows(changes, 80, true)
 	m := model{width: 80, height: 10, rows: rows, gutterWidth: 3}
 	m.sourceLineJump(11)
@@ -359,7 +360,7 @@ func TestSourceLineJumpUsesDerivedGutter(t *testing.T) {
 
 func TestDeletedFilePresentation(t *testing.T) {
 	diff := "diff --git a/x b/x\ndeleted file mode 100644\n--- a/x\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-first\n-second\n"
-	rows := buildRows([]Change{{Path: "x", Diff: diff}}, 80, true)
+	rows := buildRows([]git.Change{{Path: "x", Diff: diff}}, 80, true)
 	if len(rows) != 2 || rows[1].text != "  Deleted file · e expand" {
 		t.Fatalf("deleted file rows: %#v", rows)
 	}
@@ -367,13 +368,13 @@ func TestDeletedFilePresentation(t *testing.T) {
 	if m.fileEntries()[0].deleted != 2 {
 		t.Fatal("collapsed deleted file lost its deletion counts")
 	}
-	rows = buildRowsExpanded([]Change{{Path: "x", Diff: diff}}, 80, true, map[string]bool{"x": true})
+	rows = buildRowsExpanded([]git.Change{{Path: "x", Diff: diff}}, 80, true, map[string]bool{"x": true})
 	m.rows = rows
 	if len(rows) != 4 || rows[1].text != "  Deleted file · e collapse" || rows[2].kind != 'd' || rows[3].kind != 'd' || strings.Contains(m.renderDiffRow(rows[2], false), "\x1b[31m") || m.fileEntries()[0].deleted != 2 {
 		t.Fatalf("expanded deleted file rows: %#v", rows)
 	}
 
-	modified := buildRows([]Change{{Path: "x", Diff: "diff --git a/x b/x\n@@ -1 +0,0 @@\n-first\n"}}, 80, true)
+	modified := buildRows([]git.Change{{Path: "x", Diff: "diff --git a/x b/x\n@@ -1 +0,0 @@\n-first\n"}}, 80, true)
 	if modified[1].kind != '-' || !strings.Contains(m.renderDiffRow(modified[1], false), "\x1b[48;2;65;37;41m") {
 		t.Fatal("ordinary line removals should have a red tint")
 	}
@@ -381,7 +382,7 @@ func TestDeletedFilePresentation(t *testing.T) {
 
 func TestFileTypeChangeIsNotFullRemoval(t *testing.T) {
 	diff := "diff --git a/x b/x\ndeleted file mode 100644\n@@ -1 +0,0 @@\n-old\ndiff --git a/x b/x\nnew file mode 120000\n@@ -0,0 +1 @@\n+new\n"
-	rows := buildRows([]Change{{Path: "x", Diff: diff}}, 80, true)
+	rows := buildRows([]git.Change{{Path: "x", Diff: diff}}, 80, true)
 	if rows[1].kind != '-' {
 		t.Fatalf("type change treated as deletion: %#v", rows)
 	}
@@ -395,7 +396,7 @@ func TestNonTextChanges(t *testing.T) {
 		{"Merge conflict: resolve outside pane.", "Merge conflict"},
 	}
 	for _, tt := range tests {
-		rows := buildRows([]Change{{Path: "x", Diff: tt.diff}}, 80, true)
+		rows := buildRows([]git.Change{{Path: "x", Diff: tt.diff}}, 80, true)
 		var text []string
 		for _, row := range rows {
 			text = append(text, row.text)
@@ -417,7 +418,7 @@ func TestSplitPatch(t *testing.T) {
 		"diff --cc conflict\n+combined\n" +
 		"diff --git a/link b/link\ndeleted file mode 100644\n" +
 		"diff --git a/link b/link\nnew file mode 120000\n"
-	patches := splitPatch(patch)
+	patches := git.SplitPatch(patch)
 	if len(patches) != 3 {
 		t.Fatalf("patches: %#v", patches)
 	}

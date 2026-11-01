@@ -7,10 +7,11 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func toolModel() model {
-	m := model{width: 60, height: 12, wrap: true, snapshot: Snapshot{Unstaged: []Change{
+	m := model{width: 60, height: 12, wrap: true, snapshot: git.Snapshot{Unstaged: []git.Change{
 		{Path: "cmd/server/main.go", Diff: "@@ -1,3 +1,3 @@\n context\n-old Value\n+new value\n"},
 		{Path: "pkg/api/types.go", Diff: "@@ -10,2 +10,3 @@\n keep\n+added value\n+more\n"},
 		{Path: "README.md", Diff: "@@ -0,0 +1,20 @@\n" + strings.Repeat("+docs\n", 20)},
@@ -340,7 +341,7 @@ func TestFilePickerRelativeNumbersAndChangeColumn(t *testing.T) {
 }
 
 func TestFilePickerAlignsChangeCounts(t *testing.T) {
-	m := model{width: 80, height: 15, snapshot: Snapshot{Unstaged: []Change{
+	m := model{width: 80, height: 15, snapshot: git.Snapshot{Unstaged: []git.Change{
 		{Path: "small.go", Diff: "@@ -1,0 +1,2 @@\n+one\n+two\n"},
 		{Path: "large.go", Diff: "@@ -1,0 +1,1001 @@\n" + strings.Repeat("+line\n", 1001)},
 		{Path: "deleted.go", Diff: "@@ -1,1 +1,0 @@\n-line\n"},
@@ -462,7 +463,7 @@ func TestCommitViewSharesDiffTools(t *testing.T) {
 	m := toolModel()
 	m.screen = "commit"
 	m.history.changes = m.snapshot.Unstaged
-	m.history.current = CommitInfo{Hash: "abcdef1234567890", Subject: "subject"}
+	m.history.current = git.CommitInfo{Hash: "abcdef1234567890", Subject: "subject"}
 	m.rebuildCommit()
 	m = keys(t, m, "f", "/", "R", "E", "A", "enter")
 	if m.screen != "commit" || m.history.rows[m.history.pos].path != "README.md" {
@@ -479,7 +480,7 @@ func TestCommitViewSharesDiffTools(t *testing.T) {
 }
 
 func TestRowTargetsAndEditorArgs(t *testing.T) {
-	rows := buildRows([]Change{{Path: "f", Diff: "@@ -5,3 +5,3 @@\n same\n-gone\n+here\n tail\n"}}, 80, true)
+	rows := buildRows([]git.Change{{Path: "f", Diff: "@@ -5,3 +5,3 @@\n same\n-gone\n+here\n tail\n"}}, 80, true)
 	want := map[string]int{"same": 5, "gone": 6, "here": 6, "tail": 7}
 	for _, r := range rows {
 		if line, ok := want[r.text]; ok && r.target != line {
@@ -504,7 +505,7 @@ func TestRowTargetsAndEditorArgs(t *testing.T) {
 
 func TestOpenEditorRequiresWorkingTreeFile(t *testing.T) {
 	m := toolModel()
-	m.repo = Repo{Root: t.TempDir()}
+	m.repo = git.Repo{Root: t.TempDir()}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
 	if cmd != nil || !strings.Contains(updated.(model).flash, "does not exist") {
 		t.Fatalf("missing file: %q", updated.(model).flash)
@@ -520,7 +521,7 @@ func TestOpenEditorRequiresWorkingTreeFile(t *testing.T) {
 }
 
 func TestHistoryCopyAndFlash(t *testing.T) {
-	m := model{width: 60, height: 12, screen: "history", history: historyState{commits: []CommitInfo{{Hash: "abcdef1234567890", Subject: "one"}}}}
+	m := model{width: 60, height: 12, screen: "history", history: historyState{commits: []git.CommitInfo{{Hash: "abcdef1234567890", Subject: "one"}}}}
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	if cmd == nil {
 		t.Fatal("copy hash unavailable in history")

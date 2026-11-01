@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func noteTestModel(t *testing.T) model {
@@ -134,7 +135,7 @@ func TestNotesSurviveWorkingTreeRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.previousChanges = append([]Change(nil), m.currentChanges()...)
+	m.previousChanges = append([]git.Change(nil), m.currentChanges()...)
 	m.snapshot = snapshot
 	m.refreshRows()
 	count := 0

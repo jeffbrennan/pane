@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func sendInput(t *testing.T, m model, keys ...tea.KeyMsg) model {
@@ -30,7 +31,7 @@ func TestDiffSearchEditsAtCursor(t *testing.T) {
 }
 
 func TestHistorySearchEditsWithoutLosingSelection(t *testing.T) {
-	m := model{width: 50, height: 12, screen: "history", history: historyState{commits: []CommitInfo{{Subject: "abc"}, {Subject: "abc again"}}}}
+	m := model{width: 50, height: 12, screen: "history", history: historyState{commits: []git.CommitInfo{{Subject: "abc"}, {Subject: "abc again"}}}}
 	m = keys(t, m, "/", "a", "b", "c")
 	m = sendInput(t, m, tea.KeyMsg{Type: tea.KeyDown}, tea.KeyMsg{Type: tea.KeyLeft})
 	if m.history.selected != 1 || m.history.draftCursor != 2 {

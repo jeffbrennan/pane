@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func TestHistoryCommitTime(t *testing.T) {
@@ -21,14 +22,14 @@ func TestHistoryCommitTime(t *testing.T) {
 		{now.Add(time.Hour).Format(time.RFC3339), "2026-10-31"},
 		{"unknown", "unknown"},
 	} {
-		if got := historyCommitTime(tt.date, now); got != tt.want {
+		if got := git.HistoryCommitTime(tt.date, now); got != tt.want {
 			t.Errorf("date %q: got %q, want %q", tt.date, got, tt.want)
 		}
 	}
 }
 
 func TestHistoryViewShowsRecentRelativeTime(t *testing.T) {
-	m := model{width: 80, height: 12, screen: "history", history: historyState{commits: []CommitInfo{{Subject: "recent", Author: "Alice", Date: time.Now().Add(-2 * time.Hour).Format(time.RFC3339)}}}}
+	m := model{width: 80, height: 12, screen: "history", history: historyState{commits: []git.CommitInfo{{Subject: "recent", Author: "Alice", Date: time.Now().Add(-2 * time.Hour).Format(time.RFC3339)}}}}
 	if view := m.View(); !strings.Contains(view, "2h ago") || !strings.Contains(view, "Alice") {
 		t.Fatalf("missing recent relative time: %q", view)
 	}
@@ -36,7 +37,7 @@ func TestHistoryViewShowsRecentRelativeTime(t *testing.T) {
 
 func TestHistoryAndCommitChanges(t *testing.T) {
 	r := testRepo(t)
-	if commits, err := r.History(0, historyPage); err != nil || len(commits) != 0 {
+	if commits, err := r.History(0, git.HistoryPage); err != nil || len(commits) != 0 {
 		t.Fatalf("empty history: %#v %v", commits, err)
 	}
 	writeFile(t, r, "first file", "initial\n")
@@ -48,7 +49,7 @@ func TestHistoryAndCommitChanges(t *testing.T) {
 	if _, err := r.Commit("second commit\n\nDetailed body"); err != nil {
 		t.Fatal(err)
 	}
-	commits, err := r.History(0, historyPage)
+	commits, err := r.History(0, git.HistoryPage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +105,7 @@ func TestHistoryMergeFirstParent(t *testing.T) {
 	if _, err := r.Action("merge", "--no-ff", "-m", "merge", "feature"); err != nil {
 		t.Fatal(err)
 	}
-	commits, err := r.History(0, historyPage)
+	commits, err := r.History(0, git.HistoryPage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +126,7 @@ func TestHistoryMergeFirstParent(t *testing.T) {
 }
 
 func TestHistorySearchAndReadOnlyNavigation(t *testing.T) {
-	m := model{width: 60, height: 10, wrap: true, screen: "history", history: historyState{commits: []CommitInfo{
+	m := model{width: 60, height: 10, wrap: true, screen: "history", history: historyState{commits: []git.CommitInfo{
 		{Hash: "abc123456789", Author: "Alice", Email: "a@example.com", Subject: "One"},
 		{Hash: "def123456789", Author: "Bob", Email: "b@example.com", Subject: "Fix issue", Message: "Fix issue\n\nbody detail"},
 	}}}
@@ -183,7 +184,7 @@ func TestCommitLoadingIsDelayed(t *testing.T) {
 }
 
 func TestCommitLoadsDiffBeforeSyntax(t *testing.T) {
-	changes := []Change{longFile("first.go")}
+	changes := []git.Change{longFile("first.go")}
 	m := model{width: 60, height: 12, wrap: true, screen: "commit", history: historyState{loading: true, request: 4}}
 	updated, cmd := m.Update(commitLoaded{changes: changes, request: 4})
 	m = updated.(model)
@@ -203,7 +204,7 @@ func TestCommitLoadsDiffBeforeSyntax(t *testing.T) {
 }
 
 func TestCommitHeadingShowsHashAndSubject(t *testing.T) {
-	m := model{width: 60, height: 10, screen: "commit", history: historyState{current: CommitInfo{Hash: "123456789abcdef", Subject: "commit subject"}}}
+	m := model{width: 60, height: 10, screen: "commit", history: historyState{current: git.CommitInfo{Hash: "123456789abcdef", Subject: "commit subject"}}}
 	header := strings.Split(plain(m.View()), "\n")[0]
 	if !strings.HasPrefix(header, " 12345678  commit subject ") || !strings.HasSuffix(header, "read-only") || strings.Contains(header, "pane") {
 		t.Fatalf("unexpected commit heading: %q", header)
@@ -214,7 +215,7 @@ func TestCommitPickerBackNavigation(t *testing.T) {
 	for _, back := range []string{"esc", "q"} {
 		for _, close := range []string{"esc", "q"} {
 			t.Run(back+"_"+close, func(t *testing.T) {
-				m := model{width: 60, height: 12, wrap: true, screen: "commit", history: historyState{changes: []Change{longFile("first.go"), longFile("second.go")}}}
+				m := model{width: 60, height: 12, wrap: true, screen: "commit", history: historyState{changes: []git.Change{longFile("first.go"), longFile("second.go")}}}
 				m.rebuildCommit()
 				m = keys(t, m, "f", "/", "s", "e", "c", "o", "n", "d", "enter", "j")
 				if m.screen != "commit" || m.modal != "" || !m.pickerReturn {
@@ -238,7 +239,7 @@ func TestCommitPickerBackNavigation(t *testing.T) {
 }
 
 func TestCommitPickerCanReopenFileAfterGoingBack(t *testing.T) {
-	m := model{width: 60, height: 12, wrap: true, screen: "commit", history: historyState{changes: []Change{longFile("first.go"), longFile("second.go")}}}
+	m := model{width: 60, height: 12, wrap: true, screen: "commit", history: historyState{changes: []git.Change{longFile("first.go"), longFile("second.go")}}}
 	m.rebuildCommit()
 	m = keys(t, m, "f", "/", "s", "e", "c", "o", "n", "d", "enter", "esc", "enter")
 	if m.screen != "commit" || m.modal != "" || !m.pickerReturn {
@@ -251,7 +252,7 @@ func TestCommitPickerCanReopenFileAfterGoingBack(t *testing.T) {
 }
 
 func TestClosingInitiallyOpenedCommitPickerReturnsToDiff(t *testing.T) {
-	m := model{width: 60, height: 12, wrap: true, screen: "commit", history: historyState{changes: []Change{longFile("file.go")}}}
+	m := model{width: 60, height: 12, wrap: true, screen: "commit", history: historyState{changes: []git.Change{longFile("file.go")}}}
 	m.rebuildCommit()
 	m = keys(t, m, "f", "q")
 	if m.screen != "commit" || m.modal != "" {
@@ -264,7 +265,7 @@ func TestClosingInitiallyOpenedCommitPickerReturnsToDiff(t *testing.T) {
 }
 
 func TestSearchEnterWithNoMatchesKeepsSearchOpen(t *testing.T) {
-	m := model{screen: "history", history: historyState{searching: true, draft: "missing", commits: []CommitInfo{{Subject: "present"}}}}
+	m := model{screen: "history", history: historyState{searching: true, draft: "missing", commits: []git.CommitInfo{{Subject: "present"}}}}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	got := updated.(model)
 	if got.screen != "history" || !got.history.searching || cmd != nil {
@@ -273,7 +274,7 @@ func TestSearchEnterWithNoMatchesKeepsSearchOpen(t *testing.T) {
 }
 
 func TestSearchEnterOpensFocusedResult(t *testing.T) {
-	m := model{screen: "history", history: historyState{searching: true, draft: "fix", commits: []CommitInfo{
+	m := model{screen: "history", history: historyState{searching: true, draft: "fix", commits: []git.CommitInfo{
 		{Hash: "first", Subject: "fix one"}, {Hash: "second", Subject: "fix two"},
 	}}}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
@@ -286,7 +287,7 @@ func TestSearchEnterOpensFocusedResult(t *testing.T) {
 }
 
 func TestSpaceOpensSelectedCommit(t *testing.T) {
-	m := model{screen: "history", history: historyState{selected: 1, commits: []CommitInfo{{Hash: "first"}, {Hash: "second"}}}}
+	m := model{screen: "history", history: historyState{selected: 1, commits: []git.CommitInfo{{Hash: "first"}, {Hash: "second"}}}}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	got := updated.(model)
 	if cmd == nil || got.screen != "commit" || got.history.current.Hash != "second" {
@@ -302,7 +303,7 @@ func TestSpaceOpensSelectedCommit(t *testing.T) {
 }
 
 func TestHistorySelectionPresentationAndScrolling(t *testing.T) {
-	m := model{width: 60, height: 9, screen: "history", history: historyState{commits: []CommitInfo{
+	m := model{width: 60, height: 9, screen: "history", history: historyState{commits: []git.CommitInfo{
 		{Hash: "aaaaaaaa", Author: "Alice", Subject: "first", StatsLoaded: true},
 		{Hash: "bbbbbbbb", Author: "Bob", Subject: "second", StatsLoaded: true},
 		{Hash: "cccccccc", Author: "Carol", Subject: "third", StatsLoaded: true},
@@ -319,7 +320,7 @@ func TestHistorySelectionPresentationAndScrolling(t *testing.T) {
 }
 
 func TestHistoryReverseScrollKeepsViewportStill(t *testing.T) {
-	m := model{width: 60, height: 12, screen: "history", history: historyState{commits: make([]CommitInfo, 12)}}
+	m := model{width: 60, height: 12, screen: "history", history: historyState{commits: make([]git.CommitInfo, 12)}}
 	for i := 0; i < 8; i++ {
 		m = keys(t, m, "j")
 	}
@@ -352,7 +353,7 @@ func TestHistoryEmptyAndBinaryCommits(t *testing.T) {
 	if _, err := r.Action("commit", "--allow-empty", "-m", "empty"); err != nil {
 		t.Fatal(err)
 	}
-	commits, err := r.History(0, historyPage)
+	commits, err := r.History(0, git.HistoryPage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +376,7 @@ func TestSuccessfulCommitOpensHistory(t *testing.T) {
 }
 
 func TestParagraphHistoryAndCommitJumps(t *testing.T) {
-	m := model{screen: "history", history: historyState{commits: make([]CommitInfo, 7)}}
+	m := model{screen: "history", history: historyState{commits: make([]git.CommitInfo, 7)}}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("}")})
 	m = updated.(model)
 	if m.history.selected != 5 {
@@ -440,8 +441,8 @@ func TestHistoryPaging(t *testing.T) {
 	}
 
 	m := model{height: 20, screen: "history", history: historyState{loading: true, request: 1}}
-	full := make([]CommitInfo, historyPage)
-	updated, cmd := m.Update(historyLoaded{commits: full, request: 1, limit: historyPage})
+	full := make([]git.CommitInfo, git.HistoryPage)
+	updated, cmd := m.Update(historyLoaded{commits: full, request: 1, limit: git.HistoryPage})
 	m = updated.(model)
 	if cmd != nil || !m.history.more || m.history.fetching {
 		t.Fatal("first page should not fetch more until the selection nears the end")
@@ -451,13 +452,13 @@ func TestHistoryPaging(t *testing.T) {
 	if !m.history.fetching {
 		t.Fatal("reaching the end did not fetch more")
 	}
-	updated, _ = m.Update(historyLoaded{commits: full[:3], request: 1, skip: 1, limit: historyPage})
-	if len(updated.(model).history.commits) != historyPage {
+	updated, _ = m.Update(historyLoaded{commits: full[:3], request: 1, skip: 1, limit: git.HistoryPage})
+	if len(updated.(model).history.commits) != git.HistoryPage {
 		t.Fatal("misaligned page was appended")
 	}
-	updated, cmd = m.Update(historyLoaded{commits: full[:3], request: 1, skip: historyPage, limit: historyPage})
+	updated, cmd = m.Update(historyLoaded{commits: full[:3], request: 1, skip: git.HistoryPage, limit: git.HistoryPage})
 	m = updated.(model)
-	if cmd != nil || len(m.history.commits) != historyPage+3 || m.history.more || m.history.fetching {
+	if cmd != nil || len(m.history.commits) != git.HistoryPage+3 || m.history.more || m.history.fetching {
 		t.Fatalf("final page: %d more=%v", len(m.history.commits), m.history.more)
 	}
 	reloaded, cmd := m.reloadHistory()
@@ -474,7 +475,7 @@ func TestHistoryStatsLoadForViewportAndFollowScrolling(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	commits, err := r.History(0, historyPage)
+	commits, err := r.History(0, git.HistoryPage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -504,8 +505,8 @@ func TestHistoryStatsLoadForViewportAndFollowScrolling(t *testing.T) {
 }
 
 func TestStaleHistoryStatsAreIgnored(t *testing.T) {
-	m := model{screen: "history", history: historyState{request: 2, statsFetching: true, commits: []CommitInfo{{Hash: "a"}}}}
-	updated, _ := m.Update(historyStatsLoaded{request: 1, commits: []CommitInfo{{Hash: "a", StatsLoaded: true}}})
+	m := model{screen: "history", history: historyState{request: 2, statsFetching: true, commits: []git.CommitInfo{{Hash: "a"}}}}
+	updated, _ := m.Update(historyStatsLoaded{request: 1, commits: []git.CommitInfo{{Hash: "a", StatsLoaded: true}}})
 	got := updated.(model)
 	if got.history.commits[0].StatsLoaded || !got.history.statsFetching {
 		t.Fatal("stale statistics changed the current history")
@@ -560,9 +561,9 @@ func applyBatch(t *testing.T, m model, cmd tea.Cmd) (model, tea.Cmd) {
 }
 
 func TestHistoryStatsCacheTracksNewestCommits(t *testing.T) {
-	commits := make([]CommitInfo, historyStatsCacheSize+1)
+	commits := make([]git.CommitInfo, historyStatsCacheSize+1)
 	for i := range commits {
-		commits[i] = CommitInfo{Hash: fmt.Sprint(i), StatsLoaded: true, Added: i}
+		commits[i] = git.CommitInfo{Hash: fmt.Sprint(i), StatsLoaded: true, Added: i}
 	}
 	m := model{screen: "history", history: historyState{commits: commits}}
 	m.cacheHistoryStats()
@@ -570,7 +571,7 @@ func TestHistoryStatsCacheTracksNewestCommits(t *testing.T) {
 		t.Fatal("cache did not respect its size limit")
 	}
 	m.history.request++
-	updated, _ := m.Update(historyLoaded{request: m.history.request, commits: []CommitInfo{{Hash: "new"}, {Hash: "1"}}, limit: historyPage})
+	updated, _ := m.Update(historyLoaded{request: m.history.request, commits: []git.CommitInfo{{Hash: "new"}, {Hash: "1"}}, limit: git.HistoryPage})
 	got := updated.(model)
 	if got.history.commits[0].StatsLoaded || !got.history.commits[1].StatsLoaded || got.history.commits[1].Added != 1 || len(got.history.statsCache) != 1 {
 		t.Fatal("cache did not follow commit hashes after history changed")
@@ -578,7 +579,7 @@ func TestHistoryStatsCacheTracksNewestCommits(t *testing.T) {
 }
 
 func TestSearchFetchesOlderHistory(t *testing.T) {
-	m := model{width: 60, height: 20, screen: "history", history: historyState{commits: make([]CommitInfo, historyPage), more: true}}
+	m := model{width: 60, height: 20, screen: "history", history: historyState{commits: make([]git.CommitInfo, git.HistoryPage), more: true}}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
 	m = updated.(model)
 	if cmd != nil {
@@ -602,17 +603,17 @@ func TestHistorySearchUsesLargerPages(t *testing.T) {
 		filter string
 		limit  int
 	}{
-		{name: "navigation", limit: historyPage},
-		{name: "search", filter: "initial", limit: 5 * historyPage},
+		{name: "navigation", limit: git.HistoryPage},
+		{name: "search", filter: "initial", limit: 5 * git.HistoryPage},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			m := model{repo: r, screen: "history", history: historyState{commits: make([]CommitInfo, historyPage), selected: historyPage - 1, more: true, filter: tt.filter}}
+			m := model{repo: r, screen: "history", history: historyState{commits: make([]git.CommitInfo, git.HistoryPage), selected: git.HistoryPage - 1, more: true, filter: tt.filter}}
 			_, cmd := m.loadMoreHistory()
 			if cmd == nil {
 				t.Fatal("expected a page request")
 			}
 			msg := cmd().(historyLoaded)
-			if msg.err != nil || msg.limit != tt.limit || msg.skip != historyPage {
+			if msg.err != nil || msg.limit != tt.limit || msg.skip != git.HistoryPage {
 				t.Fatalf("page request: skip=%d limit=%d err=%v", msg.skip, msg.limit, msg.err)
 			}
 		})
@@ -622,7 +623,7 @@ func TestHistorySearchUsesLargerPages(t *testing.T) {
 func TestHistoryHeaderHeight(t *testing.T) {
 	for _, available := range []bool{false, true} {
 		for height := 0; height < 10; height++ {
-			m := model{width: 40, height: height, snapshot: Snapshot{Branch: BranchStatus{Available: available}}}
+			m := model{width: 40, height: height, snapshot: git.Snapshot{Branch: git.BranchStatus{Available: available}}}
 			if got, want := m.historyHeaderHeight(), len(m.historyHeader()); got != want {
 				t.Errorf("height %d available %v: %d != %d", height, available, got, want)
 			}

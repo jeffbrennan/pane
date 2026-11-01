@@ -20,7 +20,7 @@ func evalPath(t *testing.T, path string) string {
 	return resolved
 }
 
-func branchByName(entries []BranchEntry, name string) *BranchEntry {
+func branchByName(entries []git.BranchEntry, name string) *git.BranchEntry {
 	for i := range entries {
 		if entries[i].Name == name {
 			return &entries[i]
@@ -185,12 +185,12 @@ func TestDeleteRefusesCurrentAndWorktreeBranches(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := model{screen: "branches", repo: r}
-	updated, cmd := m.confirmDeleteBranch(BranchEntry{Name: "main", Current: true}, false)
+	updated, cmd := m.confirmDeleteBranch(git.BranchEntry{Name: "main", Current: true}, false)
 	m = updated.(model)
 	if cmd != nil || m.modal != "" || !strings.Contains(m.flash, "checked out") {
 		t.Fatalf("current branch: %q %q", m.flash, m.modal)
 	}
-	updated, cmd = m.confirmDeleteBranch(BranchEntry{Name: "side", Worktree: worktree}, false)
+	updated, cmd = m.confirmDeleteBranch(git.BranchEntry{Name: "side", Worktree: worktree}, false)
 	m = updated.(model)
 	if cmd != nil || m.modal != "" || !strings.Contains(m.flash, "Checked out") {
 		t.Fatalf("worktree branch: %q %q", m.flash, m.modal)
@@ -348,7 +348,7 @@ func TestHistoryDecoratesOtherWorktreeHeads(t *testing.T) {
 	if _, err := r.Command("worktree", "add", "-b", "side", filepath.Join(t.TempDir(), "wt")); err != nil {
 		t.Fatal(err)
 	}
-	commits, err := r.History(0, historyPage)
+	commits, err := r.History(0, git.HistoryPage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -411,7 +411,7 @@ func TestStatusCountTreatsRenamesAsOneChange(t *testing.T) {
 func TestWorktreeForceDialogNamesDirtyCount(t *testing.T) {
 	m := model{width: 100, height: 30, modal: "worktree-delete",
 		worktrees: worktreeState{
-			confirm:      WorktreeEntry{Path: "/tmp/wt"},
+			confirm:      git.WorktreeEntry{Path: "/tmp/wt"},
 			confirmForce: true,
 			status:       map[string]worktreeStatus{"/tmp/wt": {dirty: 7, loaded: true}},
 		}}
@@ -422,13 +422,13 @@ func TestWorktreeForceDialogNamesDirtyCount(t *testing.T) {
 }
 
 func TestBranchAndWorktreeFiltersUsePickerMatcher(t *testing.T) {
-	branches := model{branch: branchState{entries: []BranchEntry{{Name: "feature/x"}, {Name: "main"}}, filter: "fx"}}
+	branches := model{branch: branchState{entries: []git.BranchEntry{{Name: "feature/x"}, {Name: "main"}}, filter: "fx"}}
 	matches := branches.filteredBranches()
 	if len(matches) != 1 || matches[0].Name != "feature/x" {
 		t.Fatalf("branch subsequence filter: %#v", matches)
 	}
 	worktrees := model{worktrees: worktreeState{
-		entries: []WorktreeEntry{{Path: "/tmp/pane-feature", Branch: "feature"}, {Path: "/tmp/other", Branch: "main"}},
+		entries: []git.WorktreeEntry{{Path: "/tmp/pane-feature", Branch: "feature"}, {Path: "/tmp/other", Branch: "main"}},
 		filter:  "pfe",
 	}}
 	sorted := worktrees.sortedWorktrees()
@@ -438,11 +438,11 @@ func TestBranchAndWorktreeFiltersUsePickerMatcher(t *testing.T) {
 }
 
 func TestPruneHintOnlyWhenPrunable(t *testing.T) {
-	m := model{width: 120, height: 20, worktrees: worktreeState{entries: []WorktreeEntry{{Path: "/tmp/one", Branch: "main"}}}}
+	m := model{width: 120, height: 20, worktrees: worktreeState{entries: []git.WorktreeEntry{{Path: "/tmp/one", Branch: "main"}}}}
 	if view := m.worktreeView(); strings.Contains(view, "prune") {
 		t.Fatalf("prune hint shown without a prunable worktree: %q", view)
 	}
-	m.worktrees.entries = append(m.worktrees.entries, WorktreeEntry{Path: "/tmp/gone", Prunable: true})
+	m.worktrees.entries = append(m.worktrees.entries, git.WorktreeEntry{Path: "/tmp/gone", Prunable: true})
 	if view := m.worktreeView(); !strings.Contains(view, "prune") {
 		t.Fatalf("prune hint missing: %q", view)
 	}

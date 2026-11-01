@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -395,7 +396,7 @@ func (m model) runAction(args ...string) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m model) currentChanges() []Change {
+func (m model) currentChanges() []git.Change {
 	if m.staged {
 		return m.snapshot.Staged
 	}

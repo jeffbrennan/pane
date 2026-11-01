@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"github.com/jeffbrennan/pane/internal/git"
+	"github.com/jeffbrennan/pane/internal/syntax"
 	"strings"
 )
 
@@ -12,7 +14,7 @@ func (m model) historyHeader() []string {
 	title := m.historyTitle(branch, max(0, m.width-1))
 	badge := ""
 	if m.history.path != "" {
-		title = "history · " + clean(m.history.path)
+		title = "history · " + syntax.Clean(m.history.path)
 		badge = styleDim + "whole-commit counts" + styleReset
 	}
 	lines := []string{m.titleBar(" "+title, badge)}
@@ -88,7 +90,7 @@ func (m model) actionStatus() string {
 }
 
 // historyTitle shows the branch and its upstream within width columns.
-func (m model) historyTitle(branch BranchStatus, width int) string {
+func (m model) historyTitle(branch git.BranchStatus, width int) string {
 	if !branch.Available || width <= 0 {
 		return ""
 	}
@@ -96,11 +98,11 @@ func (m model) historyTitle(branch BranchStatus, width int) string {
 	if name == "" {
 		name = "unknown"
 	}
-	name = fit(clean(name), width)
+	name = fit(syntax.Clean(name), width)
 	result := styleBold + m.accent() + name + styleReset
 	remaining := max(0, width-stringWidth(name))
 	if branch.Upstream != "" && remaining > 0 {
-		result += styleDim + fit(" → "+clean(branch.Upstream), remaining) + styleReset
+		result += styleDim + fit(" → "+syntax.Clean(branch.Upstream), remaining) + styleReset
 	}
 	return result
 }

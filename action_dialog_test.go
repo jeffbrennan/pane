@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func TestPushPullStartImmediately(t *testing.T) {
@@ -23,7 +24,7 @@ func TestPushPullStartImmediately(t *testing.T) {
 
 func TestPushPullProgressInSummary(t *testing.T) {
 	for _, tt := range []struct{ key, status string }{{"p", "Pushing…"}, {"P", "Pulling…"}} {
-		m := model{width: 60, height: 20, screen: "history", snapshot: Snapshot{Branch: BranchStatus{Available: true, Upstream: "origin/main", CountsKnown: true, Ahead: 1}}}
+		m := model{width: 60, height: 20, screen: "history", snapshot: git.Snapshot{Branch: git.BranchStatus{Available: true, Upstream: "origin/main", CountsKnown: true, Ahead: 1}}}
 		updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(tt.key)})
 		m = updated.(model)
 		if cmd == nil || !strings.Contains(m.View(), tt.status) {
@@ -38,7 +39,7 @@ func TestPushPullProgressInSummary(t *testing.T) {
 }
 
 func TestPushWithoutAheadCommitsShowsChecking(t *testing.T) {
-	m := model{width: 60, height: 20, screen: "history", snapshot: Snapshot{Branch: BranchStatus{Available: true, Upstream: "origin/main", CountsKnown: true}}}
+	m := model{width: 60, height: 20, screen: "history", snapshot: git.Snapshot{Branch: git.BranchStatus{Available: true, Upstream: "origin/main", CountsKnown: true}}}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
 	got := updated.(model)
 	if cmd == nil || !strings.Contains(got.View(), "Checking push…") || strings.Contains(got.View(), "Pushing…") {

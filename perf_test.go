@@ -17,6 +17,7 @@ import (
 	"unsafe"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
@@ -25,7 +26,7 @@ func TestPerf(t *testing.T) {
 	if os.Getenv("PANE_PERF") != "1" {
 		t.Skip("set PANE_PERF=1 to run")
 	}
-	var changes []Change
+	var changes []git.Change
 	var m model
 	scenario := "synthetic-many"
 	if os.Getenv("PANE_PERF_REPO") != "" {
@@ -55,7 +56,7 @@ func TestPerf(t *testing.T) {
 		})
 	}
 	if dir := os.Getenv("PANE_PERF_REPO"); dir != "" {
-		repo := Repo{Root: dir}
+		repo := git.Repo{Root: dir}
 		revision := os.Getenv("PANE_PERF_COMMIT")
 		if revision == "" {
 			revision = "HEAD"
@@ -82,7 +83,7 @@ func TestPerf(t *testing.T) {
 		})
 		measurePerf(t, scenario, "stream_first_chunk_ns", func() {
 			ctx, cancel := context.WithCancel(context.Background())
-			stream := repo.StreamCommit(ctx, revision, startupSyntaxLines)
+			stream := repo.StreamCommit(ctx, revision, git.StartupSyntaxLines)
 			chunk, ok := <-stream
 			if !ok || chunk.Err != nil || len(chunk.Changes) == 0 {
 				cancel()
@@ -93,7 +94,7 @@ func TestPerf(t *testing.T) {
 			}
 		})
 		measurePerf(t, scenario, "stream_total_ns", func() {
-			for chunk := range repo.StreamCommit(context.Background(), revision, startupSyntaxLines) {
+			for chunk := range repo.StreamCommit(context.Background(), revision, git.StartupSyntaxLines) {
 				if chunk.Err != nil {
 					t.Fatal(chunk.Err)
 				}
@@ -114,7 +115,7 @@ func TestPerf(t *testing.T) {
 		recordPerf(t, scenario, "idle_git_commands", gitCommands.Load())
 	} else {
 		for i := 0; i < 500; i++ {
-			changes = append(changes, Change{Path: fmt.Sprintf("file-%04d.txt", i), Diff: "@@ -0,0 +1,100 @@\n" + strings.Repeat("+a representative line of text\n", 100)})
+			changes = append(changes, git.Change{Path: fmt.Sprintf("file-%04d.txt", i), Diff: "@@ -0,0 +1,100 @@\n" + strings.Repeat("+a representative line of text\n", 100)})
 		}
 	}
 	m = model{width: 160, height: 50, wrap: true, screen: "commit", history: historyState{changes: changes}}
@@ -214,16 +215,16 @@ func TestPerf(t *testing.T) {
 }
 
 func measureViewScenarios(t *testing.T) {
-	changes := make([]Change, 25)
+	changes := make([]git.Change, 25)
 	for i := range changes {
-		changes[i] = Change{Path: fmt.Sprintf("file-%02d.go", i), Diff: "@@ -0,0 +1,10 @@\n" + strings.Repeat("+var value = 1\n", 10)}
+		changes[i] = git.Change{Path: fmt.Sprintf("file-%02d.go", i), Diff: "@@ -0,0 +1,10 @@\n" + strings.Repeat("+var value = 1\n", 10)}
 	}
 	rangeModel := model{width: 160, height: 50, wrap: true, screen: "sequence"}
-	rangeModel.sequence.commits = make([]CommitInfo, 100)
-	rangeModel.sequence.changes = make([][]Change, 100)
+	rangeModel.sequence.commits = make([]git.CommitInfo, 100)
+	rangeModel.sequence.changes = make([][]git.Change, 100)
 	rangeModel.sequence.states = make([]sequenceLoadState, 100)
 	for i := range rangeModel.sequence.commits {
-		rangeModel.sequence.commits[i] = CommitInfo{Hash: fmt.Sprintf("%08x", i)}
+		rangeModel.sequence.commits[i] = git.CommitInfo{Hash: fmt.Sprintf("%08x", i)}
 		rangeModel.sequence.states[i] = sequenceReady
 		rangeModel.sequence.changes[i] = changes
 	}
@@ -232,15 +233,15 @@ func measureViewScenarios(t *testing.T) {
 	measurePerf(t, "synthetic-range", "view_ns", func() { _ = rangeModel.View() })
 	recordPerf(t, "synthetic-range", "commits", int64(len(rangeModel.sequence.commits)))
 
-	baseModel := model{width: 160, height: 50, wrap: true, screen: "base", history: historyState{changes: changes, current: CommitInfo{Hash: "base"}}}
+	baseModel := model{width: 160, height: 50, wrap: true, screen: "base", history: historyState{changes: changes, current: git.CommitInfo{Hash: "base"}}}
 	baseModel.rebuildCommit()
 	measurePerf(t, "synthetic-base", "build_ns", baseModel.rebuildCommit)
 	measurePerf(t, "synthetic-base", "view_ns", func() { _ = baseModel.View() })
 
 	historyModel := model{width: 160, height: 50, screen: "history"}
-	historyModel.history.commits = make([]CommitInfo, 500)
+	historyModel.history.commits = make([]git.CommitInfo, 500)
 	for i := range historyModel.history.commits {
-		historyModel.history.commits[i] = CommitInfo{Hash: fmt.Sprintf("%08x", i), Subject: fmt.Sprintf("commit %d", i)}
+		historyModel.history.commits[i] = git.CommitInfo{Hash: fmt.Sprintf("%08x", i), Subject: fmt.Sprintf("commit %d", i)}
 	}
 	measurePerf(t, "synthetic-history", "view_ns", func() { _ = historyModel.View() })
 	historyModel.history.filter = "commit 4"
@@ -249,21 +250,21 @@ func measureViewScenarios(t *testing.T) {
 }
 
 func measureSyntheticScenarios(t *testing.T) {
-	scenarios := map[string][]Change{
-		"huge-file": func() []Change {
-			return []Change{{Path: "huge.txt", Diff: "@@ -0,0 +1,100000 @@\n" + strings.Repeat("+a line in a very large file\n", 100000)}}
+	scenarios := map[string][]git.Change{
+		"huge-file": func() []git.Change {
+			return []git.Change{{Path: "huge.txt", Diff: "@@ -0,0 +1,100000 @@\n" + strings.Repeat("+a line in a very large file\n", 100000)}}
 		}(),
-		"long-lines": func() []Change {
-			changes := make([]Change, 100)
+		"long-lines": func() []git.Change {
+			changes := make([]git.Change, 100)
 			for i := range changes {
-				changes[i] = Change{Path: fmt.Sprintf("minified-%02d.js", i), Diff: "@@ -0,0 +1 @@\n+" + strings.Repeat("abcdefghij", 2000)}
+				changes[i] = git.Change{Path: fmt.Sprintf("minified-%02d.js", i), Diff: "@@ -0,0 +1 @@\n+" + strings.Repeat("abcdefghij", 2000)}
 			}
 			return changes
 		}(),
-		"many-small": func() []Change {
-			changes := make([]Change, 25)
+		"many-small": func() []git.Change {
+			changes := make([]git.Change, 25)
 			for i := range changes {
-				changes[i] = Change{Path: fmt.Sprintf("small-%02d.go", i), Diff: "@@ -0,0 +1,10 @@\n" + strings.Repeat("+var value = 1\n", 10)}
+				changes[i] = git.Change{Path: fmt.Sprintf("small-%02d.go", i), Diff: "@@ -0,0 +1,10 @@\n" + strings.Repeat("+var value = 1\n", 10)}
 			}
 			return changes
 		}(),
@@ -274,7 +275,7 @@ func measureSyntheticScenarios(t *testing.T) {
 			movedIndex = newMovedIndex()
 			movedIndex.addChanges(changes)
 		})
-		m := model{width: 160, height: 50, wrap: true, snapshot: Snapshot{Unstaged: changes}}
+		m := model{width: 160, height: 50, wrap: true, snapshot: git.Snapshot{Unstaged: changes}}
 		m.rebuild()
 		measurePerf(t, "synthetic-"+name, "build_ns", func() { m.rebuild() })
 		measurePerf(t, "synthetic-"+name, "view_ns", func() { _ = m.View() })
@@ -316,7 +317,7 @@ func measureRefreshPerf(t *testing.T) {
 	measurePerf(t, "synthetic-refresh", "full_rebuild_ns", func() { m.rebuild() })
 	m.snapshot = cache.Snapshot
 	nextChanges := next.Snapshot
-	m.previousChanges = append([]Change(nil), cache.Snapshot.Unstaged...)
+	m.previousChanges = append([]git.Change(nil), cache.Snapshot.Unstaged...)
 	measurePerf(t, "synthetic-refresh", "spliced_refresh_ns", func() {
 		m.snapshot = cache.Snapshot
 		m.previousChanges = append(m.previousChanges[:0], cache.Snapshot.Unstaged...)
@@ -333,20 +334,20 @@ func measureRefreshPerf(t *testing.T) {
 func measureSyntaxPerf(t *testing.T) {
 	t.Helper()
 	repo := testRepo(t)
-	for i := 0; i < syntaxBudgetFiles; i++ {
+	for i := 0; i < git.SyntaxBudgetFiles; i++ {
 		writeFile(t, repo, fmt.Sprintf("file-%02d.go", i), "package main\nvar value = 1\n")
 	}
 	if _, err := repo.Commit("initial"); err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < syntaxBudgetFiles; i++ {
+	for i := 0; i < git.SyntaxBudgetFiles; i++ {
 		writeFile(t, repo, fmt.Sprintf("file-%02d.go", i), "package main\nvar value = 2\n")
 	}
 	if _, err := repo.Commit("changes"); err != nil {
 		t.Fatal(err)
 	}
 	changes, err := repo.CommitChangesWithoutSyntax("HEAD")
-	if err != nil || len(changes) != syntaxBudgetFiles {
+	if err != nil || len(changes) != git.SyntaxBudgetFiles {
 		t.Fatalf("syntax fixture: %d changes, %v", len(changes), err)
 	}
 	var commands atomic.Int64
@@ -360,7 +361,7 @@ func measureSyntaxPerf(t *testing.T) {
 	for i := range targets {
 		targets[i] = syntaxTarget{key: contextKey{commit: "HEAD", path: changes[i].Path}, change: changes[i]}
 	}
-	m := model{repo: repo, screen: "commit", history: historyState{current: CommitInfo{Hash: "HEAD"}}}
+	m := model{repo: repo, screen: "commit", history: historyState{current: git.CommitInfo{Hash: "HEAD"}}}
 	measurePerf(t, "synthetic-syntax", "demand_load_ns", func() { _ = m.loadSyntaxTargets(targets)() })
 	commands.Store(0)
 	_ = m.loadSyntaxTargets(targets)()
@@ -368,28 +369,28 @@ func measureSyntaxPerf(t *testing.T) {
 	largeDiff := "diff --git a/large.go b/large.go\nnew file mode 100644\n@@ -0,0 +1,2000 @@\n" + strings.Repeat("+var value = 1 // comment\n", 2000)
 	measurePerf(t, "synthetic-syntax", "whole_file_tokenize_ns", func() {
 		syntax.ResetCache()
-		syntaxLines("large.go", largeDiff)
+		syntax.Lines("large.go", largeDiff)
 	})
 }
 
 func BenchmarkWorkingTreeRefresh(b *testing.B) {
-	base := make([]Change, 1000)
+	base := make([]git.Change, 1000)
 	for i := range base {
-		base[i] = Change{Path: fmt.Sprintf("file-%04d.go", i), Diff: "@@ -0,0 +1,50 @@\n" + strings.Repeat("+var value = 2\n", 50)}
+		base[i] = git.Change{Path: fmt.Sprintf("file-%04d.go", i), Diff: "@@ -0,0 +1,50 @@\n" + strings.Repeat("+var value = 2\n", 50)}
 	}
-	next := append([]Change(nil), base...)
+	next := append([]git.Change(nil), base...)
 	next[0].Diff = "@@ -0,0 +1,51 @@\n" + strings.Repeat("+var value = 3\n", 51)
-	m := model{width: 160, height: 50, wrap: true, snapshot: Snapshot{Unstaged: base}}
+	m := model{width: 160, height: 50, wrap: true, snapshot: git.Snapshot{Unstaged: base}}
 	m.rebuild()
 	b.Run("full", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			m.snapshot = Snapshot{Unstaged: next}
+			m.snapshot = git.Snapshot{Unstaged: next}
 			m.rebuild()
 		}
 	})
 	b.Run("splice", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			m.snapshot = Snapshot{Unstaged: next}
+			m.snapshot = git.Snapshot{Unstaged: next}
 			m.previousChanges = base
 			m.refreshRows()
 		}
@@ -441,7 +442,7 @@ func recordPerf(t *testing.T, scenario, metric string, value int64) {
 
 // measureCommitRelease shows what a finished huge commit keeps alive and what
 // dropping its rows and patch returns to the OS.
-func measureCommitRelease(t *testing.T, scenario string, changes []Change) {
+func measureCommitRelease(t *testing.T, scenario string, changes []git.Change) {
 	t.Helper()
 	m := model{width: 160, height: 50, wrap: true, screen: "commit", history: historyState{changes: changes}}
 	m.rebuildCommit()
@@ -475,7 +476,7 @@ func measureHotspotPerf(t *testing.T) {
 	if root == "" {
 		root = "."
 	}
-	repo := Repo{Root: root}
+	repo := git.Repo{Root: root}
 	since, author := "1.year", ""
 	cache := hotCachePath(repo.Root, since, author)
 	summary := hotSummaryPath(repo.Root, since, author)

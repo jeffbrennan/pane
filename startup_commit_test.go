@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func TestInitialModelOpensCommitRevision(t *testing.T) {
@@ -92,7 +93,7 @@ func TestDirectCommitBackBeforeLoading(t *testing.T) {
 	if m.screen != "history" || cmd == nil || m.history.request == request {
 		t.Fatal("back did not load history and invalidate the commit request")
 	}
-	updated, _ = m.Update(commitLoaded{request: request, changes: []Change{{Path: "stale"}}})
+	updated, _ = m.Update(commitLoaded{request: request, changes: []git.Change{{Path: "stale"}}})
 	if got := updated.(model); got.screen != "history" || len(got.history.changes) != 0 {
 		t.Fatal("stale commit response changed history")
 	}
@@ -185,7 +186,7 @@ func TestInitialModelOpensSymmetricRange(t *testing.T) {
 func TestCommitFirstScreenIsHighlighted(t *testing.T) {
 	r := testRepo(t)
 	body := func(word string) string {
-		return "package main\n" + strings.Repeat("var "+word+" = 1\n", startupSyntaxLines)
+		return "package main\n" + strings.Repeat("var "+word+" = 1\n", git.StartupSyntaxLines)
 	}
 	writeFile(t, r, "a.go", body("a"))
 	writeFile(t, r, "b.go", body("b"))
@@ -225,7 +226,7 @@ func TestSkippedFilesHighlightNearViewport(t *testing.T) {
 	// highlight on demand: b.go through d.go as lookahead, f.go once visible.
 	writeFile(t, r, "a.go", "package main\n"+strings.Repeat("var a = 1\n", 30))
 	for _, name := range []string{"b", "f"} {
-		writeFile(t, r, name+".go", "package main\n"+strings.Repeat("var "+name+" = 1\n", syntaxBudgetLines))
+		writeFile(t, r, name+".go", "package main\n"+strings.Repeat("var "+name+" = 1\n", git.SyntaxBudgetLines))
 	}
 	for _, name := range []string{"c", "d", "e"} {
 		writeFile(t, r, name+".go", "package main\nvar "+name+" = 1\n")

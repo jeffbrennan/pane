@@ -7,9 +7,10 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
-func fileHistoryFixture(t *testing.T) Repo {
+func fileHistoryFixture(t *testing.T) git.Repo {
 	t.Helper()
 	r := testRepo(t)
 	writeFile(t, r, "old name", "first line\nsecond line\nthird line\n")

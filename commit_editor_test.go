@@ -9,12 +9,13 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func TestCommitEditorMessageAndSubmission(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "file", "contents\n")
-	m := model{repo: r, modal: "commit", input: "draft", snapshot: Snapshot{Unstaged: []Change{{Path: "file"}}}}
+	m := model{repo: r, modal: "commit", input: "draft", snapshot: git.Snapshot{Unstaged: []git.Change{{Path: "file"}}}}
 	path, err := m.prepareCommitEditor()
 	if err != nil {
 		t.Fatal(err)

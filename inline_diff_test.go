@@ -1,13 +1,14 @@
 package main
 
 import (
+	"github.com/jeffbrennan/pane/internal/git"
 	"strings"
 	"testing"
 )
 
 func TestInlineChanges(t *testing.T) {
 	diff := "@@ -1 +1 @@\n-Hello, café world!\n+Hello, café there!\n"
-	rows := buildRows([]Change{{Path: "notes.md", Diff: diff}}, 80, true)
+	rows := buildRows([]git.Change{{Path: "notes.md", Diff: diff}}, 80, true)
 	m := model{width: 60, wrap: true, rows: rows}
 	for _, tt := range []struct {
 		index int
@@ -31,7 +32,7 @@ func TestInlineChangesSkipUnpairedAndUnrelatedLines(t *testing.T) {
 		"@@ -1 +1 @@\n-completely different\n+unrelated text\n",
 	} {
 		m := model{width: 80, wrap: true}
-		m.rows = buildRows([]Change{{Path: "file.txt", Diff: diff}}, 80, true)
+		m.rows = buildRows([]git.Change{{Path: "file.txt", Diff: diff}}, 80, true)
 		for i, r := range m.rows {
 			if len(m.inlineSpansForRow(i)) > 0 {
 				t.Fatalf("unexpected inline highlight: %#v", r)
@@ -50,7 +51,7 @@ func TestInlineChangesStayBoundedOnHugeBlocks(t *testing.T) {
 		diff.WriteString("+new line\n")
 	}
 	m := model{width: 80, wrap: true}
-	m.rows = buildRows([]Change{{Path: "file.txt", Diff: diff.String()}}, 80, true)
+	m.rows = buildRows([]git.Change{{Path: "file.txt", Diff: diff.String()}}, 80, true)
 	for i := range m.rows {
 		if spans := m.inlineSpansForRow(i); len(spans) > 0 {
 			t.Fatalf("row %d paired a block beyond the inline limit", i)
@@ -60,14 +61,14 @@ func TestInlineChangesStayBoundedOnHugeBlocks(t *testing.T) {
 
 func TestInlineChangesWrapAndScroll(t *testing.T) {
 	diff := "@@ -1 +1 @@\n-hello beautiful world\n+hello beautiful earth\n"
-	rows := buildRows([]Change{{Path: "file.txt", Diff: diff}}, 20, true)
+	rows := buildRows([]git.Change{{Path: "file.txt", Diff: diff}}, 20, true)
 	m := model{width: 20, wrap: true, rows: rows}
 	for i, r := range rows {
 		if r.kind == '+' && strings.Contains(r.text, "earth") && len(m.inlineSpansForRow(i)) == 0 {
 			t.Fatal("wrapped change lost inline highlighting")
 		}
 	}
-	rows = buildRows([]Change{{Path: "file.txt", Diff: diff}}, 80, false)
+	rows = buildRows([]git.Change{{Path: "file.txt", Diff: diff}}, 80, false)
 	m = model{width: 20, horizontal: 10, rows: rows}
 	if rendered := m.renderNumberedDiffRow(rows[2], 2); !strings.Contains(rendered, "\x1b[48;2;42;83;52m") {
 		t.Fatalf("scrolled change lost inline highlighting: %q", rendered)

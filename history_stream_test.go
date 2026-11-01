@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func TestHistoryStreamDeepPaging(t *testing.T) {
@@ -32,16 +33,16 @@ func TestHistoryStreamDeepPaging(t *testing.T) {
 			}
 		}
 	}
-	s := NewHistoryStream(r, "")
+	s := git.NewHistoryStream(r, "")
 	defer s.Close()
-	var commits []CommitInfo
+	var commits []git.CommitInfo
 	for {
-		page, err := s.NextPage(historyPage)
+		page, err := s.NextPage(git.HistoryPage)
 		if err != nil {
 			t.Fatal(err)
 		}
 		commits = append(commits, page...)
-		if len(page) < historyPage {
+		if len(page) < git.HistoryPage {
 			break
 		}
 	}
@@ -60,7 +61,7 @@ func TestHistoryStreamDeepPaging(t *testing.T) {
 
 func TestHistoryStreamFileRenameAcrossPages(t *testing.T) {
 	r := fileHistoryFixture(t)
-	s := NewHistoryStream(r, "renamed")
+	s := git.NewHistoryStream(r, "renamed")
 	defer s.Close()
 	for _, want := range []struct{ subject, path string }{{"latest", "renamed"}, {"rename", "renamed"}, {"second", "old name"}, {"first", "old name"}} {
 		page, err := s.NextPage(1)
@@ -101,7 +102,7 @@ func TestHistoryStreamMergeOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewHistoryStream(r, "")
+	s := git.NewHistoryStream(r, "")
 	defer s.Close()
 	for i := range want {
 		page, err := s.NextPage(1)
@@ -131,7 +132,7 @@ func TestHistoryStreamReloadAndClose(t *testing.T) {
 
 func TestHistoryStreamCloseDuringRead(t *testing.T) {
 	r := fileHistoryFixture(t)
-	s := NewHistoryStream(r, "")
+	s := git.NewHistoryStream(r, "")
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -170,7 +171,7 @@ func TestHistoryStreamClosesBlockedProcess(t *testing.T) {
 }
 
 func TestHistoryStreamEmptyRepository(t *testing.T) {
-	s := NewHistoryStream(testRepo(t), "")
+	s := git.NewHistoryStream(testRepo(t), "")
 	defer s.Close()
 	page, err := s.NextPage(1)
 	if err != nil || len(page) != 0 {
@@ -180,8 +181,8 @@ func TestHistoryStreamEmptyRepository(t *testing.T) {
 
 func TestHistoryStreamInterruptedPageReloadsOnReturn(t *testing.T) {
 	r := fileHistoryFixture(t)
-	s := NewHistoryStream(r, "")
-	m := model{repo: r, screen: "history", history: historyState{stream: s, commits: []CommitInfo{{Hash: "HEAD"}}, fetching: true}}
+	s := git.NewHistoryStream(r, "")
+	m := model{repo: r, screen: "history", history: historyState{stream: s, commits: []git.CommitInfo{{Hash: "HEAD"}}, fetching: true}}
 	updated, _ := m.handleHistoryKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(model)
 	if !m.history.stale || m.screen != "commit" {
@@ -202,7 +203,7 @@ func TestFileHistoryReturnInvalidatesPendingPages(t *testing.T) {
 	restored := updated.(model)
 	updated, _ = restored.returnToHistory()
 	restored = updated.(model)
-	updated, _ = restored.Update(historyLoaded{request: 4, commits: []CommitInfo{{Subject: "stale"}}, limit: historyPage})
+	updated, _ = restored.Update(historyLoaded{request: 4, commits: []git.CommitInfo{{Subject: "stale"}}, limit: git.HistoryPage})
 	if len(updated.(model).history.commits) != 0 {
 		t.Fatal("file-history page replaced the restored history")
 	}

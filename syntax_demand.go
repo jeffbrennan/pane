@@ -5,6 +5,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/git"
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 // syntaxDemand highlights files that the syntax budget left plain once they
@@ -48,7 +50,7 @@ func (d *syntaxDemand) store(key contextKey, entry demandSyntax) {
 // applySyntaxDemand returns changes with loaded syntax filled in for the
 // skipped files of the view identified by key. It copies changes only when
 // one is filled.
-func (m model) applySyntaxDemand(key contextKey, changes []Change) []Change {
+func (m model) applySyntaxDemand(key contextKey, changes []git.Change) []git.Change {
 	if m.syntaxDemand == nil || len(m.syntaxDemand.loaded) == 0 {
 		return changes
 	}
@@ -63,7 +65,7 @@ func (m model) applySyntaxDemand(key contextKey, changes []Change) []Change {
 			continue
 		}
 		if !copied {
-			changes = append([]Change(nil), changes...)
+			changes = append([]git.Change(nil), changes...)
 			copied = true
 		}
 		changes[i].SyntaxDiff = entry.syntaxDiff
@@ -85,7 +87,7 @@ func (m model) diffSyntaxView() ([]row, int, bool) {
 
 // syntaxContext returns the context key, without a path, and the changes
 // behind rows of commitIndex.
-func (m model) syntaxContext(commitIndex int) (contextKey, []Change) {
+func (m model) syntaxContext(commitIndex int) (contextKey, []git.Change) {
 	switch m.screen {
 	case "commit":
 		return contextKey{commit: m.history.current.Hash}, m.history.changes
@@ -110,7 +112,7 @@ const syntaxLookahead = 3
 type syntaxTarget struct {
 	key         contextKey
 	commitIndex int
-	change      Change
+	change      git.Change
 }
 
 // loadVisibleSyntax starts highlighting the skipped files on screen and the
@@ -158,7 +160,7 @@ func (m *model) warmCursorSyntax() {
 		m.syntaxWarmPath, m.syntaxWarmCommit = r.path, key.commit
 		go func() {
 			time.Sleep(150 * time.Millisecond)
-			syntaxLines(c.Path, c.SyntaxDiff)
+			syntax.Lines(c.Path, c.SyntaxDiff)
 		}()
 		return
 	}
@@ -219,10 +221,10 @@ func (m model) loadSyntaxTargets(targets []syntaxTarget) tea.Cmd {
 			}
 			groups[index].indexes = append(groups[index].indexes, i)
 		}
-		contexts := make([]FullContextResult, len(targets))
+		contexts := make([]git.FullContextResult, len(targets))
 		parallelEach(len(groups), func(i int) {
 			group := groups[i]
-			changes := make([]Change, len(group.indexes))
+			changes := make([]git.Change, len(group.indexes))
 			for j, index := range group.indexes {
 				changes[j] = targets[index].change
 			}
@@ -244,7 +246,7 @@ func (m model) loadSyntaxTargets(targets []syntaxTarget) tea.Cmd {
 			results[i].syntaxDiff = diff
 			c := t.change
 			c.SyntaxDiff = diff
-			warmSyntax([]Change{c})
+			git.WarmSyntax([]git.Change{c})
 		})
 		return syntaxDemandLoaded{results: results}
 	}
@@ -291,7 +293,7 @@ func (m *model) applySyntaxDemandLoaded(msg syntaxDemandLoaded) {
 // highlightRows sets the syntax spans of path's diff rows, matching each line
 // by its source line number and text as changeRows does.
 func highlightRows(rows []row, path string, commitIndex int, syntaxDiff, display string) {
-	oldSyntax, newSyntax := syntaxLinesFor(path, syntaxDiff, display)
+	oldSyntax, newSyntax := syntax.LinesFor(path, syntaxDiff, display)
 	for i := 0; i < len(rows); {
 		r := rows[i]
 		diffLine := r.kind == ' ' || r.kind == '+' || r.kind == '-' || r.kind == 'd'
@@ -315,7 +317,7 @@ func highlightRows(rows []row, path string, commitIndex int, syntaxDiff, display
 		if ok && lineSyntax.Text == text.String() {
 			byteOffset := 0
 			for j := i; j < end; j++ {
-				rows[j].setSyntaxSpans(clipSyntax(lineSyntax.Spans, byteOffset, byteOffset+len(rows[j].text)))
+				rows[j].setSyntaxSpans(syntax.Clip(lineSyntax.Spans, byteOffset, byteOffset+len(rows[j].text)))
 				byteOffset += len(rows[j].text)
 			}
 		}
