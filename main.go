@@ -55,6 +55,7 @@ type model struct {
 	previousChanges       []change
 	syntaxWarmPath        string
 	syntaxWarmCommit      string
+	tickStopped           bool
 	resizeRequest         int
 	pos, horizontal       int
 	viewTop               int
@@ -406,6 +407,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return view, tea.Batch(cmd, load)
 	}
 	view.warmCursorSyntax()
+	if view.tickStopped && !view.readOnlyDiff() {
+		view.tickStopped = false
+		return view, tea.Batch(cmd, nextTick())
+	}
 	return view, cmd
 }
 
@@ -460,13 +465,12 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if (m.screen == "" || m.screen == "base" || (m.screen == "history" && m.history.path == "")) && m.ticks%interval == 0 {
 			m, cmd = m.refresh()
 		}
-		next := nextTick()
 		if m.readOnlyDiff() {
-			// Redrawing an unchanged read-only diff twice a second is pure idle
-			// cost; five seconds still feeds terminals without theme pushes.
-			next = tea.Tick(5*time.Second, func(time.Time) tea.Msg { return tick{} })
+			// Read-only diffs do not refresh, so no periodic redraw is needed.
+			m.tickStopped = true
+			return m, tea.Batch(cmd, m.queryTheme())
 		}
-		return m, tea.Batch(cmd, next, m.queryThemeOnTick())
+		return m, tea.Batch(cmd, nextTick(), m.queryThemeOnTick())
 	case tea.BlurMsg:
 		m.blurred = true
 	case tea.FocusMsg:

@@ -101,7 +101,7 @@ func TestAutomaticThemeChangesAndManualOverride(t *testing.T) {
 
 func TestThemeAndRepositoryRefreshCadence(t *testing.T) {
 	queries := 0
-	m := model{screen: "commit", themeAuto: true, themeQuery: func() { queries++ }}
+	m := model{themeAuto: true, themeQuery: func() { queries++ }}
 	for i := 1; i <= 10; i++ {
 		updated, cmd := m.Update(tick{})
 		m = updated.(model)

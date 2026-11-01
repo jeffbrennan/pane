@@ -38,6 +38,21 @@ func TestIdleRefreshDependsOnScreen(t *testing.T) {
 	}
 }
 
+func TestReadOnlyDiffStopsTickAndRestartingRefreshes(t *testing.T) {
+	m := model{screen: "commit"}
+	updated, cmd := m.Update(tick{})
+	m = updated.(model)
+	if !m.tickStopped {
+		t.Fatal("read-only diff did not stop its tick loop")
+	}
+	m.screen = ""
+	updated, cmd = m.Update(tick{})
+	m = updated.(model)
+	if m.tickStopped || !m.loading || cmd == nil {
+		t.Fatalf("leaving the read-only screen did not restart refresh ticks: stopped=%t loading=%t", m.tickStopped, m.loading)
+	}
+}
+
 func TestLeavingHistoryRefreshesWorkingTree(t *testing.T) {
 	m := model{screen: "history"}
 	updated, cmd := m.handleHistoryKey(tea.KeyMsg{Type: tea.KeyEsc})
