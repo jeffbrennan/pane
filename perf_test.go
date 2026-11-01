@@ -143,7 +143,11 @@ func TestPerf(t *testing.T) {
 	})
 	measurePerf(t, scenario, "resize_height_ns", func() { _, _ = m.Update(tea.WindowSizeMsg{Width: 160, Height: 51}) })
 	measurePerf(t, scenario, "resize_width_ns", func() { _, _ = m.Update(tea.WindowSizeMsg{Width: 150, Height: 50}) })
-	measurePerf(t, scenario, "resize_width_apply_ns", func() { _, _ = m.Update(resizeRebuild{request: m.resizeRequest}) })
+	resized, _ := m.Update(tea.WindowSizeMsg{Width: 150, Height: 50})
+	resizeModel, _ := resized.(model)
+	measurePerfOnce(t, scenario, "resize_width_apply_ns", func() {
+		resizeModel.Update(resizeRebuild{request: resizeModel.resizeRequest})
+	})
 	entries := view.fileEntries()
 	measurePerf(t, scenario, "picker_entries_ns", func() {
 		view.picker.cache = nil
@@ -388,6 +392,15 @@ func measurePerf(t *testing.T, scenario, metric string, f func()) {
 	}
 	sort.Slice(values, func(i, j int) bool { return values[i] < values[j] })
 	recordPerf(t, scenario, metric, values[len(values)/2])
+}
+
+// measurePerfOnce records a single run for work that mutates state and so
+// cannot be repeated without changing what it measures.
+func measurePerfOnce(t *testing.T, scenario, metric string, f func()) {
+	t.Helper()
+	start := time.Now()
+	f()
+	recordPerf(t, scenario, metric, time.Since(start).Nanoseconds())
 }
 
 func recordPerf(t *testing.T, scenario, metric string, value int64) {

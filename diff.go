@@ -7,8 +7,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-
-	"github.com/mattn/go-runewidth"
 )
 
 var hunkHeader = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`)
@@ -67,11 +65,15 @@ func displayPath(path string, shortened bool) string {
 }
 
 func buildRowsDisplay(changes []change, width int, wrap bool, expanded map[string]bool, gutterWidth int, shortPaths bool) ([]row, int) {
+	return buildRowsDisplayReuse(changes, width, wrap, expanded, gutterWidth, shortPaths, nil)
+}
+
+func buildRowsDisplayReuse(changes []change, width int, wrap bool, expanded map[string]bool, gutterWidth int, shortPaths bool, reuse []row) ([]row, int) {
 	// Share one line number width across files so the number column stays
 	// put when moving between them.
 	widths := make([]int, len(changes))
 	parallelEach(len(changes), func(i int) {
-		widths[i] = lineNumberWidth(strings.Split(changes[i].diff, "\n"))
+		widths[i] = lineNumberWidthText(changes[i].diff)
 	})
 	for _, width := range widths {
 		gutterWidth = max(gutterWidth, width)
@@ -85,7 +87,12 @@ func buildRowsDisplay(changes []change, width int, wrap bool, expanded map[strin
 	for _, part := range parts {
 		total += len(part)
 	}
-	rows := make([]row, 0, total)
+	var rows []row
+	if cap(reuse) >= total {
+		rows = reuse[:0]
+	} else {
+		rows = make([]row, 0, total+total/64)
+	}
 	for i, part := range parts {
 		rows = append(rows, part...)
 		parts[i] = nil
@@ -129,16 +136,10 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 	deletedFile := strings.Contains(c.diff, "\ndeleted file mode ") && !strings.Contains(c.diff, "\nnew file mode ")
 	deletedLines := 0
 	if deletedFile {
-		inHunk := false
-		for _, line := range strings.Split(c.diff, "\n") {
-			if matchHunkHeader(line) != nil {
-				inHunk = true
-			} else if inHunk && strings.HasPrefix(line, "-") {
-				deletedLines++
-			}
-		}
+		deletedLines = countDeletedLines(c.diff)
 	}
-	lines := strings.Split(strings.TrimSuffix(c.diff, "\n"), "\n")
+	trimmed := strings.TrimSuffix(c.diff, "\n")
+	lineCount := strings.Count(trimmed, "\n") + 1
 	name := displayPath(c.path, shortPaths)
 	if c.oldPath != "" {
 		name = displayPath(c.oldPath, shortPaths)
@@ -199,7 +200,10 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 	oldLine, newLine, hunks := 0, 0, 0
 	inHunk, hasContent := false, false
 	var metadata []string
-	for i, line := range lines {
+	remaining := trimmed
+	for i := 0; i < lineCount; i++ {
+		line, next, _ := strings.Cut(remaining, "\n")
+		remaining = next
 		if match := matchHunkHeader(line); match != nil {
 			oldLine, _ = strconv.Atoi(match[1])
 			newLine, _ = strconv.Atoi(match[3])
@@ -256,25 +260,31 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 			kind = 'd'
 		}
 		text := clean(strings.ReplaceAll(line[1:], "\t", "    "))
-		parts := []string{text}
-		if wrap {
-			parts = wrapLine(text, max(1, width-gutterWidth-3))
+		lineSyntax, syntaxOK := newSyntax[number]
+		if kind == '-' || kind == 'd' {
+			lineSyntax, syntaxOK = oldSyntax[number]
 		}
-		offset := 0
-		byteOffset := 0
-		for _, part := range parts {
-			lineSyntax, syntaxOK := newSyntax[number]
-			if kind == '-' || kind == 'd' {
-				lineSyntax, syntaxOK = oldSyntax[number]
-			}
+		syntaxMatches := syntaxOK && lineSyntax.text == text
+		limit := max(1, width-gutterWidth-3)
+		// A line that already fits stays one row, which avoids allocating a
+		// parts slice for the common case.
+		if !wrap || (printableASCII(text) && len(text) <= limit) {
 			var spans []syntaxSpan
-			if syntaxOK && lineSyntax.text == text {
-				spans = clipSyntax(lineSyntax.spans, byteOffset, byteOffset+len(part))
+			if syntaxMatches {
+				spans = clipSyntax(lineSyntax.spans, 0, len(text))
 			}
-			rows = append(rows, (row{path: c.path, offset: offset, target: target, sourceLine: number, text: part, kind: kind, spans: newRowSpans(spans, nil, nil), syntaxPresent: spans != nil}).withLineNumber(i))
-			byteOffset += len(part)
-			for _, r := range part {
-				offset += runewidth.RuneWidth(r)
+			rows = append(rows, (row{path: c.path, target: target, sourceLine: number, text: text, kind: kind, spans: newRowSpans(spans, nil, nil), syntaxPresent: spans != nil}).withLineNumber(i))
+		} else {
+			offset := 0
+			byteOffset := 0
+			for _, part := range wrapLine(text, limit) {
+				var spans []syntaxSpan
+				if syntaxMatches {
+					spans = clipSyntax(lineSyntax.spans, byteOffset, byteOffset+len(part))
+				}
+				rows = append(rows, (row{path: c.path, offset: offset, target: target, sourceLine: number, text: part, kind: kind, spans: newRowSpans(spans, nil, nil), syntaxPresent: spans != nil}).withLineNumber(i))
+				byteOffset += len(part)
+				offset += stringWidth(part)
 			}
 		}
 		hasContent = true
@@ -290,16 +300,223 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 			if (text == "New empty file" || text == "Deleted empty file") && containsBinary(metadata) {
 				continue
 			}
-			rows = append(rows, (row{path: c.path, text: "  " + text, kind: '@', submodule: submodule}).withLineNumber(len(lines)))
+			rows = append(rows, (row{path: c.path, text: "  " + text, kind: '@', submodule: submodule}).withLineNumber(lineCount))
 		}
 	} else {
 		for _, text := range metadata {
 			if strings.HasPrefix(text, "old mode ") || strings.HasPrefix(text, "new mode ") {
-				rows = append(rows, (row{path: c.path, text: "  " + text, kind: '@'}).withLineNumber(len(lines)))
+				rows = append(rows, (row{path: c.path, text: "  " + text, kind: '@'}).withLineNumber(lineCount))
 			}
 		}
 	}
 	return rows
+}
+
+// rowSplice replaces src[at:end] with rows when a file is re-wrapped.
+type rowSplice struct {
+	at, end int
+	rows    []row
+}
+
+// planReflow re-wraps only the lines whose cells change at a new content width.
+// Rows keep their identity otherwise, so a resize touches a small fraction of
+// the rows it would rebuild. It reports false when a row carries syntax spans,
+// which can only be regenerated from the raw diff.
+func planReflow(src []row, contentWidth, gutterWidth int, wrap bool) ([]rowSplice, bool) {
+	limit := max(1, contentWidth-gutterWidth-3)
+	headerLimit := max(1, contentWidth-5)
+	var splices []rowSplice
+	for i := 0; i < len(src); {
+		r := src[i]
+		if r.spans != nil || r.syntaxPresent {
+			return nil, false
+		}
+		switch r.kind {
+		case 'f', 'F':
+			end := i + 1
+			for end < len(src) && (src[end].kind == 'f' || src[end].kind == 'F') {
+				if src[end].spans != nil || src[end].syntaxPresent {
+					return nil, false
+				}
+				end++
+			}
+			if end == i+1 && len(r.text) <= headerLimit {
+				i = end
+				continue
+			}
+			text := r.text
+			if end > i+1 {
+				var joined strings.Builder
+				for k := i; k < end; k++ {
+					joined.WriteString(strings.TrimPrefix(src[k].text, " "))
+				}
+				text = joined.String()
+			}
+			splices = append(splices, rowSplice{at: i, end: end, rows: wrapHeaderRows(r, text, headerLimit)})
+			i = end
+		case ' ', '+', '-', 'd':
+			if !wrap {
+				i++
+				continue
+			}
+			end := i + 1
+			for end < len(src) && src[end].offset > 0 {
+				if src[end].spans != nil || src[end].syntaxPresent {
+					return nil, false
+				}
+				end++
+			}
+			if end == i+1 && len(r.text) <= limit {
+				i = end
+				continue
+			}
+			text := r.text
+			if end > i+1 {
+				var joined strings.Builder
+				for k := i; k < end; k++ {
+					joined.WriteString(src[k].text)
+				}
+				text = joined.String()
+			}
+			splices = append(splices, rowSplice{at: i, end: end, rows: wrapContentRows(r, text, limit)})
+			i = end
+		default:
+			i++
+		}
+	}
+	return splices, true
+}
+
+func wrapContentRows(base row, text string, limit int) []row {
+	parts := wrapLine(text, limit)
+	rows := make([]row, 0, len(parts))
+	offset := 0
+	for _, part := range parts {
+		clone := base
+		clone.text, clone.offset = part, offset
+		rows = append(rows, clone)
+		offset += stringWidth(part)
+	}
+	return rows
+}
+
+func wrapHeaderRows(base row, text string, limit int) []row {
+	parts := wrapLine(text, limit)
+	rows := make([]row, 0, len(parts))
+	offset := 0
+	for _, part := range parts {
+		clone := base
+		clone.text, clone.offset, clone.kind = " "+part, offset, 'f'
+		if offset > 0 {
+			clone.kind = 'F'
+		}
+		rows = append(rows, clone)
+		offset += max(1, stringWidth(part))
+	}
+	return rows
+}
+
+// filePlan is the row output for one changed file after a width change: either
+// the existing rows plus the splices that re-wrap them, or a rebuilt part.
+type filePlan struct {
+	part    []row
+	splices []rowSplice
+	rebuild bool
+}
+
+func (p filePlan) length() int {
+	length := len(p.part)
+	for _, splice := range p.splices {
+		length += len(splice.rows) - (splice.end - splice.at)
+	}
+	return length
+}
+
+// directions reports whether the plan can be written over its own rows from the
+// front or from the back. Only the splices change the row count, so comparing
+// the running totals at each splice is enough.
+func (p filePlan) directions() (forward, backward bool) {
+	forward, backward = true, true
+	input, output, previous := 0, 0, 0
+	for _, splice := range p.splices {
+		input += splice.end - previous
+		output += splice.at - previous + len(splice.rows)
+		previous = splice.end
+		forward = forward && output <= input
+		backward = backward && output >= input
+	}
+	return forward, backward
+}
+
+// assembleRowPlans joins per-file plans into one row slice. Reusing the old
+// rows is only safe while the destination stays behind (or ahead of) every row
+// that has not been read yet, so it picks a direction that holds or allocates.
+func assembleRowPlans(plans []filePlan, reuse []row) []row {
+	total := 0
+	forward, backward := true, true
+	for _, plan := range plans {
+		total += plan.length()
+		planForward, planBackward := plan.directions()
+		forward = forward && planForward
+		backward = backward && planBackward
+	}
+	reverse := false
+	var rows []row
+	if cap(reuse) >= total && (forward || backward) {
+		rows = reuse[:total]
+		reverse = !forward
+	} else {
+		rows = make([]row, total)
+	}
+	at := 0
+	if reverse {
+		offsets := make([]int, len(plans))
+		for i, plan := range plans {
+			offsets[i] = at
+			at += plan.length()
+		}
+		for i := len(plans) - 1; i >= 0; i-- {
+			writeRowPlan(rows, plans[i], offsets[i], true)
+		}
+		return rows
+	}
+	for _, plan := range plans {
+		writeRowPlan(rows, plan, at, false)
+		at += plan.length()
+	}
+	return rows
+}
+
+// writeRowPlan copies one plan's rows into dst starting at at. Writing
+// backwards keeps a growing file from overwriting rows it has not read yet.
+func writeRowPlan(dst []row, plan filePlan, at int, reverse bool) {
+	if len(plan.splices) == 0 {
+		copy(dst[at:], plan.part)
+		return
+	}
+	type piece struct {
+		offset int
+		rows   []row
+	}
+	pieces := make([]piece, 0, 2*len(plan.splices)+1)
+	previous, offset := 0, 0
+	for _, splice := range plan.splices {
+		pieces = append(pieces, piece{offset, plan.part[previous:splice.at]})
+		offset += splice.at - previous
+		pieces = append(pieces, piece{offset, splice.rows})
+		offset += len(splice.rows)
+		previous = splice.end
+	}
+	pieces = append(pieces, piece{offset, plan.part[previous:]})
+	if reverse {
+		for i := len(pieces) - 1; i >= 0; i-- {
+			copy(dst[at+pieces[i].offset:], pieces[i].rows)
+		}
+		return
+	}
+	for _, p := range pieces {
+		copy(dst[at+p.offset:], p.rows)
+	}
 }
 
 func indexRowHeaders(rows []row) {
@@ -323,6 +540,41 @@ func containsBinary(metadata []string) bool {
 		}
 	}
 	return false
+}
+
+func countDeletedLines(diff string) int {
+	count, inHunk := 0, false
+	for rest := diff; rest != ""; {
+		line, next, _ := strings.Cut(rest, "\n")
+		rest = next
+		if matchHunkHeader(line) != nil {
+			inHunk = true
+		} else if inHunk && strings.HasPrefix(line, "-") {
+			count++
+		}
+	}
+	return count
+}
+
+func lineNumberWidthText(diff string) int {
+	largest := 0
+	for rest := diff; rest != ""; {
+		line, next, _ := strings.Cut(rest, "\n")
+		rest = next
+		match := matchHunkHeader(line)
+		if match == nil {
+			continue
+		}
+		for _, pair := range [][2]string{{match[1], match[2]}, {match[3], match[4]}} {
+			start, _ := strconv.Atoi(pair[0])
+			count := 1
+			if pair[1] != "" {
+				count, _ = strconv.Atoi(pair[1])
+			}
+			largest = max(largest, start+count-1)
+		}
+	}
+	return max(3, len(strconv.Itoa(largest)))
 }
 
 func lineNumberWidth(lines []string) int {

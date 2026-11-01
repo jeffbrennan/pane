@@ -138,6 +138,145 @@ func TestWorkingTreeRefreshMessageSplicesRows(t *testing.T) {
 	}
 }
 
+func TestWidthReflowMatchesFullRebuild(t *testing.T) {
+	changes := []change{
+		{path: "short.go", diff: "@@ -0,0 +1 @@\n+short\n"},
+		{path: "long.go", diff: "@@ -0,0 +1 @@\n+" + strings.Repeat("abcdefghij", 20) + "\n"},
+		{path: "wrapped.go", diff: "@@ -0,0 +1 @@\n+" + strings.Repeat("wxyz", 50) + "\n"},
+		{path: "tabs.go", diff: "@@ -0,0 +1,3 @@\n+\tif x {\n+\t\treturn\n+\t}\n"},
+		{path: "wide.go", diff: "@@ -0,0 +1 @@\n+日本語" + strings.Repeat("コード", 30) + "\n"},
+		{
+			path:    strings.Repeat("deep/", 20) + "renamed.go",
+			oldPath: strings.Repeat("deep/", 18) + "renamed.go",
+			diff:    "@@ -1,2 +1,2 @@\n-a\n+b\n c\n",
+		},
+		{
+			path: "deleted.go",
+			diff: "diff --git a/deleted.go b/deleted.go\ndeleted file mode 100644\n--- a/deleted.go\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-x\n-y\n",
+		},
+	}
+	for _, wrap := range []bool{true, false} {
+		for _, from := range []int{220, 160, 96} {
+			for _, to := range []int{260, 150, 110, 72} {
+				m := model{width: from, height: 20, wrap: wrap, snapshot: snapshot{unstaged: changes}}
+				m.rebuild()
+				oldWidth := m.diffContentWidth()
+				m.width = to
+				m.reflowRows(oldWidth)
+				want := model{width: to, height: 20, wrap: wrap, snapshot: snapshot{unstaged: changes}}
+				want.rebuild()
+				if !reflect.DeepEqual(m.rows, want.rows) {
+					t.Fatalf("wrap=%v width %d->%d reflow differs from full rebuild", wrap, from, to)
+				}
+			}
+		}
+	}
+}
+
+// Syntax spans cannot be rebuilt from row text, so a file with them falls back
+// to the full path and must still match a full rebuild.
+func TestWidthReflowMatchesFullRebuildWithSyntax(t *testing.T) {
+	hunk := "@@ -1,3 +1,3 @@\n package main\n-var old = " + strings.Repeat("x", 120) + "\n+var new = " + strings.Repeat("y", 120) + "\n"
+	full := "diff --git a/file.go b/file.go\n" + hunk
+	changes := []change{
+		{path: "file.go", diff: hunk, syntaxDiff: full},
+		{path: "plain.go", diff: "@@ -0,0 +1 @@\n+short\n"},
+	}
+	m := model{width: 200, height: 20, wrap: true, snapshot: snapshot{unstaged: changes}}
+	m.rebuild()
+	syntaxRows := false
+	for _, r := range m.rows {
+		syntaxRows = syntaxRows || r.spans != nil
+	}
+	if !syntaxRows {
+		t.Fatal("expected syntax spans to exercise the rebuild fallback")
+	}
+	if _, usable := planReflow(m.rows, m.diffContentWidth(), m.gutterWidth, true); usable {
+		t.Fatal("planReflow accepted rows carrying syntax spans")
+	}
+	oldWidth := m.diffContentWidth()
+	m.width = 90
+	m.reflowRows(oldWidth)
+	want := model{width: 90, height: 20, wrap: true, snapshot: snapshot{unstaged: changes}}
+	want.rebuild()
+	if !reflect.DeepEqual(m.rows, want.rows) {
+		t.Fatal("syntax file reflow differs from full rebuild")
+	}
+}
+
+func TestWidthReflowKeepsShortFileRows(t *testing.T) {
+	changes := []change{
+		{path: "short.go", diff: "@@ -0,0 +1 @@\n+short\n"},
+		{path: "long.go", diff: "@@ -0,0 +1 @@\n+" + strings.Repeat("abcdefghij", 20) + "\n"},
+	}
+	m := model{width: 200, height: 20, wrap: true, snapshot: snapshot{unstaged: changes}}
+	m.rebuild()
+	oldWidth := m.diffContentWidth()
+	short := m.rows[1]
+	m.width = 150
+	m.reflowRows(oldWidth)
+	if m.rows[1] != short {
+		t.Fatal("short file's unwrapped rows changed with the width")
+	}
+}
+
+func TestAssembleRowPlansReusesBacking(t *testing.T) {
+	build := func(n int) []row {
+		rows := make([]row, n)
+		for i := range rows {
+			rows[i] = row{text: "r" + string(rune('a'+i%26)), kind: ' ', lineIndex: int32(i)}
+		}
+		return rows
+	}
+	// Each plan covers four source rows and replaces the middle two with a
+	// different number of rows, so a positive grow widens the file.
+	newPlans := func(backing []row, grow []int) []filePlan {
+		var plans []filePlan
+		for start, index := 0, 0; start+4 <= len(backing); start, index = start+4, index+1 {
+			part := backing[start : start+4]
+			if index%3 == 2 {
+				plans = append(plans, filePlan{part: part})
+				continue
+			}
+			replacement := make([]row, 2+grow[index%len(grow)])
+			for i := range replacement {
+				replacement[i] = row{text: part[1].text + "-new", kind: '+', lineIndex: part[1].lineIndex}
+			}
+			plans = append(plans, filePlan{part: part, splices: []rowSplice{{at: 1, end: 3, rows: replacement}}})
+		}
+		return plans
+	}
+	assembleForward := func(plans []filePlan) []row {
+		var rows []row
+		for _, plan := range plans {
+			previous := 0
+			for _, splice := range plan.splices {
+				rows = append(rows, plan.part[previous:splice.at]...)
+				rows = append(rows, splice.rows...)
+				previous = splice.end
+			}
+			rows = append(rows, plan.part[previous:]...)
+		}
+		return rows
+	}
+	for _, grow := range [][]int{{-1}, {0}, {2}, {3}, {2, -2}, {3, -1}} {
+		for _, spare := range []int{0, 64} {
+			reuse := build(40)
+			if spare > 0 {
+				grown := make([]row, len(reuse), len(reuse)+spare)
+				copy(grown, reuse)
+				reuse = grown
+			}
+			plans := newPlans(reuse, grow)
+			want := assembleForward(plans)
+			got := assembleRowPlans(plans, reuse)
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("grow=%v spare=%d: assembled rows differ from a forward build", grow, spare)
+			}
+		}
+	}
+}
+
 func TestWorkingTreeGutterWidthFollowsSelectedChanges(t *testing.T) {
 	m := model{width: 80, height: 10, wrap: true, snapshot: snapshot{
 		unstaged: []change{{path: "one", diff: "@@ -0,0 +1 @@\n+first\n"}},

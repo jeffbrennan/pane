@@ -56,6 +56,7 @@ type model struct {
 	syntaxWarmPath        string
 	syntaxWarmCommit      string
 	tickStopped           bool
+	resizeContentWidth    int
 	resizeRequest         int
 	pos, horizontal       int
 	viewTop               int
@@ -424,12 +425,14 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.WindowSizeMsg:
 		widthChanged := m.width != msg.Width
+		oldContentWidth := m.diffContentWidth()
 		m.width, m.height = msg.Width, msg.Height
 		if widthChanged {
 			m.resizeRequest++
 			if max(len(m.rows), len(m.history.rows)) >= 50000 {
 				request := m.resizeRequest
-				cmd := tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg { return resizeRebuild{request} })
+				m.resizeContentWidth = oldContentWidth
+				cmd := tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg { return resizeRebuild{request: request} })
 				m.revealHistorySelection()
 				if m.modal == "files" {
 					m = m.inDiff(func(view *model) { view.revealPickerSelection() })
@@ -455,8 +458,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.resizeRequest++
-		m.rebuild()
-		m.rebuildCommit()
+		m.reflowWidth(m.resizeContentWidth)
 		return m, nil
 	case tick:
 		var cmd tea.Cmd
@@ -1229,7 +1231,7 @@ func (m *model) rebuildRows(previous func(path string) ([]row, bool)) {
 	if previous != nil && gutterWidth == m.gutterWidth {
 		rows = spliceRows(changes, *m, previous, gutterWidth)
 	} else {
-		rows, gutterWidth = buildRowsDisplay(changes, m.diffContentWidth(), m.wrap, m.expandedDeleted, m.gutterFloor, m.shortPaths)
+		rows, gutterWidth = buildRowsDisplayReuse(changes, m.diffContentWidth(), m.wrap, m.expandedDeleted, m.gutterFloor, m.shortPaths, m.rows)
 	}
 	m.gutterWidth = gutterWidth
 	m.previousChanges = nil
@@ -1259,6 +1261,142 @@ func (m *model) rebuildRows(previous func(path string) ([]row, bool)) {
 	}
 	m.clamp()
 	m.viewTop = m.viewportStart(max(1, m.height-2))
+}
+
+func (m *model) reflowWidth(oldContentWidth int) {
+	if m.screen == "sequence" {
+		m.rebuildSequence()
+		return
+	}
+	if m.screen == "commit" || m.screen == "base" {
+		view := m.commitModel()
+		view.reflowRows(oldContentWidth)
+		m.history.rows, m.history.pos, m.history.viewTop = view.rows, view.pos, view.viewTop
+		m.history.gutterWidth = view.gutterWidth
+		return
+	}
+	m.reflowRows(oldContentWidth)
+}
+
+// reflowRows rebuilds only files whose wrapping changes at the new width.
+func (m *model) reflowRows(oldContentWidth int) {
+	var anchor row
+	if len(m.rows) > 0 && m.pos < len(m.rows) {
+		anchor = m.rows[m.pos]
+	}
+	changes := m.snapshot.unstaged
+	if m.staged {
+		changes = m.snapshot.staged
+	}
+	changes = m.applySyntaxDemand(contextKey{commit: m.contextCommit, staged: m.staged, base: m.contextBase}, changes)
+	byPath := make(map[string][]row, len(changes))
+	for start := 0; start < len(m.rows); {
+		begin := start
+		if m.rows[start].kind == 's' {
+			begin++
+		}
+		if begin >= len(m.rows) {
+			break
+		}
+		path := m.rows[begin].path
+		end := begin + 1
+		for end < len(m.rows) && m.rows[end].path == path && m.rows[end].kind != 's' {
+			end++
+		}
+		byPath[path] = m.rows[start:end]
+		start = end
+	}
+	width := m.diffContentWidth()
+	plans := make([]filePlan, len(changes))
+	parallelEach(len(changes), func(i int) {
+		part, ok := byPath[changes[i].path]
+		if oldContentWidth > 0 && ok && !fileNeedsReflow(part, width, m.gutterWidth, m.wrap) {
+			plans[i].part = part
+			return
+		}
+		if oldContentWidth > 0 && ok {
+			if splices, usable := planReflow(part, width, m.gutterWidth, m.wrap); usable {
+				plans[i].part, plans[i].splices = part, splices
+				return
+			}
+		}
+		plans[i].rebuild = true
+	})
+	type rebuild struct {
+		index  int
+		change change
+	}
+	var rebuilds []rebuild
+	for i := range changes {
+		if plans[i].rebuild {
+			rebuilds = append(rebuilds, rebuild{i, changes[i]})
+		}
+	}
+	parallelEach(len(rebuilds), func(i int) {
+		r := rebuilds[i]
+		plans[r.index].part = changeRows(r.change, r.index > 0, width, m.wrap, m.expandedDeleted[r.change.path], m.gutterWidth, m.shortPaths)
+	})
+	rows := assembleRowPlans(plans, m.rows)
+	if len(rows) > 0 && rows[0].kind == 's' {
+		rows = rows[1:]
+	}
+	rows = m.localContextRows(rows, changes)
+	rows = m.foldContextFiles(rows)
+	indexRowHeaders(rows)
+	m.rows = rows
+	m.pos = 0
+	if anchor.path != "" {
+		best := -1
+		for i, r := range rows {
+			if r.path != anchor.path {
+				continue
+			}
+			if r.lineNumber() < anchor.lineNumber() || (r.lineNumber() == anchor.lineNumber() && r.offset <= anchor.offset) {
+				best = i
+				continue
+			}
+			if best < 0 {
+				best = i
+			}
+			break
+		}
+		if best >= 0 {
+			m.pos = best
+		}
+	}
+	m.clamp()
+	m.viewTop = m.viewportStart(max(1, m.height-2))
+}
+
+func fileNeedsReflow(rows []row, contentWidth, gutterWidth int, wrap bool) bool {
+	// Every UTF-8 sequence is at least as wide in bytes as it is in cells, so a
+	// row shorter than the limit cannot overflow and needs no width pass.
+	limit := contentWidth - gutterWidth - 3
+	for _, r := range rows {
+		if r.offset > 0 {
+			return true
+		}
+		switch r.kind {
+		case 'f', 'F':
+			if len(r.text) <= contentWidth-3 {
+				continue
+			}
+			if stringWidth(r.text)+3 > contentWidth {
+				return true
+			}
+		case ' ', '+', '-', 'd':
+			if !wrap {
+				continue
+			}
+			if len(r.text) <= limit {
+				continue
+			}
+			if stringWidth(r.text) > limit {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // fileRows returns a file's rows plus the spacer that preceded it.
@@ -1369,6 +1507,9 @@ func (m *model) toggleDeletedFile() {
 }
 
 func clean(s string) string {
+	if printableASCII(s) {
+		return s
+	}
 	return strings.Map(func(r rune) rune {
 		if r == '\t' {
 			return ' '
@@ -1383,6 +1524,17 @@ func clean(s string) string {
 func wrapLine(s string, width int) []string {
 	if s == "" {
 		return []string{""}
+	}
+	if width > 0 && printableASCII(s) {
+		if len(s) <= width {
+			return []string{s}
+		}
+		parts := make([]string, 0, (len(s)+width-1)/width)
+		for len(s) > width {
+			parts = append(parts, s[:width])
+			s = s[width:]
+		}
+		return append(parts, s)
 	}
 	var parts []string
 	start, w := 0, 0
