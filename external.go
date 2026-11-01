@@ -112,7 +112,7 @@ func copyToClipboard(text string) error {
 		cmd := exec.Command(path, args[1:]...)
 		cmd.Stdin = strings.NewReader(text)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			return git.GitError(out, err)
+			return git.CommandError(out, err)
 		}
 		return nil
 	}

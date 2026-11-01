@@ -9,20 +9,20 @@ import (
 func (r Repo) AmendMessage(hash, message string) (string, error) {
 	out, err := r.Command("rev-parse", "--verify", "HEAD")
 	if err != nil {
-		return "", GitError(out, err)
+		return "", CommandError(out, err)
 	}
 	if strings.TrimSpace(string(out)) != hash {
 		return "", fmt.Errorf("HEAD changed; refresh history and try again")
 	}
 	out, err = r.Command("remote")
 	if err != nil {
-		return "", GitError(out, err)
+		return "", CommandError(out, err)
 	}
 	for _, remote := range strings.Fields(string(out)) {
 		urls := []string{remote}
 		pushURLs, urlErr := r.Command("remote", "get-url", "--push", "--all", remote)
 		if urlErr != nil {
-			return "", fmt.Errorf("cannot verify push URLs for remote %q: %w", remote, GitError(pushURLs, urlErr))
+			return "", fmt.Errorf("cannot verify push URLs for remote %q: %w", remote, CommandError(pushURLs, urlErr))
 		}
 		urls = append(urls, strings.Split(strings.TrimSuffix(string(pushURLs), "\n"), "\n")...)
 		for _, url := range urls {
@@ -37,7 +37,7 @@ func (r Repo) AmendMessage(hash, message string) (string, error) {
 	}
 	out, err = r.commandInput(strings.NewReader(message), "commit", "--amend", "--only", "--file=-")
 	if err != nil {
-		return "", GitError(out, err)
+		return "", CommandError(out, err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -45,7 +45,7 @@ func (r Repo) AmendMessage(hash, message string) (string, error) {
 func (r Repo) verifyUnpublished(hash, remote, url string) error {
 	refs, err := r.Command("ls-remote", "--refs", "--heads", "--tags", url)
 	if err != nil {
-		return fmt.Errorf("cannot verify remote %q: %w", remote, GitError(refs, err))
+		return fmt.Errorf("cannot verify remote %q: %w", remote, CommandError(refs, err))
 	}
 	for _, line := range strings.Split(strings.TrimSpace(string(refs)), "\n") {
 		fields := strings.Fields(line)
@@ -62,7 +62,7 @@ func (r Repo) verifyUnpublished(hash, remote, url string) error {
 			return fmt.Errorf("commit is already reachable from remote %q", remote)
 		}
 		if exit, ok := ancestorErr.(*exec.ExitError); !ok || exit.ExitCode() != 1 {
-			return fmt.Errorf("cannot verify remote %q: %w", remote, GitError(out, ancestorErr))
+			return fmt.Errorf("cannot verify remote %q: %w", remote, CommandError(out, ancestorErr))
 		}
 	}
 	return nil

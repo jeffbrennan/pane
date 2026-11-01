@@ -17,7 +17,7 @@ func (r Repo) Blame(hash, path string, line int) (string, int, error) {
 		out, err = r.Command(args...)
 	}
 	if err != nil {
-		return "", 0, GitError(out, err)
+		return "", 0, CommandError(out, err)
 	}
 	fields := strings.Fields(strings.SplitN(string(out), "\n", 2)[0])
 	if len(fields) < 3 {

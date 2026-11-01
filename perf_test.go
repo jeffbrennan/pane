@@ -178,11 +178,11 @@ func TestPerf(t *testing.T) {
 	})
 	if len(changes) > 0 {
 		c := changes[0]
-		key := contextKey{commit: view.history.current.Hash, path: c.Path}
+		key := git.Context{Commit: view.history.current.Hash, Path: c.Path}
 		demand := view
-		demand.syntaxDemand = &syntaxDemand{loaded: make(map[contextKey]demandSyntax), pending: make(map[contextKey]bool)}
+		demand.syntaxDemand = &syntaxDemand{loaded: make(map[git.Context]demandSyntax), pending: make(map[git.Context]bool)}
 		measurePerf(t, scenario, "syntax_demand_apply_ns", func() {
-			demand.syntaxDemand.loaded = make(map[contextKey]demandSyntax)
+			demand.syntaxDemand.loaded = make(map[git.Context]demandSyntax)
 			demand.applySyntaxDemandLoaded(syntaxDemandLoaded{results: []demandResult{{key: key, diff: c.Diff, syntaxDiff: c.Diff}}})
 		})
 	}
@@ -352,14 +352,14 @@ func measureSyntaxPerf(t *testing.T) {
 	}
 	var commands atomic.Int64
 	repo.CommandHook = func([]string) { commands.Add(1) }
-	key := contextKey{commit: "HEAD"}
-	measurePerf(t, "synthetic-syntax", "syntax_load_ns", func() { _ = repo.SyntaxDiffs(changes, key.gitContext()) })
+	key := git.Context{Commit: "HEAD"}
+	measurePerf(t, "synthetic-syntax", "syntax_load_ns", func() { _ = repo.SyntaxDiffs(changes, key) })
 	commands.Store(0)
-	_ = repo.SyntaxDiffs(changes, key.gitContext())
+	_ = repo.SyntaxDiffs(changes, key)
 	recordPerf(t, "synthetic-syntax", "syntax_git_commands", commands.Load())
 	targets := make([]syntaxTarget, 3)
 	for i := range targets {
-		targets[i] = syntaxTarget{key: contextKey{commit: "HEAD", path: changes[i].Path}, change: changes[i]}
+		targets[i] = syntaxTarget{key: git.Context{Commit: "HEAD", Path: changes[i].Path}, change: changes[i]}
 	}
 	m := model{repo: repo, screen: "commit", history: historyState{current: git.CommitInfo{Hash: "HEAD"}}}
 	measurePerf(t, "synthetic-syntax", "demand_load_ns", func() { _ = m.loadSyntaxTargets(targets)() })

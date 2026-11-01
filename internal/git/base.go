@@ -31,7 +31,7 @@ func (r Repo) MergeBase(revision string) (string, error) {
 	}
 	out, err := r.Command("merge-base", commit.Hash, "HEAD")
 	if err != nil {
-		return "", fmt.Errorf("no common ancestor with %s: %w", revision, GitError(out, err))
+		return "", fmt.Errorf("no common ancestor with %s: %w", revision, CommandError(out, err))
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -39,7 +39,7 @@ func (r Repo) MergeBase(revision string) (string, error) {
 func (r Repo) untrackedChanges() ([]Change, error) {
 	out, err := r.Command("ls-files", "--others", "--exclude-standard", "-z")
 	if err != nil {
-		return nil, GitError(out, err)
+		return nil, CommandError(out, err)
 	}
 	var untracked []string
 	for _, path := range bytes.Split(out, []byte{0}) {

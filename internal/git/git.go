@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -123,7 +124,7 @@ func (r Repo) CommandStdout(args ...string) ([]byte, error) {
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, GitError(stderr.Bytes(), err)
+		return nil, CommandError(stderr.Bytes(), err)
 	}
 	return out, nil
 }
@@ -167,7 +168,7 @@ func (r Repo) applyPatch(patch string, args ...string) error {
 	args = append(args, "--whitespace=nowarn", "-")
 	out, err := r.commandInput(strings.NewReader(patch), args...)
 	if err != nil {
-		return GitError(out, err)
+		return CommandError(out, err)
 	}
 	return nil
 }
@@ -242,7 +243,7 @@ func (r Repo) diffsForChanges(input []Change, staged bool) ([]Change, error) {
 	}
 	out, err := r.Command(args...)
 	if err != nil {
-		return nil, GitError(out, err)
+		return nil, CommandError(out, err)
 	}
 	patches := splitPatch(string(out))
 	changes, err := parallelDiffs(paths, func(path string) (string, error) {
@@ -369,7 +370,7 @@ func (r Repo) diffPaths(path, oldPath string, staged bool) (string, error) {
 	}
 	out, err := r.Command(args...)
 	if err != nil {
-		return "", GitError(out, err)
+		return "", CommandError(out, err)
 	}
 	if len(out) == 0 {
 		if r.IgnoreSpace {
@@ -395,7 +396,7 @@ func (r Repo) untrackedDiff(path string) (string, error) {
 	out, err := r.Command(args...)
 	if err != nil {
 		if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 {
-			return "", GitError(out, err)
+			return "", CommandError(out, err)
 		}
 	}
 	return string(out), nil
@@ -411,7 +412,7 @@ func (r Repo) StageChange(c Change, staged bool) error {
 		if staged {
 			out, err := r.Command("ls-files", "-z", "--", c.OldPath)
 			if err != nil {
-				return GitError(out, err)
+				return CommandError(out, err)
 			}
 			if len(out) > 0 {
 				return fmt.Errorf("rename source has separate staged changes; unstage it outside pane")
@@ -429,7 +430,7 @@ func (r Repo) StageChange(c Change, staged bool) error {
 		out, err = r.Command(append([]string{"restore", "--staged", "--"}, paths...)...)
 	}
 	if err != nil {
-		return GitError(out, err)
+		return CommandError(out, err)
 	}
 	return nil
 }
@@ -437,7 +438,7 @@ func (r Repo) StageChange(c Change, staged bool) error {
 func (r Repo) Action(args ...string) (string, error) {
 	out, err := r.Command(args...)
 	if err != nil {
-		return "", GitError(out, err)
+		return "", CommandError(out, err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -447,31 +448,54 @@ func (r Repo) Commit(message string) (string, error) {
 	if err != nil {
 		exit, ok := err.(*exec.ExitError)
 		if !ok || exit.ExitCode() != 1 {
-			return "", GitError(out, err)
+			return "", CommandError(out, err)
 		}
 	} else {
 		conflicts, conflictErr := r.Command("diff", "--name-only", "--diff-filter=U", "-z")
 		if conflictErr != nil {
-			return "", GitError(conflicts, conflictErr)
+			return "", CommandError(conflicts, conflictErr)
 		}
 		if len(conflicts) > 0 {
 			return "", fmt.Errorf("resolve merge conflicts outside pane before committing")
 		}
 		out, err = r.Command("add", "--all")
 		if err != nil {
-			return "", GitError(out, err)
+			return "", CommandError(out, err)
 		}
 	}
 	out, err = r.commandInput(strings.NewReader(message), "commit", "--file=-")
 	if err != nil {
-		return "", GitError(out, err)
+		return "", CommandError(out, err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
 
-func GitError(out []byte, err error) error {
+func CommandError(out []byte, err error) error {
 	if msg := strings.TrimSpace(string(out)); msg != "" {
 		return fmt.Errorf("%s", msg)
 	}
 	return err
+}
+
+var submoduleHeader = regexp.MustCompile(`^Submodule (.+) ([0-9a-f]+)\.\.\.?([0-9a-f]+)(?: \(([^)]*)\))?:?$`)
+
+// SubmoduleLine parses a submodule summary line into its path and display
+// text.
+func SubmoduleLine(line string) (string, string, bool) {
+	if !strings.HasPrefix(line, "Submodule ") {
+		return "", "", false
+	}
+	if match := submoduleHeader.FindStringSubmatch(line); match != nil {
+		text := "Submodule " + match[2] + " → " + match[3]
+		if match[4] != "" {
+			text += " (" + match[4] + ")"
+		}
+		return match[1], text, true
+	}
+	for _, suffix := range []string{" contains modified content", " contains untracked content"} {
+		if path, ok := strings.CutSuffix(strings.TrimPrefix(line, "Submodule "), suffix); ok {
+			return path, "Submodule" + suffix, true
+		}
+	}
+	return "", "", false
 }

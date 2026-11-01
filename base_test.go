@@ -128,7 +128,7 @@ func TestBaseReviewContextAndRefresh(t *testing.T) {
 	m.width, m.height = 80, 20
 	updated, cmd := m.Update(load(r, m.generation, nil)())
 	m = drainBase(t, updated.(model), cmd)
-	context, err := r.FullContext(contextKey{path: "file", commit: base, base: true}.gitContext(), "", "")
+	context, err := r.FullContext(git.Context{Path: "file", Commit: base, Base: true}, "", "")
 	if err != nil || !strings.Contains(context, "-base") || !strings.Contains(context, "+working change") {
 		t.Fatalf("base context: %q %v", context, err)
 	}

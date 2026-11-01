@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/jeffbrennan/pane/internal/git"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -51,14 +52,14 @@ func (m model) toggleViewedCommit() (tea.Model, tea.Cmd) {
 	}
 	marked := !m.viewed.marked(view.viewIdentity, path, blob)
 	m.viewed.set(view.viewIdentity, path, blob, marked)
-	fileKey := contextKey{path: path, commit: view.contextCommit, staged: false, base: view.contextBase}
+	fileKey := git.Context{Path: path, Commit: view.contextCommit, Staged: false, Base: view.contextBase}
 	if m.generatedHandled == nil {
-		m.generatedHandled = make(map[contextKey]bool)
+		m.generatedHandled = make(map[git.Context]bool)
 	}
 	m.generatedHandled[fileKey] = true
 	if marked {
 		if m.collapsedFiles == nil {
-			m.collapsedFiles = make(map[contextKey]bool)
+			m.collapsedFiles = make(map[git.Context]bool)
 		}
 		m.collapsedFiles[fileKey] = true
 	} else {
@@ -104,14 +105,14 @@ func (m model) toggleViewedSequence() (tea.Model, tea.Cmd) {
 	}
 	marked := !m.viewed.marked(identity, path, blob)
 	m.viewed.set(identity, path, blob, marked)
-	fileKey := contextKey{path: path, commit: m.sequence.commits[index].Hash}
+	fileKey := git.Context{Path: path, Commit: m.sequence.commits[index].Hash}
 	if m.generatedHandled == nil {
-		m.generatedHandled = make(map[contextKey]bool)
+		m.generatedHandled = make(map[git.Context]bool)
 	}
 	m.generatedHandled[fileKey] = true
 	if marked {
 		if m.collapsedFiles == nil {
-			m.collapsedFiles = make(map[contextKey]bool)
+			m.collapsedFiles = make(map[git.Context]bool)
 		}
 		m.collapsedFiles[fileKey] = true
 	} else {

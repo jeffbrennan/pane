@@ -217,7 +217,7 @@ func (m *model) rebuildSequence() {
 			view.collapseGenerated(m.sequence.changes[i])
 			view.seedViewedCollapse(m.sequence.changes[i])
 			m.collapsedFiles, m.generatedHandled = view.collapsedFiles, view.generatedHandled
-			changes := m.applySyntaxDemand(contextKey{commit: m.sequence.commits[i].Hash}, m.sequence.changes[i])
+			changes := m.applySyntaxDemand(git.Context{Commit: m.sequence.commits[i].Hash}, m.sequence.changes[i])
 			files, m.sequence.gutterWidths[i] = buildRowsDisplay(changes, width, m.wrap, expanded, 0, m.shortPaths)
 			if len(files) == 0 {
 				files = append(files, row{kind: '@', text: "  No file changes"})
@@ -343,12 +343,12 @@ func (m model) handleSequenceKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		index := int(m.rows[m.pos].commitIndex)
 		if index < len(m.sequence.commits) {
 			if m.collapsedFiles == nil {
-				m.collapsedFiles = make(map[contextKey]bool)
+				m.collapsedFiles = make(map[git.Context]bool)
 			}
 			if m.generatedHandled == nil {
-				m.generatedHandled = make(map[contextKey]bool)
+				m.generatedHandled = make(map[git.Context]bool)
 			}
-			fileKey := contextKey{commit: m.sequence.commits[index].Hash, path: m.rows[m.pos].path}
+			fileKey := git.Context{Commit: m.sequence.commits[index].Hash, Path: m.rows[m.pos].path}
 			m.generatedHandled[fileKey] = true
 			if key.String() == "h" {
 				m.collapsedFiles[fileKey] = true

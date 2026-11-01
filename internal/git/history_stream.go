@@ -48,7 +48,7 @@ func (s *HistoryStream) start() error {
 			s.done = true
 			return nil
 		}
-		return GitError(out, err)
+		return CommandError(out, err)
 	}
 	args := []string{"log", "-z", "--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00"}
 	if s.since != "" {
@@ -85,7 +85,7 @@ func (s *HistoryStream) finish(kill bool) error {
 	}
 	err := s.cmd.Wait()
 	if err != nil && !kill {
-		return GitError(s.stderr.Bytes(), err)
+		return CommandError(s.stderr.Bytes(), err)
 	}
 	return nil
 }

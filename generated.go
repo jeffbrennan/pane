@@ -14,16 +14,16 @@ func (m *model) collapseGenerated(changes []git.Change) {
 		if !c.Generated {
 			continue
 		}
-		key := contextKey{path: c.Path, commit: m.contextCommit, staged: m.staged, base: m.contextBase}
+		key := git.Context{Path: c.Path, Commit: m.contextCommit, Staged: m.staged, Base: m.contextBase}
 		if m.generatedHandled == nil {
-			m.generatedHandled = make(map[contextKey]bool)
+			m.generatedHandled = make(map[git.Context]bool)
 		}
 		if m.generatedHandled[key] {
 			continue
 		}
 		m.generatedHandled[key] = true
 		if m.collapsedFiles == nil {
-			m.collapsedFiles = make(map[contextKey]bool)
+			m.collapsedFiles = make(map[git.Context]bool)
 		}
 		m.collapsedFiles[key] = true
 	}

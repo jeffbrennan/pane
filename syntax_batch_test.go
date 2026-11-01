@@ -51,15 +51,15 @@ func TestSyntaxDemandBatchesOnlyMatchingContexts(t *testing.T) {
 		t.Fatal("missing fixture changes")
 	}
 	targets := []syntaxTarget{
-		{key: contextKey{commit: "HEAD", path: regular[0].Path}, change: regular[0]},
-		{key: contextKey{commit: "HEAD~1", path: regular[0].Path}, change: regular[0]},
-		{key: contextKey{commit: "HEAD", path: regular[1].Path}, change: regular[1]},
-		{key: contextKey{commit: "HEAD~1", path: regular[1].Path}, change: regular[1]},
+		{key: git.Context{Commit: "HEAD", Path: regular[0].Path}, change: regular[0]},
+		{key: git.Context{Commit: "HEAD~1", Path: regular[0].Path}, change: regular[0]},
+		{key: git.Context{Commit: "HEAD", Path: regular[1].Path}, change: regular[1]},
+		{key: git.Context{Commit: "HEAD~1", Path: regular[1].Path}, change: regular[1]},
 	}
 	want := make([]string, len(targets))
 	for i, target := range targets {
 		var err error
-		want[i], err = r.FullContext(target.key.gitContext(), target.change.Diff, target.change.OldPath)
+		want[i], err = r.FullContext(target.key, target.change.Diff, target.change.OldPath)
 		if err != nil {
 			t.Fatal(err)
 		}

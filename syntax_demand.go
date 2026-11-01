@@ -14,9 +14,9 @@ import (
 // refreshes replace, and apply while their file's diff is unchanged. Model
 // copies share it.
 type syntaxDemand struct {
-	loaded  map[contextKey]demandSyntax
-	order   []contextKey
-	pending map[contextKey]bool
+	loaded  map[git.Context]demandSyntax
+	order   []git.Context
+	pending map[git.Context]bool
 }
 
 type demandSyntax struct{ diff, syntaxDiff string }
@@ -30,13 +30,13 @@ type syntaxDemandLoaded struct {
 }
 
 type demandResult struct {
-	key              contextKey
+	key              git.Context
 	commitIndex      int
 	diff, syntaxDiff string
 	cancelled        bool
 }
 
-func (d *syntaxDemand) store(key contextKey, entry demandSyntax) {
+func (d *syntaxDemand) store(key git.Context, entry demandSyntax) {
 	if _, ok := d.loaded[key]; !ok {
 		d.order = append(d.order, key)
 	}
@@ -50,7 +50,7 @@ func (d *syntaxDemand) store(key contextKey, entry demandSyntax) {
 // applySyntaxDemand returns changes with loaded syntax filled in for the
 // skipped files of the view identified by key. It copies changes only when
 // one is filled.
-func (m model) applySyntaxDemand(key contextKey, changes []git.Change) []git.Change {
+func (m model) applySyntaxDemand(key git.Context, changes []git.Change) []git.Change {
 	if m.syntaxDemand == nil || len(m.syntaxDemand.loaded) == 0 {
 		return changes
 	}
@@ -59,7 +59,7 @@ func (m model) applySyntaxDemand(key contextKey, changes []git.Change) []git.Cha
 		if !c.SyntaxSkipped || c.SyntaxDiff != "" {
 			continue
 		}
-		key.path = c.Path
+		key.Path = c.Path
 		entry, ok := m.syntaxDemand.loaded[key]
 		if !ok || entry.diff != c.Diff || entry.syntaxDiff == "" {
 			continue
@@ -87,22 +87,22 @@ func (m model) diffSyntaxView() ([]row, int, bool) {
 
 // syntaxContext returns the context key, without a path, and the changes
 // behind rows of commitIndex.
-func (m model) syntaxContext(commitIndex int) (contextKey, []git.Change) {
+func (m model) syntaxContext(commitIndex int) (git.Context, []git.Change) {
 	switch m.screen {
 	case "commit":
-		return contextKey{commit: m.history.current.Hash}, m.history.changes
+		return git.Context{Commit: m.history.current.Hash}, m.history.changes
 	case "base":
-		return contextKey{commit: m.base.hash, base: true}, m.history.changes
+		return git.Context{Commit: m.base.hash, Base: true}, m.history.changes
 	case "sequence":
 		if commitIndex < 0 || commitIndex >= len(m.sequence.changes) || commitIndex >= len(m.sequence.commits) {
-			return contextKey{}, nil
+			return git.Context{}, nil
 		}
-		return contextKey{commit: m.sequence.commits[commitIndex].Hash}, m.sequence.changes[commitIndex]
+		return git.Context{Commit: m.sequence.commits[commitIndex].Hash}, m.sequence.changes[commitIndex]
 	}
 	if m.staged {
-		return contextKey{staged: true}, m.snapshot.Staged
+		return git.Context{Staged: true}, m.snapshot.Staged
 	}
-	return contextKey{}, m.snapshot.Unstaged
+	return git.Context{}, m.snapshot.Unstaged
 }
 
 // syntaxLookahead is how many files past the screen highlight ahead of time,
@@ -110,7 +110,7 @@ func (m model) syntaxContext(commitIndex int) (contextKey, []git.Change) {
 const syntaxLookahead = 3
 
 type syntaxTarget struct {
-	key         contextKey
+	key         git.Context
 	commitIndex int
 	change      git.Change
 }
@@ -124,7 +124,7 @@ func (m *model) loadVisibleSyntax() tea.Cmd {
 	}
 	screen := rows[top:min(len(rows), top+max(1, m.height))]
 	var visible, ahead []syntaxTarget
-	seen := make(map[contextKey]bool)
+	seen := make(map[git.Context]bool)
 	for _, r := range screen {
 		visible = m.addSyntaxTarget(visible, seen, int(r.commitIndex), r.path)
 	}
@@ -150,14 +150,14 @@ func (m *model) warmCursorSyntax() {
 	}
 	r := rows[m.pos]
 	key, changes := m.syntaxContext(int(r.commitIndex))
-	if r.path == "" || r.path == m.syntaxWarmPath && key.commit == m.syntaxWarmCommit {
+	if r.path == "" || r.path == m.syntaxWarmPath && key.Commit == m.syntaxWarmCommit {
 		return
 	}
 	for _, c := range changes {
 		if c.Path != r.path || c.SyntaxDiff == "" {
 			continue
 		}
-		m.syntaxWarmPath, m.syntaxWarmCommit = r.path, key.commit
+		m.syntaxWarmPath, m.syntaxWarmCommit = r.path, key.Commit
 		go func() {
 			time.Sleep(150 * time.Millisecond)
 			syntax.Lines(c.Path, c.SyntaxDiff)
@@ -168,9 +168,9 @@ func (m *model) warmCursorSyntax() {
 
 // addSyntaxTarget appends path's change if it is skipped and neither loaded
 // nor loading, marking it as loading.
-func (m *model) addSyntaxTarget(targets []syntaxTarget, seen map[contextKey]bool, commitIndex int, path string) []syntaxTarget {
+func (m *model) addSyntaxTarget(targets []syntaxTarget, seen map[git.Context]bool, commitIndex int, path string) []syntaxTarget {
 	key, changes := m.syntaxContext(commitIndex)
-	key.path = path
+	key.Path = path
 	if path == "" || seen[key] {
 		return targets
 	}
@@ -183,7 +183,7 @@ func (m *model) addSyntaxTarget(targets []syntaxTarget, seen map[contextKey]bool
 			return targets
 		}
 		if m.syntaxDemand == nil {
-			m.syntaxDemand = &syntaxDemand{loaded: make(map[contextKey]demandSyntax), pending: make(map[contextKey]bool)}
+			m.syntaxDemand = &syntaxDemand{loaded: make(map[git.Context]demandSyntax), pending: make(map[git.Context]bool)}
 		}
 		if entry, ok := m.syntaxDemand.loaded[key]; m.syntaxDemand.pending[key] || (ok && entry.diff == c.Diff) {
 			return targets
@@ -205,14 +205,14 @@ func (m model) loadSyntaxTargets(targets []syntaxTarget) tea.Cmd {
 	return func() tea.Msg {
 		results := make([]demandResult, len(targets))
 		type group struct {
-			key     contextKey
+			key     git.Context
 			indexes []int
 		}
 		var groups []group
-		byKey := make(map[contextKey]int)
+		byKey := make(map[git.Context]int)
 		for i, target := range targets {
 			key := target.key
-			key.path = ""
+			key.Path = ""
 			index, ok := byKey[key]
 			if !ok {
 				index = len(groups)
@@ -228,7 +228,7 @@ func (m model) loadSyntaxTargets(targets []syntaxTarget) tea.Cmd {
 			for j, index := range group.indexes {
 				changes[j] = targets[index].change
 			}
-			for j, result := range repo.FullContexts(changes, group.key.gitContext()) {
+			for j, result := range repo.FullContexts(changes, group.key) {
 				contexts[group.indexes[j]] = result
 			}
 		})
@@ -269,12 +269,12 @@ func (m *model) applySyntaxDemandLoaded(msg syntaxDemandLoaded) {
 			continue
 		}
 		key, _ := m.syntaxContext(result.commitIndex)
-		key.path = result.key.path
+		key.Path = result.key.Path
 		if key != result.key {
 			continue
 		}
 		highlight := func(rows []row) {
-			highlightRows(rows, result.key.path, result.commitIndex, result.syntaxDiff, result.diff)
+			highlightRows(rows, result.key.Path, result.commitIndex, result.syntaxDiff, result.diff)
 		}
 		switch m.screen {
 		case "commit", "base":

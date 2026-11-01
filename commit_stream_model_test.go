@@ -61,7 +61,7 @@ func TestSingleChunkKeepsNormalGutter(t *testing.T) {
 
 func TestStreamedRowsRespectCollapsedFiles(t *testing.T) {
 	m := streamModel()
-	m.collapsedFiles = map[contextKey]bool{{commit: "commit", path: "two"}: true}
+	m.collapsedFiles = map[git.Context]bool{{Commit: "commit", Path: "two"}: true}
 	changes := []git.Change{
 		{Path: "one", Diff: "@@ -0,0 +1 @@\n+first\n"},
 		{Path: "two", Diff: "@@ -0,0 +1 @@\n+second\n"},

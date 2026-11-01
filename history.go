@@ -118,7 +118,7 @@ func (m *model) appendCommitChanges(changes []git.Change, done bool) {
 		return
 	}
 	view := m.commitModel()
-	changes = view.applySyntaxDemand(contextKey{commit: view.contextCommit, staged: view.staged, base: view.contextBase}, changes)
+	changes = view.applySyntaxDemand(git.Context{Commit: view.contextCommit, Staged: view.staged, Base: view.contextBase}, changes)
 	if len(view.contextFiles) == 0 && len(view.collapsedFiles) == 0 {
 		parts := make([][]row, len(changes))
 		parallelEach(len(changes), func(i int) {
@@ -263,7 +263,7 @@ func loadCommitSyntax(repo git.Repo, hash string, request int, changes []git.Cha
 		return nil
 	}
 	return func() tea.Msg {
-		repo.LoadSyntaxDiffs(plain, contextKey{commit: hash}.gitContext())
+		repo.LoadSyntaxDiffs(plain, git.Context{Commit: hash})
 		git.WarmSyntax(plain)
 		for i, c := range plain {
 			changes[indexes[i]] = c

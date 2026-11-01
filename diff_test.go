@@ -97,10 +97,10 @@ func TestWorkingTreeRefreshSpliceMatchesFullRebuild(t *testing.T) {
 			}
 			m := model{width: 80, height: 20, wrap: true, snapshot: initial, staged: tc.staged}
 			if tc.context {
-				m.contextFiles = map[contextKey]contextFile{contextKey{path: "two"}: {base: base[1].Diff, diff: "@@ -0,0 +1,100 @@\n" + strings.Repeat("+line\n", 100), ranges: []contextRange{{start: 1, end: 3}}}}
+				m.contextFiles = map[git.Context]contextFile{git.Context{Path: "two"}: {base: base[1].Diff, diff: "@@ -0,0 +1,100 @@\n" + strings.Repeat("+line\n", 100), ranges: []contextRange{{start: 1, end: 3}}}}
 			}
 			if tc.collapse {
-				m.collapsedFiles = map[contextKey]bool{{path: "two"}: true}
+				m.collapsedFiles = map[git.Context]bool{{Path: "two"}: true}
 			}
 			m.rebuild()
 			m.previousChanges = base

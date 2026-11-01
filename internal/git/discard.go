@@ -27,9 +27,15 @@ func (r Repo) Discard(request DiscardRequest) error {
 	if request.Whole {
 		out, err := r.Command("restore", "--worktree", "--", request.Change.Path)
 		if err != nil {
-			return GitError(out, err)
+			return CommandError(out, err)
 		}
 		return nil
 	}
 	return r.applyPatch(request.Patch, "--reverse")
+}
+
+type DiscardRequest struct {
+	Change Change
+	Patch  string
+	Whole  bool
 }

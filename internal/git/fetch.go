@@ -8,7 +8,7 @@ import (
 func (r Repo) Fetch() (string, error) {
 	out, err := r.Command("remote")
 	if err != nil {
-		return "", GitError(out, err)
+		return "", CommandError(out, err)
 	}
 	if strings.TrimSpace(string(out)) == "" {
 		return "No remotes configured", nil
@@ -16,7 +16,7 @@ func (r Repo) Fetch() (string, error) {
 	branch, err := r.Command("symbolic-ref", "--quiet", "--short", "HEAD")
 	if err != nil {
 		if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 {
-			return "", GitError(branch, err)
+			return "", CommandError(branch, err)
 		}
 	}
 	remote := ""
@@ -25,13 +25,13 @@ func (r Repo) Fetch() (string, error) {
 		merge, mergeErr := r.Command("config", "--get", prefix+"merge")
 		if mergeErr != nil {
 			if exit, ok := mergeErr.(*exec.ExitError); !ok || exit.ExitCode() != 1 {
-				return "", GitError(merge, mergeErr)
+				return "", CommandError(merge, mergeErr)
 			}
 		} else if strings.TrimSpace(string(merge)) != "" {
 			configured, configErr := r.Command("config", "--get", prefix+"remote")
 			if configErr != nil {
 				if exit, ok := configErr.(*exec.ExitError); !ok || exit.ExitCode() != 1 {
-					return "", GitError(configured, configErr)
+					return "", CommandError(configured, configErr)
 				}
 			} else {
 				remote = strings.TrimSpace(string(configured))

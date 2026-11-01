@@ -88,7 +88,7 @@ func TestCommitRenameContextStatsAndPicker(t *testing.T) {
 	if c.OldPath != "old.go" || c.Path != "new.go" || !strings.Contains(c.Diff, "+changed line 20") {
 		t.Fatalf("rename: %#v", c)
 	}
-	context, err := r.FullContext(contextKey{path: c.Path, commit: hash}.gitContext(), c.Diff, c.OldPath)
+	context, err := r.FullContext(git.Context{Path: c.Path, Commit: hash}, c.Diff, c.OldPath)
 	if err != nil || !strings.Contains(context, " original line 0") || !strings.Contains(context, "-original line 20") {
 		t.Fatalf("expanded context: %q, %v", context, err)
 	}

@@ -219,7 +219,7 @@ func (r Repo) streamPatch(ctx context.Context, statusArgs, patchArgs []string, f
 		waitErr := cmd.Wait()
 		finished = true
 		if err == nil && waitErr != nil {
-			err = GitError(stderr.Bytes(), waitErr)
+			err = CommandError(stderr.Bytes(), waitErr)
 		}
 		if err == nil {
 			for _, path := range paths {

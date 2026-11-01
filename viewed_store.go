@@ -146,16 +146,16 @@ func (m *model) applyViewed(rows []row, changes []git.Change) {
 }
 
 func (m *model) collapseViewed(path string) {
-	key := contextKey{path: path, commit: m.contextCommit, staged: m.staged, base: m.contextBase}
+	key := git.Context{Path: path, Commit: m.contextCommit, Staged: m.staged, Base: m.contextBase}
 	if m.generatedHandled == nil {
-		m.generatedHandled = make(map[contextKey]bool)
+		m.generatedHandled = make(map[git.Context]bool)
 	}
 	if m.generatedHandled[key] {
 		return
 	}
 	m.generatedHandled[key] = true
 	if m.collapsedFiles == nil {
-		m.collapsedFiles = make(map[contextKey]bool)
+		m.collapsedFiles = make(map[git.Context]bool)
 	}
 	m.collapsedFiles[key] = true
 }

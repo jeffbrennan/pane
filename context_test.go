@@ -74,11 +74,11 @@ func TestContextResponseAfterCollapseIsIgnored(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("missing context request")
 	}
-	file := m.contextFiles[contextKey{path: "file"}]
+	file := m.contextFiles[git.Context{Path: "file"}]
 	m.pos = 0
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
 	m = updated.(model)
-	m = m.applyContext(contextLoaded{key: contextKey{path: "file"}, base: file.base, diff: "expanded", request: file.request})
+	m = m.applyContext(contextLoaded{key: git.Context{Path: "file"}, base: file.base, diff: "expanded", request: file.request})
 	if len(m.contextFiles) != 0 {
 		t.Fatal("late response restored collapsed context")
 	}
@@ -104,12 +104,12 @@ func TestContextKeysOnChangedAndHunkSeparatorRows(t *testing.T) {
 			if cmd == nil {
 				t.Fatal("expansion did not start from diff row")
 			}
-			file := m.contextFiles[contextKey{path: "first"}]
+			file := m.contextFiles[git.Context{Path: "first"}]
 			full := "@@ -1,13 +1,13 @@\n context\n-old\n+new\n" + strings.Repeat(" middle\n", 9) + "-before\n+after\n"
-			m = m.applyContext(contextLoaded{key: contextKey{path: "first"}, base: base, diff: full, request: file.request})
+			m = m.applyContext(contextLoaded{key: git.Context{Path: "first"}, base: base, diff: full, request: file.request})
 			updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
 			m = updated.(model)
-			if len(m.contextFiles[contextKey{path: "first"}].ranges) != 0 {
+			if len(m.contextFiles[git.Context{Path: "first"}].ranges) != 0 {
 				t.Fatal("local context did not collapse")
 			}
 			m.pos = 0
@@ -161,10 +161,10 @@ func TestContextLoadKeepsSelectionAndRejectsStaleDiff(t *testing.T) {
 	m.pos = 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
 	m = updated.(model)
-	file := m.contextFiles[contextKey{path: "file"}]
+	file := m.contextFiles[git.Context{Path: "file"}]
 	m.pos = len(m.rows) - 1
 	anchor := m.rows[m.pos]
-	m = m.applyContext(contextLoaded{key: contextKey{path: "file"}, base: base, diff: full, request: file.request})
+	m = m.applyContext(contextLoaded{key: git.Context{Path: "file"}, base: base, diff: full, request: file.request})
 	if got := m.rows[m.pos]; got.text != anchor.text || got.target != anchor.target || got.kind != anchor.kind {
 		t.Fatalf("selection changed after expansion: %#v", got)
 	}
@@ -185,7 +185,7 @@ func TestExpandContextInCommitView(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("commit context did not start loading")
 	}
-	key := contextKey{path: "file", commit: "abc"}
+	key := git.Context{Path: "file", Commit: "abc"}
 	file := m.contextFiles[key]
 	full := "@@ -1,10 +1,10 @@\n" + strings.Repeat(" earlier\n", 9) + "-old\n+new\n"
 	m = m.applyContext(contextLoaded{key: key, base: base, diff: full, request: file.request})
@@ -235,10 +235,10 @@ func TestContextUsesCorrectGitVersion(t *testing.T) {
 	}
 	writeFile(t, r, "file", strings.Replace(base, "old\n", "working\n", 1))
 	for _, tt := range []struct {
-		key  contextKey
+		key  git.Context
 		want string
-	}{{contextKey{path: "file"}, "+working"}, {contextKey{path: "file", staged: true}, "+index"}, {contextKey{path: "file", commit: hash}, "+staged"}} {
-		diff, err := r.FullContext(tt.key.gitContext(), "", "")
+	}{{git.Context{Path: "file"}, "+working"}, {git.Context{Path: "file", Staged: true}, "+index"}, {git.Context{Path: "file", Commit: hash}, "+staged"}} {
+		diff, err := r.FullContext(tt.key, "", "")
 		if err != nil || !strings.Contains(diff, tt.want) || !strings.Contains(diff, " before\n") {
 			t.Fatalf("context for %#v: %v %q", tt.key, err, diff)
 		}

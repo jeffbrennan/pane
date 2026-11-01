@@ -27,7 +27,7 @@ func (r Repo) ResolveCommit(revision string) (CommitInfo, error) {
 	}
 	out, err := r.Command("rev-parse", "--verify", "--end-of-options", revision+"^{commit}")
 	if err != nil {
-		return CommitInfo{}, fmt.Errorf("invalid commit %q: %w", revision, GitError(out, err))
+		return CommitInfo{}, fmt.Errorf("invalid commit %q: %w", revision, CommandError(out, err))
 	}
 	hash := strings.TrimSpace(string(out))
 	commit, err := r.CommitDetail(hash)
@@ -46,7 +46,7 @@ func (r Repo) CommitDetail(hash string) (CommitInfo, error) {
 	out, err := r.CommandStdout("show", "-s", "--decorate=short", "-z",
 		"--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00%P%x00%cn%x00%ce%x00%cI%x00%D%x00", hash, "--")
 	if err != nil {
-		return CommitInfo{}, GitError(out, err)
+		return CommitInfo{}, CommandError(out, err)
 	}
 	return parseCommitDetail(out)
 }
@@ -84,7 +84,7 @@ func (r Repo) historyWithPath(skip, limit int, dateFormat, path string) ([]Commi
 		if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 1 {
 			return nil, nil
 		}
-		return nil, GitError(out, err)
+		return nil, CommandError(out, err)
 	}
 	format := "--format=%x00%H%x00%an%x00%ae%x00" + dateFormat + "%x00%s%x00%B%x00"
 	logSkip, logLimit := skip, limit
@@ -97,7 +97,7 @@ func (r Repo) historyWithPath(skip, limit int, dateFormat, path string) ([]Commi
 	}
 	out, err = r.CommandStdout(args...)
 	if err != nil {
-		return nil, GitError(out, err)
+		return nil, CommandError(out, err)
 	}
 	if path != "" {
 		commits, err := parseFileHistory(out, path)
@@ -158,7 +158,7 @@ func (r Repo) HistoryStats(hashes []string) ([]CommitInfo, error) {
 	args = append(args, "--")
 	out, err := r.CommandStdout(args...)
 	if err != nil {
-		return nil, GitError(out, err)
+		return nil, CommandError(out, err)
 	}
 	commits, err := parseHistory(out, true)
 	if err == nil {
@@ -274,11 +274,11 @@ func (r Repo) CommitChangesWithoutSyntax(hash string) ([]Change, error) {
 		return nil, r.Context.Err()
 	}
 	if err != nil {
-		return nil, GitError(out, err)
+		return nil, CommandError(out, err)
 	}
 	patch, err := loadedPatch.out, loadedPatch.err
 	if err != nil {
-		return nil, GitError(patch, err)
+		return nil, CommandError(patch, err)
 	}
 	patches := splitPatch(string(patch))
 	paths, oldPaths, err := parseCommitPaths(out)
@@ -353,7 +353,7 @@ func (r Repo) revisionFileDiff(prefix []string, hash, path, oldPath, diff string
 	if !ok {
 		out, err := r.CommandStdout(args(true)...)
 		if err != nil {
-			return "", GitError(out, err)
+			return "", CommandError(out, err)
 		}
 		diff = string(out)
 	}
@@ -364,7 +364,7 @@ func (r Repo) revisionFileDiff(prefix []string, hash, path, oldPath, diff string
 			original.IgnoreSpace = false
 			out, err := original.CommandStdout(args(false)...)
 			if err != nil {
-				return "", GitError(out, err)
+				return "", CommandError(out, err)
 			}
 			if len(out) > 0 {
 				diff = "Whitespace-only changes"

@@ -744,7 +744,7 @@ func (m model) hotspotSequence(path string) tea.Cmd {
 		args = append(args, "--", path)
 		out, err := repo.CommandStdout(args...)
 		if err != nil {
-			return hotspotSequenceLoaded{request: request, err: git.GitError(out, err)}
+			return hotspotSequenceLoaded{request: request, err: git.CommandError(out, err)}
 		}
 		var commits []git.CommitInfo
 		for _, field := range bytes.Split(out, []byte{0}) {

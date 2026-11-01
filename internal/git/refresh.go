@@ -75,7 +75,7 @@ func deferOffscreenSyntax(cache *RefreshCache, entries []statusEntry) {
 func (r Repo) status() (BranchStatus, []statusEntry, error) {
 	out, err := r.statusOutput()
 	if err != nil {
-		return BranchStatus{}, nil, GitError(out, err)
+		return BranchStatus{}, nil, CommandError(out, err)
 	}
 	var entries []statusEntry
 	records := bytes.Split(out, []byte{0})
@@ -165,7 +165,7 @@ func (r Repo) expandUntrackedDirectories(out []byte) ([]byte, error) {
 	}
 	listed, err := r.Command(append([]string{"ls-files", "--others", "--exclude-standard", "-z", "--"}, directories...)...)
 	if err != nil {
-		return nil, GitError(listed, err)
+		return nil, CommandError(listed, err)
 	}
 	files := make(map[string][][]byte)
 	for _, file := range bytes.Split(listed, []byte{0}) {

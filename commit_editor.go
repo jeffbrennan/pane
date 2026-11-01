@@ -37,7 +37,7 @@ func (m model) openCommitEditor() (tea.Model, tea.Cmd) {
 func (m model) prepareCommitEditor() (string, error) {
 	out, err := m.repo.Command("rev-parse", "--git-path", "PANE_COMMIT_EDITMSG")
 	if err != nil {
-		return "", git.GitError(out, err)
+		return "", git.CommandError(out, err)
 	}
 	path := strings.TrimSpace(string(out))
 	if !filepath.IsAbs(path) {

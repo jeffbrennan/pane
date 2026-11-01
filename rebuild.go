@@ -51,7 +51,7 @@ func (m *model) rebuildRows(previous func(path string) ([]row, bool)) {
 	if m.staged {
 		changes = m.snapshot.Staged
 	}
-	changes = m.applySyntaxDemand(contextKey{commit: m.contextCommit, staged: m.staged, base: m.contextBase}, changes)
+	changes = m.applySyntaxDemand(git.Context{Commit: m.contextCommit, Staged: m.staged, Base: m.contextBase}, changes)
 	m.collapseGenerated(changes)
 	m.seedViewedCollapse(changes)
 	var rows []row
@@ -124,7 +124,7 @@ func (m *model) reflowRows(oldContentWidth int) {
 	if m.staged {
 		changes = m.snapshot.Staged
 	}
-	changes = m.applySyntaxDemand(contextKey{commit: m.contextCommit, staged: m.staged, base: m.contextBase}, changes)
+	changes = m.applySyntaxDemand(git.Context{Commit: m.contextCommit, Staged: m.staged, Base: m.contextBase}, changes)
 	byPath := make(map[string][]row, len(changes))
 	for start := 0; start < len(m.rows); {
 		begin := start
@@ -282,7 +282,7 @@ func spliceRows(changes []git.Change, m model, previous func(path string) ([]row
 		if oldChanges == nil || i >= len(oldChanges) || changes[i].OldPath != oldChanges[i].OldPath || changes[i].Path != oldChanges[i].Path {
 			return false
 		}
-		fileKey := contextKey{path: changes[i].Path, commit: view.contextCommit, staged: view.staged, base: view.contextBase}
+		fileKey := git.Context{Path: changes[i].Path, Commit: view.contextCommit, Staged: view.staged, Base: view.contextBase}
 		if view.collapsedFiles[fileKey] {
 			return false
 		}

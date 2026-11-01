@@ -20,7 +20,7 @@ type WorktreeEntry struct {
 func (r Repo) Worktrees() ([]WorktreeEntry, error) {
 	out, err := r.CommandStdout("worktree", "list", "--porcelain", "-z")
 	if err != nil {
-		return nil, GitError(out, err)
+		return nil, CommandError(out, err)
 	}
 	var entries []WorktreeEntry
 	var current WorktreeEntry

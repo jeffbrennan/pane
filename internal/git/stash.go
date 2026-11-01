@@ -9,7 +9,7 @@ import (
 func (r Repo) Stashes() ([]StashEntry, error) {
 	out, err := r.Command("stash", "list", "-z", "--format=%gd%x00%H%x00%cI%x00%gs")
 	if err != nil {
-		return nil, GitError(out, err)
+		return nil, CommandError(out, err)
 	}
 	fields := bytes.Split(out, []byte{0})
 	var entries []StashEntry
@@ -29,7 +29,7 @@ func (r Repo) StashChanges(hash string) ([]Change, error) {
 	}
 	parents, err := r.Command("rev-list", "--parents", "-n", "1", hash)
 	if err != nil {
-		return nil, GitError(parents, err)
+		return nil, CommandError(parents, err)
 	}
 	fields := strings.Fields(string(parents))
 	if len(fields) >= 4 {
@@ -91,3 +91,5 @@ func (r Repo) StashAction(operation string, target StashEntry) (string, error) {
 	}
 	return "Dropped " + target.Ref, nil
 }
+
+type StashEntry struct{ Ref, Hash, Date, Message string }

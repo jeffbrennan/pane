@@ -93,9 +93,9 @@ type model struct {
 	searchProgress        string
 	flash                 string
 	expandedDeleted       map[string]bool
-	contextFiles          map[contextKey]contextFile
-	collapsedFiles        map[contextKey]bool
-	generatedHandled      map[contextKey]bool
+	contextFiles          map[git.Context]contextFile
+	collapsedFiles        map[git.Context]bool
+	generatedHandled      map[git.Context]bool
 	viewed                *viewedStore
 	viewIdentity          string
 	notes                 map[noteRef]string
@@ -196,7 +196,7 @@ func initialModel(repo git.Repo, args []string) (model, error) {
 	if strings.Contains(args[0], "..") {
 		out, err := repo.Command("rev-list", fmt.Sprintf("--max-count=%d", maxSequenceCommits+1), "--end-of-options", args[0], "--")
 		if err != nil {
-			return model{}, fmt.Errorf("invalid commit range %q: %w", args[0], git.GitError(out, err))
+			return model{}, fmt.Errorf("invalid commit range %q: %w", args[0], git.CommandError(out, err))
 		}
 		if len(out) == 0 {
 			return model{}, fmt.Errorf("commit range %q contains no commits", args[0])

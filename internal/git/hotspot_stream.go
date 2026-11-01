@@ -82,7 +82,7 @@ func (s *hotSpotReader) finish(kill bool) error {
 	}
 	err := cmd.Wait()
 	if err != nil && !kill {
-		return GitError(s.stderr.Bytes(), err)
+		return CommandError(s.stderr.Bytes(), err)
 	}
 	return nil
 }

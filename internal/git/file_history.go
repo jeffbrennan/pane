@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func FileHistoryPath(repo Repo, path string) (string, error) {
+func (r Repo) FileHistoryPath(path string) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("file path cannot be empty")
 	}
@@ -14,7 +14,7 @@ func FileHistoryPath(repo Repo, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	root, err := filepath.Abs(repo.Root)
+	root, err := filepath.Abs(r.Root)
 	if err != nil {
 		return "", err
 	}

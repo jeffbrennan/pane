@@ -7,12 +7,6 @@ import (
 	"github.com/jeffbrennan/pane/internal/git"
 )
 
-type contextKey struct {
-	path, commit string
-	staged       bool
-	base         bool
-}
-
 type contextFile struct {
 	base, diff string
 	request    int
@@ -22,7 +16,7 @@ type contextFile struct {
 type contextRange struct{ start, end, anchor int }
 
 type contextLoaded struct {
-	key     contextKey
+	key     git.Context
 	base    string
 	diff    string
 	request int
@@ -46,7 +40,7 @@ func (m model) foldContextFiles(rows []row) []row {
 			commit, collapsed = r.commitIndex, false
 		}
 		if r.kind == 'f' {
-			collapsed = m.collapsedFiles[contextKey{path: r.path, commit: m.contextCommit, staged: m.staged, base: m.contextBase}]
+			collapsed = m.collapsedFiles[git.Context{Path: r.path, Commit: m.contextCommit, Staged: m.staged, Base: m.contextBase}]
 		}
 		if !collapsed || r.kind == 'f' || r.kind == 'F' || r.kind == 's' || r.kind == 'm' || r.kind == 'M' || r.kind == 'n' {
 			folded = append(folded, r)
@@ -77,7 +71,7 @@ func (m model) localContextRows(rows []row, changes []git.Change) []row {
 		}
 		path := rows[start].path
 		c := byPath[path]
-		file, ok := m.contextFiles[contextKey{path: path, commit: m.contextCommit, staged: m.staged, base: m.contextBase}]
+		file, ok := m.contextFiles[git.Context{Path: path, Commit: m.contextCommit, Staged: m.staged, Base: m.contextBase}]
 		if !ok || file.base != c.Diff || file.diff == "" || len(file.ranges) == 0 {
 			result = append(result, rows[start:end]...)
 			start = end
@@ -129,12 +123,12 @@ func (m model) changeContext(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	path := view.rows[view.pos].path
-	fileKey := contextKey{path: path, commit: view.contextCommit, staged: view.staged, base: view.contextBase}
+	fileKey := git.Context{Path: path, Commit: view.contextCommit, Staged: view.staged, Base: view.contextBase}
 	selected := view.rows[view.pos]
 	if (selected.kind == 'f' || selected.kind == 'F') && key == "h" {
 		delete(m.contextFiles, fileKey)
 		if m.collapsedFiles == nil {
-			m.collapsedFiles = make(map[contextKey]bool)
+			m.collapsedFiles = make(map[git.Context]bool)
 		}
 		m.collapsedFiles[fileKey] = true
 		m = m.inDiff(func(view *model) {
@@ -208,7 +202,7 @@ func (m model) changeContext(key string) (tea.Model, tea.Cmd) {
 		}
 		current.ranges = append(current.ranges, span)
 		if m.contextFiles == nil {
-			m.contextFiles = make(map[contextKey]contextFile)
+			m.contextFiles = make(map[git.Context]contextFile)
 		}
 		if current.diff != "" || current.request != 0 {
 			m.contextFiles[fileKey] = current
@@ -221,7 +215,7 @@ func (m model) changeContext(key string) (tea.Model, tea.Cmd) {
 		m.flash = "Loading file context…"
 		repo := m.repo
 		return m, func() tea.Msg {
-			diff, err := repo.FullContext(fileKey.gitContext(), c.Diff, c.OldPath)
+			diff, err := repo.FullContext(fileKey, c.Diff, c.OldPath)
 			return contextLoaded{key: fileKey, base: c.Diff, diff: diff, request: request, err: err}
 		}
 	}
@@ -245,7 +239,7 @@ func (m model) applyContext(msg contextLoaded) model {
 	file.request = 0
 	m.contextFiles[msg.key] = file
 	m.flash = ""
-	if (m.screen == "base" && msg.key.base && m.base.hash == msg.key.commit) || (m.screen == "commit" && !msg.key.base && m.history.current.Hash == msg.key.commit) || (m.screen == "" && msg.key.commit == "" && m.staged == msg.key.staged) {
+	if (m.screen == "base" && msg.key.Base && m.base.hash == msg.key.Commit) || (m.screen == "commit" && !msg.key.Base && m.history.current.Hash == msg.key.Commit) || (m.screen == "" && msg.key.Commit == "" && m.staged == msg.key.Staged) {
 		return m.rebuildContext()
 	}
 	return m
@@ -285,8 +279,4 @@ func (m model) rebuildContext() model {
 			}
 		}
 	})
-}
-
-func (k contextKey) gitContext() git.Context {
-	return git.Context{Path: k.path, Commit: k.commit, Staged: k.staged, Base: k.base}
 }

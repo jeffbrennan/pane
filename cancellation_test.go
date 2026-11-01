@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"testing"
+
+	"github.com/jeffbrennan/pane/internal/git"
 )
 
 func TestCommitLoadCancellation(t *testing.T) {
@@ -19,8 +21,8 @@ func TestCommitLoadCancellation(t *testing.T) {
 }
 
 func TestCancelledSyntaxDemandCanBeRetried(t *testing.T) {
-	key := contextKey{commit: "abc", path: "file.go"}
-	m := model{syntaxDemand: &syntaxDemand{loaded: make(map[contextKey]demandSyntax), pending: map[contextKey]bool{key: true}}}
+	key := git.Context{Commit: "abc", Path: "file.go"}
+	m := model{syntaxDemand: &syntaxDemand{loaded: make(map[git.Context]demandSyntax), pending: map[git.Context]bool{key: true}}}
 	m.applySyntaxDemandLoaded(syntaxDemandLoaded{results: []demandResult{{key: key, diff: "diff", cancelled: true}}})
 	if m.syntaxDemand.pending[key] || len(m.syntaxDemand.loaded) != 0 {
 		t.Fatal("cancelled syntax must not be cached")

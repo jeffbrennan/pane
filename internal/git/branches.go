@@ -14,7 +14,7 @@ func (r Repo) Branches(includeRemotes bool) ([]BranchEntry, error) {
 	args := append([]string{"for-each-ref", "--sort=-committerdate", format}, refs...)
 	out, err := r.CommandStdout(args...)
 	if err != nil {
-		return nil, GitError(out, err)
+		return nil, CommandError(out, err)
 	}
 	current := ""
 	if head, err := r.Command("symbolic-ref", "--short", "-q", "HEAD"); err == nil {
@@ -47,4 +47,9 @@ func (r Repo) Branches(includeRemotes bool) ([]BranchEntry, error) {
 		entries = append(entries, entry)
 	}
 	return entries, nil
+}
+
+type BranchEntry struct {
+	Ref, Name, Upstream, Track, Date, Subject, Worktree string
+	Current, Remote                                     bool
 }

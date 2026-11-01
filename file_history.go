@@ -117,7 +117,7 @@ func (m *model) jumpToHistoryFile() {
 }
 
 func initialFileHistory(repo git.Repo, path string) (model, error) {
-	resolved, err := git.FileHistoryPath(repo, path)
+	resolved, err := repo.FileHistoryPath(path)
 	if err != nil {
 		return model{}, err
 	}
