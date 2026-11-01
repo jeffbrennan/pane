@@ -80,7 +80,7 @@ func (m model) commitListPosition() (int, int) {
 // stepCommit opens the next or previous commit in the list the current one came
 // from. At the end of a loaded page it fetches the next page and waits.
 func (m model) stepCommit(direction int) (tea.Model, tea.Cmd) {
-	if m.screen != "commit" || m.stash.viewing || m.history.directCommit || m.history.loading {
+	if m.screen != "commit" || m.stash.viewing || m.history.directCommit {
 		return m, nil
 	}
 	commits := m.filteredHistory()
