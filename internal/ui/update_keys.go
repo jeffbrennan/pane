@@ -74,13 +74,6 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return next, tea.Batch(cmd, more)
 	}
-	if msg.String() == "M" && m.pending == "" {
-		if cmd := m.copyNotes(); cmd != nil {
-			return m, cmd
-		}
-		m.flash = "No notes in this view"
-		return m, nil
-	}
 	if m.pending == "" && (msg.String() == "h" || msg.String() == "l") && m.onDiffFile() {
 		return m.changeContext(msg.String())
 	}
@@ -186,8 +179,6 @@ func (m *model) handleDiffTool(key string) bool {
 		m.openPicker()
 	case "e":
 		m.toggleDeletedFile()
-	case "m":
-		return m.startNote()
 	default:
 		return false
 	}
@@ -195,9 +186,6 @@ func (m *model) handleDiffTool(key string) bool {
 }
 
 func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.modal == "note" {
-		return m.handleNoteKey(key)
-	}
 	switch m.modal {
 	case "branch-new":
 		switch key.String() {

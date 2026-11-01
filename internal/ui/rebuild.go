@@ -67,7 +67,6 @@ func (m *model) rebuildRows(previous func(path string) ([]row, bool)) {
 	m.gutterWidth = gutterWidth
 	m.previousChanges = nil
 	m.applyViewed(rows, changes)
-	rows = m.insertNoteRows(rows)
 	rows = m.localContextRows(rows, changes)
 	rows = m.foldContextFiles(rows)
 	if m.contextCommit != "" && !m.contextBase {

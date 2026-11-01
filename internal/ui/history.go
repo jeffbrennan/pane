@@ -162,7 +162,6 @@ func (m *model) appendCommitChanges(changes []git.Change, done bool) {
 	}
 	part, _ := buildRowsDisplay(changes, view.diffContentWidth(), view.wrap, view.expandedDeleted, width, view.shortPaths)
 	view.applyViewed(part, changes)
-	part = view.insertNoteRows(part)
 	part = view.localContextRows(part, changes)
 	part = view.foldContextFiles(part)
 	if len(part) == 0 {
@@ -777,12 +776,6 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.stepCommit(direction)
 	case "v":
 		return m.toggleViewedCommit()
-	case "M":
-		if cmd := m.copyNotes(); cmd != nil {
-			return m, cmd
-		}
-		m.flash = "No notes in this view"
-		return m, nil
 	case "o":
 		opened, cmd := view.openEditor()
 		m.flash = opened.flash

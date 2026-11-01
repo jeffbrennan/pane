@@ -230,7 +230,6 @@ func (m *model) rebuildSequence() {
 			}
 			view.contextCommit = m.sequence.commits[i].Hash
 			view.applyViewed(files, changes)
-			files = view.insertNoteRows(files)
 			files = view.foldContextFiles(files)
 			for j := range files {
 				files[j].commitIndex = uint16(i)
@@ -383,12 +382,6 @@ func (m model) handleSequenceKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.startSearch()
 	case "v":
 		return m.toggleViewedSequence()
-	case "M":
-		if cmd := m.copyNotes(); cmd != nil {
-			return m, cmd
-		}
-		m.flash = "No notes in this view"
-		return m, nil
 	case "o":
 		return m.openEditor()
 	case "y":

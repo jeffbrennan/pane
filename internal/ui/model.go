@@ -96,8 +96,6 @@ type model struct {
 	generatedHandled      map[git.Context]bool
 	viewed                *viewedStore
 	viewIdentity          string
-	notes                 map[noteRef]string
-	noteTarget            noteRef
 	contextRequest        int
 	contextCommit         string
 	syntaxDemand          *syntaxDemand

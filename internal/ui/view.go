@@ -155,8 +155,6 @@ func (m model) View() string {
 			prefix = "?"
 		}
 		status, hints = prefix+renderInput(m.search.draft, m.search.cursor, max(1, m.width-1)), keyHints("↵", "search", "esc", "cancel")
-	case "note":
-		status, hints = "Note: "+renderInput(m.input, m.inputCursor, max(1, m.width-8)), keyHints("↵", "save", "esc", "cancel")
 	case "branch-new":
 		status, hints = "New branch from "+shortHash(m.branch.newFrom)+": "+renderInput(m.input, m.inputCursor, max(1, m.width-32)), keyHints("↵", "create", "esc", "cancel")
 	case "worktree-new":
