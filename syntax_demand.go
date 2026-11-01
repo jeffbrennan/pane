@@ -176,15 +176,43 @@ func (m model) loadSyntaxTargets(targets []syntaxTarget) tea.Cmd {
 	}
 	return func() tea.Msg {
 		results := make([]demandResult, len(targets))
+		type group struct {
+			key     contextKey
+			indexes []int
+		}
+		var groups []group
+		byKey := make(map[contextKey]int)
+		for i, target := range targets {
+			key := target.key
+			key.path = ""
+			index, ok := byKey[key]
+			if !ok {
+				index = len(groups)
+				byKey[key] = index
+				groups = append(groups, group{key: key})
+			}
+			groups[index].indexes = append(groups[index].indexes, i)
+		}
+		contexts := make([]fullContextResult, len(targets))
+		parallelEach(len(groups), func(i int) {
+			group := groups[i]
+			changes := make([]change, len(group.indexes))
+			for j, index := range group.indexes {
+				changes[j] = targets[index].change
+			}
+			for j, result := range repo.fullContexts(changes, group.key) {
+				contexts[group.indexes[j]] = result
+			}
+		})
 		parallelEach(len(targets), func(i int) {
 			t := targets[i]
 			results[i] = demandResult{key: t.key, commitIndex: t.commitIndex, diff: t.change.diff}
-			diff, err := repo.fullContext(t.key, t.change.diff, t.change.oldPath)
 			if repo.context != nil && repo.context.Err() != nil {
 				results[i].cancelled = true
 				return
 			}
-			if err != nil || len(diff) > 2*1024*1024 {
+			diff := contexts[i].diff
+			if contexts[i].err != nil || len(diff) > 2*1024*1024 {
 				return
 			}
 			results[i].syntaxDiff = diff

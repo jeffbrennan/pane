@@ -10,6 +10,7 @@ import (
 	"runtime/pprof"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unsafe"
@@ -140,6 +141,44 @@ func TestPerf(t *testing.T) {
 		}
 	}
 	recordPerf(t, scenario, "idle_refreshes_per_minute", refreshes)
+	measureSyntaxPerf(t)
+}
+
+func measureSyntaxPerf(t *testing.T) {
+	t.Helper()
+	repo := testRepo(t)
+	for i := 0; i < syntaxBudgetFiles; i++ {
+		writeFile(t, repo, fmt.Sprintf("file-%02d.go", i), "package main\nvar value = 1\n")
+	}
+	if _, err := repo.commit("initial"); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < syntaxBudgetFiles; i++ {
+		writeFile(t, repo, fmt.Sprintf("file-%02d.go", i), "package main\nvar value = 2\n")
+	}
+	if _, err := repo.commit("changes"); err != nil {
+		t.Fatal(err)
+	}
+	changes, err := repo.commitChangesWithoutSyntax("HEAD")
+	if err != nil || len(changes) != syntaxBudgetFiles {
+		t.Fatalf("syntax fixture: %d changes, %v", len(changes), err)
+	}
+	var commands atomic.Int64
+	repo.commandHook = func([]string) { commands.Add(1) }
+	key := contextKey{commit: "HEAD"}
+	measurePerf(t, "synthetic-syntax", "syntax_load_ns", func() { _ = repo.syntaxDiffs(changes, key) })
+	commands.Store(0)
+	_ = repo.syntaxDiffs(changes, key)
+	recordPerf(t, "synthetic-syntax", "syntax_git_commands", commands.Load())
+	targets := make([]syntaxTarget, 3)
+	for i := range targets {
+		targets[i] = syntaxTarget{key: contextKey{commit: "HEAD", path: changes[i].path}, change: changes[i]}
+	}
+	m := model{repo: repo, screen: "commit", history: historyState{current: commitInfo{hash: "HEAD"}}}
+	measurePerf(t, "synthetic-syntax", "demand_load_ns", func() { _ = m.loadSyntaxTargets(targets)() })
+	commands.Store(0)
+	_ = m.loadSyntaxTargets(targets)()
+	recordPerf(t, "synthetic-syntax", "demand_git_commands", commands.Load())
 }
 
 func measurePerf(t *testing.T, scenario, metric string, f func()) {

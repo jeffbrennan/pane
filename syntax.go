@@ -137,25 +137,19 @@ const (
 // past the syntax budget are left plain; see syntaxBudgetEnd.
 func (r repository) syntaxDiffs(changes []change, key contextKey) []string {
 	diffs := make([]string, len(changes))
-	var wg sync.WaitGroup
-	limit := make(chan struct{}, 8)
+	var indexes []int
+	var selected []change
 	for i := range changes[:syntaxBudgetEnd(changes)] {
-		if !highlightable(changes[i]) {
-			continue
+		if highlightable(changes[i]) {
+			indexes = append(indexes, i)
+			selected = append(selected, changes[i])
 		}
-		wg.Add(1)
-		limit <- struct{}{}
-		go func(i int) {
-			defer func() { <-limit; wg.Done() }()
-			fileKey := key
-			fileKey.path = changes[i].path
-			diff, err := r.fullContext(fileKey, changes[i].diff, changes[i].oldPath)
-			if err == nil && len(diff) <= 2*1024*1024 {
-				diffs[i] = diff
-			}
-		}(i)
 	}
-	wg.Wait()
+	for i, result := range r.fullContexts(selected, key) {
+		if result.err == nil && len(result.diff) <= 2*1024*1024 {
+			diffs[indexes[i]] = result.diff
+		}
+	}
 	return diffs
 }
 

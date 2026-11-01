@@ -226,6 +226,18 @@ func (r repository) fullContext(key contextKey, base, oldPath string) (string, e
 	if strings.Contains(base, "\nnew file mode ") {
 		return base, nil
 	}
+	paths := []string{key.path}
+	if oldPath != "" {
+		paths = append(paths, oldPath)
+	}
+	out, err := r.command(r.fullContextArgs(key, paths)...)
+	if err != nil {
+		return "", gitError(out, err)
+	}
+	return string(out), nil
+}
+
+func (r repository) fullContextArgs(key contextKey, paths []string) []string {
 	args := append([]string{"diff"}, r.diffOptions()...)
 	args = append(args, "--unified=1000000")
 	if key.base {
@@ -236,15 +248,7 @@ func (r repository) fullContext(key contextKey, base, oldPath string) (string, e
 	} else if key.staged {
 		args = append(args, "--cached")
 	}
-	args = append(args, "--", key.path)
-	if oldPath != "" {
-		args = append(args, oldPath)
-	}
-	out, err := r.command(args...)
-	if err != nil {
-		return "", gitError(out, err)
-	}
-	return string(out), nil
+	return append(append(args, "--"), paths...)
 }
 
 func (m model) applyContext(msg contextLoaded) model {
