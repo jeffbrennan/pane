@@ -63,6 +63,7 @@ var shortcutSections = []struct {
 		{"/", "Search commits"},
 		{"u", "Edit latest unpublished commit message"},
 		{"S", "Open stashes"},
+		{"b", "Open branches (tab switches to worktrees)"},
 		{"R", "Review from this commit to the working tree"},
 		{"V", "Select a commit range to review"},
 		{"esc / q", "Back"},
@@ -71,6 +72,23 @@ var shortcutSections = []struct {
 		{"j / k", "Select stash"},
 		{"↵ / space", "View stash"},
 		{"p / x", "Pop / drop selected stash"},
+		{"esc / q", "Back to history"},
+	}},
+	{"Branches", []shortcut{
+		{"b", "Open from history; tab switches to worktrees"},
+		{"↵", "Switch to the selected branch"},
+		{"n / w", "New branch from the selection / new worktree for it"},
+		{"d / D", "Delete branch / force delete"},
+		{"r", "Include remote branches"},
+		{"y, /", "Copy branch name, filter"},
+		{"esc / q", "Back to history"},
+	}},
+	{"Worktrees", []shortcut{
+		{"↵", "Switch this pane to the worktree"},
+		{"n", "New worktree (path and branch)"},
+		{"d / D", "Remove worktree / force remove"},
+		{"p", "Prune stale worktrees"},
+		{"y, /", "Copy path, filter"},
 		{"esc / q", "Back to history"},
 	}},
 	{"Search input", []shortcut{
@@ -298,6 +316,37 @@ func (m model) showDiscardDialog(lines []string) {
 		titleStyle: m.danger(),
 		body:       []string{"", clean(m.discard.change.path), styleDim + "This cannot be undone." + styleReset, ""},
 		hint:       keyHints("y", "discard", "n/esc", "cancel"),
+	}.render())
+}
+
+func (m model) showBranchDelete(lines []string) {
+	title := "Delete branch " + m.branch.confirm.name + "?"
+	if m.branch.confirmForce {
+		title = "Force delete branch " + m.branch.confirm.name + "?"
+	}
+	boxWidth := min(max(48, ansi.StringWidth(title)+6), m.width-2)
+	flag := "-d"
+	if m.branch.confirmForce {
+		flag = "-D"
+	}
+	body := []string{"", styleDim + "Pane runs git branch " + flag + "." + styleReset, ""}
+	placeDialog(lines, m.width, dialog{
+		width: boxWidth, title: title, titleStyle: m.danger(), body: body,
+		hint: keyHints("y", "delete", "n/esc", "cancel"),
+	}.render())
+}
+
+func (m model) showWorktreeDelete(lines []string) {
+	title := "Remove worktree?"
+	boxWidth := min(max(48, ansi.StringWidth(title)+6), m.width-2)
+	body := []string{"", clean(m.worktrees.confirm.path), styleDim + "This cannot be undone." + styleReset, ""}
+	if m.worktrees.confirmForce {
+		title = "Force remove worktree?"
+		body = []string{"", clean(m.worktrees.confirm.path), styleDim + "Uncommitted changes will be lost." + styleReset, ""}
+	}
+	placeDialog(lines, m.width, dialog{
+		width: boxWidth, title: title, titleStyle: m.danger(), body: body,
+		hint: keyHints("y", "remove", "n/esc", "cancel"),
 	}.render())
 }
 

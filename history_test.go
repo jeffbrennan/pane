@@ -522,20 +522,41 @@ func TestHistoryStatsCachedWhenReopening(t *testing.T) {
 	}
 	m := model{repo: r, width: 60, height: 10}
 	opened, cmd := m.openHistory()
-	updated, cmd := opened.Update(cmd())
-	updated, _ = updated.Update(cmd())
-	m = updated.(model)
+	m, cmd = applyBatch(t, opened.(model), cmd)
+	m, _ = applyBatch(t, m, cmd)
 	if len(m.history.statsCache) != 2 {
 		t.Fatal("loaded statistics were not cached")
 	}
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = updated.(model)
 	opened, cmd = m.openHistory()
-	updated, cmd = opened.Update(cmd())
-	m = updated.(model)
+	m, cmd = applyBatch(t, opened.(model), cmd)
 	if cmd != nil || !m.history.commits[0].statsLoaded || !m.history.commits[1].statsLoaded || m.history.commits[0].added != 1 {
 		t.Fatal("reopened history did not reuse cached statistics")
 	}
+}
+
+// applyBatch runs a command and expands tea.BatchMsg, since tests drive Update
+// directly while the runtime normally does this.
+func applyBatch(t *testing.T, m model, cmd tea.Cmd) (model, tea.Cmd) {
+	t.Helper()
+	if cmd == nil {
+		return m, nil
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		var next tea.Cmd
+		for _, item := range batch {
+			var itemCmd tea.Cmd
+			m, itemCmd = applyBatch(t, m, item)
+			if itemCmd != nil {
+				next = itemCmd
+			}
+		}
+		return m, next
+	}
+	updated, next := m.Update(msg)
+	return updated.(model), next
 }
 
 func TestHistoryStatsCacheTracksNewestCommits(t *testing.T) {

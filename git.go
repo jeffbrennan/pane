@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -70,14 +71,24 @@ func openRepository() (repository, error) {
 		out, _ := exec.Command("git", "config", "--get-regexp", `^(core\.untrackedcache|status\.showuntrackedfiles)$`).Output()
 		settings <- statusSettings(string(out))
 	}()
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel", "--git-common-dir")
 	out, err := cmd.Output()
 	if err != nil {
 		return repository{}, fmt.Errorf("not inside a Git working tree")
 	}
-	root := strings.TrimSuffix(string(out), "\n")
+	lines := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
+	if len(lines) < 2 {
+		return repository{}, fmt.Errorf("not inside a Git working tree")
+	}
+	root := lines[0]
+	commonDir, err := filepath.Abs(lines[1])
+	if err != nil {
+		commonDir = lines[1]
+	}
 	r := <-settings
-	r.root, r.stats = root, newStatsStore(root)
+	// Commit counts are the same in every worktree, so share the cache by the
+	// repository's common directory instead of the worktree root.
+	r.root, r.stats = root, newStatsStore(commonDir)
 	return r, nil
 }
 

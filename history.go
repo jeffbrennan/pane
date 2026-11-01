@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"time"
@@ -291,7 +293,8 @@ func (m model) openHistory() (tea.Model, tea.Cmd) {
 	m.history.searching = false
 	m.history.selected, m.history.offset = 0, 0
 	m.pending = ""
-	return m.reloadHistory()
+	m, cmd := m.reloadHistory()
+	return m, tea.Batch(cmd, m.loadWorktreeHeads())
 }
 
 func (m model) reloadHistory() (model, tea.Cmd) {
@@ -308,6 +311,39 @@ func (m model) reloadHistory() (model, tea.Cmd) {
 	}
 	m.history.stream = newHistoryStream(m.repo, m.history.path)
 	return m, m.fetchHistory(0, max(historyPage, len(m.history.commits)))
+}
+
+type worktreeHeadsLoaded struct {
+	heads   map[string]string
+	request int
+}
+
+// loadWorktreeHeads decorates history commits that are checked out elsewhere.
+func (m model) loadWorktreeHeads() tea.Cmd {
+	m.worktreeHeadRequest++
+	repo, request := m.repo, m.worktreeHeadRequest
+	return func() tea.Msg {
+		entries, err := repo.worktrees()
+		if err != nil {
+			return worktreeHeadsLoaded{request: request}
+		}
+		heads := make(map[string]string, len(entries))
+		root := repo.root
+		if resolved, err := filepath.EvalSymlinks(root); err == nil {
+			root = resolved
+		}
+		for _, entry := range entries {
+			if entry.head == "" || entry.path == root {
+				continue
+			}
+			name := entry.branch
+			if name == "" {
+				name = shortHash(entry.head)
+			}
+			heads[entry.head] = name
+		}
+		return worktreeHeadsLoaded{heads: heads, request: request}
+	}
 }
 
 func (m model) loadHistoryStats() (model, tea.Cmd) {
@@ -554,6 +590,17 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			break
 		}
 		return m.openBaseFrom(matches[min(m.history.selected, len(matches)-1)].hash)
+	case "b":
+		if m.history.path != "" {
+			m.flash = "Return to history to browse branches"
+			break
+		}
+		return m.openBranches()
+	case "n":
+		if len(matches) == 0 || m.history.loading {
+			break
+		}
+		return m.promptNewBranch(matches[min(m.history.selected, len(matches)-1)].hash)
 	case "/":
 		m.history.searching = true
 		m.history.draft = m.history.filter
@@ -840,6 +887,11 @@ func (m model) streamJumpBeyondEnd(files bool, count int) bool {
 
 func (m model) returnToHistory() (tea.Model, tea.Cmd) {
 	m.cancelCommitLoad()
+	if len(m.history.rows) > 500000 {
+		// A forgotten pane should not keep a huge commit's rows and patch.
+		m.history.rows, m.history.changes = nil, nil
+		debug.FreeOSMemory()
+	}
 	if m.stash.viewing {
 		return m.openStashes()
 	}
@@ -966,7 +1018,7 @@ func (m model) historyView() string {
 			subject = styleBold + m.accent() + "│ " + styleReset + styleBold + fit(clean(c.subject), max(0, m.width-2)) + styleReset
 		}
 		date := historyCommitTime(c.date, now)
-		meta := historyMetadata(c, date, m.width, i == selected, m.accent())
+		meta := historyMetadata(c, date, m.width, i == selected, m.accent(), m.worktreeHeads)
 		content = append(content, subject, meta, "")
 		if len(content) >= available {
 			break
@@ -1002,6 +1054,9 @@ func (m model) historyView() string {
 	}
 	if m.flash != "" {
 		status = clean(m.flash)
+	}
+	if m.modal == "branch-new" {
+		status, hints = "New branch from "+shortHash(m.branch.newFrom)+": "+renderInput(m.input, m.inputCursor, max(1, m.width-32)), keyHints("↵", "create", "esc", "cancel")
 	}
 	if m.history.fetching && m.historyQuery() != "" {
 		status += styleDim + "  searching older commits…" + styleReset
@@ -1049,7 +1104,7 @@ func (m *model) revealHistorySelection() {
 	}
 }
 
-func historyMetadata(c commitInfo, date string, width int, selected bool, accent string) string {
+func historyMetadata(c commitInfo, date string, width int, selected bool, accent string, worktreeHeads map[string]string) string {
 	type segment struct{ text, style string }
 	green, red, cyan := "\x1b[32m", "\x1b[31m", accent
 	if !selected {
@@ -1069,6 +1124,9 @@ func historyMetadata(c commitInfo, date string, width int, selected bool, accent
 		segment{"  " + clean(c.author), "\x1b[2m"},
 		segment{"  " + shortHash(c.hash), cyan},
 	)
+	if name := worktreeHeads[c.hash]; name != "" {
+		segments = append(segments, segment{"  ⌂ " + clean(name), "\x1b[2m"})
+	}
 	var b strings.Builder
 	remaining := width
 	for _, part := range segments {

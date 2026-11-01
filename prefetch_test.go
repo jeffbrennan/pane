@@ -65,8 +65,8 @@ func TestCleanStartupOpensPrefetchedHistoryWithStats(t *testing.T) {
 	if m.screen != "history" || m.prefetch != nil || cmd == nil {
 		t.Fatalf("clean startup should open prefetched history; screen %q", m.screen)
 	}
-	updated, _ = m.Update(cmd())
-	m = updated.(model)
+	m, cmd = applyBatch(t, m, cmd)
+	m, _ = applyBatch(t, m, cmd)
 	defer m.closeHistoryStreams()
 	if len(m.history.commits) != 2 || m.history.commits[0].subject != "second" {
 		t.Fatalf("unexpected history: %+v", m.history.commits)

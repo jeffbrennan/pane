@@ -73,6 +73,7 @@ type model struct {
 	themeQuery            func()
 	ticks                 int
 	blurred               bool
+	blurredInterval       int
 	whitespaceRefreshing  bool
 	loading, busy         bool
 	activeAction          string
@@ -91,6 +92,8 @@ type model struct {
 	screen, viewTitle     string
 	viewBadge, viewHints  string
 	history               historyState
+	worktreeHeads         map[string]string
+	worktreeHeadRequest   int
 	picker                pickerState
 	pickerReturn          bool
 	pickerBackToHistory   bool
@@ -116,6 +119,8 @@ type model struct {
 	stageCursor           *stagingCursor
 	sequence              sequenceState
 	stash                 stashState
+	branch                branchState
+	worktrees             worktreeState
 	base                  baseState
 	contextBase           bool
 	fileHistoryReturn     *model
@@ -363,7 +368,7 @@ func (m model) queryTheme() tea.Cmd {
 }
 
 func (m model) readOnlyDiff() bool {
-	return m.screen == "commit" || m.screen == "sequence" || m.screen == "stashes" || (m.screen == "history" && m.history.path != "")
+	return m.screen == "commit" || m.screen == "sequence" || m.screen == "stashes" || m.screen == "branches" || m.screen == "worktrees" || (m.screen == "history" && m.history.path != "")
 }
 
 func (m model) queryThemeOnTick() tea.Cmd {
@@ -476,7 +481,9 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.ticks++
 		interval := refreshTicks
-		if m.blurred || m.screen == "history" {
+		if m.blurred {
+			interval = m.blurredRefreshInterval()
+		} else if m.screen == "history" {
 			interval = blurredRefreshTicks
 		}
 		if (m.screen == "" || m.screen == "base" || (m.screen == "history" && m.history.path == "")) && m.ticks%interval == 0 {
@@ -492,6 +499,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.blurred = true
 	case tea.FocusMsg:
 		m.blurred, m.ticks = false, 0
+		m.blurredInterval = blurredRefreshMin
 		m, cmd := m.refresh()
 		return m, tea.Batch(cmd, m.queryTheme())
 	case terminalBackgroundChanged:
@@ -507,6 +515,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.generation != m.generation {
 			return m.refresh()
 		}
+		m.backOffBlurredRefresh()
 		m.refreshCache = msg.cache
 		m.whitespaceRefreshing = false
 		m.restoreStagingCursor()
@@ -534,12 +543,15 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.snapshot = msg.snapshot
 		if changed {
+			m.resetBlurredRefresh()
 			if splice {
 				m.refreshRows()
 				m.previousChanges = nil
 			} else {
 				m.rebuild()
 			}
+		} else {
+			m.backOffBlurredRefresh()
 		}
 		m.restoreStagingCursor()
 		if headChanged && m.screen == "commit" {
@@ -669,6 +681,10 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil && m.recentCommits == nil {
 			m.recentCommits = []commitInfo{}
 		}
+	case worktreeHeadsLoaded:
+		if msg.request == m.worktreeHeadRequest {
+			m.worktreeHeads = msg.heads
+		}
 	case historyLoaded:
 		if (m.screen != "history" && m.screen != "commit") || msg.request != m.history.request || (msg.skip > 0 && (!m.history.fetching || msg.skip != len(m.history.commits))) {
 			break
@@ -758,6 +774,66 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.stash.entries = msg.entries
 		m.stash.selected = min(m.stash.selected, max(0, len(msg.entries)-1))
+	case branchesLoaded:
+		if m.screen != "branches" || msg.request != m.branch.request {
+			break
+		}
+		m.branch.loading = false
+		if msg.err != nil {
+			m.errorText = msg.err.Error()
+			m.errorPos = 0
+			m.modal = "error"
+			break
+		}
+		m.branch.entries = msg.entries
+		m.branch.selected = min(m.branch.selected, max(0, len(msg.entries)-1))
+	case branchActionDone:
+		if msg.err != nil {
+			m.errorText = msg.err.Error()
+			m.errorPos = 0
+			m.modal = "error"
+			break
+		}
+		m.flash = msg.message
+		if msg.stay {
+			return m.reloadBranches()
+		}
+		next, historyCmd := m.openHistory()
+		refreshed, refreshCmd := next.(model).refresh()
+		return refreshed, tea.Batch(historyCmd, refreshCmd)
+	case worktreesLoaded:
+		if m.screen != "worktrees" || msg.request != m.worktrees.request {
+			break
+		}
+		m.worktrees.loading = false
+		if msg.err != nil {
+			m.errorText = msg.err.Error()
+			m.errorPos = 0
+			m.modal = "error"
+			break
+		}
+		m.worktrees.entries = msg.entries
+		m.worktrees.status = make(map[string]worktreeStatus, len(msg.entries))
+		m.worktrees.selected = min(m.worktrees.selected, max(0, len(msg.entries)-1))
+		cmds := make([]tea.Cmd, 0, len(msg.entries))
+		for _, entry := range msg.entries {
+			cmds = append(cmds, loadWorktreeStatus(m.repo, entry.path, m.worktrees.request))
+		}
+		return m, tea.Batch(cmds...)
+	case worktreeStatusLoaded:
+		if m.screen != "worktrees" || msg.request != m.worktrees.request || msg.err != nil {
+			break
+		}
+		m.worktrees.status[msg.path] = msg.status
+	case worktreeActionDone:
+		if msg.err != nil {
+			m.errorText = msg.err.Error() + "\n\nPress D on the worktree to force removal."
+			m.errorPos = 0
+			m.modal = "error"
+			break
+		}
+		m.flash = msg.message
+		return m.reloadWorktrees()
 	case stashDiffLoaded:
 		if m.screen != "commit" || !m.stash.viewing || msg.request != m.history.request {
 			break
@@ -939,6 +1015,12 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.screen == "stashes" {
 				return m.handleStashKey(msg)
 			}
+			if m.screen == "branches" {
+				return m.handleBranchKey(msg)
+			}
+			if m.screen == "worktrees" {
+				return m.handleWorktreeKey(msg)
+			}
 			if m.screen == "sequence" {
 				return m.handleSequenceKey(msg)
 			}
@@ -1080,6 +1162,62 @@ func (m *model) handleDiffTool(key string) bool {
 func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.modal == "note" {
 		return m.handleNoteKey(key)
+	}
+	switch m.modal {
+	case "branch-new":
+		switch key.String() {
+		case "enter":
+			m.modal = ""
+			return m.createBranch(m.input, m.branch.newFrom)
+		case "esc", "ctrl+c":
+			m.modal = ""
+		default:
+			var inserted []rune
+			if key.Type == tea.KeyRunes {
+				inserted = key.Runes
+			} else if key.Type == tea.KeySpace {
+				inserted = []rune{' '}
+			}
+			m.input, m.inputCursor, _ = editLine(m.input, m.inputCursor, key.String(), inserted)
+		}
+		return m, nil
+	case "worktree-new":
+		switch key.String() {
+		case "enter":
+			m.modal = ""
+			return m.createWorktree()
+		case "esc", "ctrl+c":
+			m.modal = ""
+		default:
+			var inserted []rune
+			if key.Type == tea.KeyRunes {
+				inserted = key.Runes
+			} else if key.Type == tea.KeySpace {
+				inserted = []rune{' '}
+			}
+			m.input, m.inputCursor, _ = editLine(m.input, m.inputCursor, key.String(), inserted)
+		}
+		return m, nil
+	case "branch-delete":
+		switch key.String() {
+		case "y":
+			entry, force := m.branch.confirm, m.branch.confirmForce
+			m.modal = ""
+			return m.deleteBranch(entry, force)
+		case "n", "esc", "q", "ctrl+c":
+			m.modal = ""
+		}
+		return m, nil
+	case "worktree-delete":
+		switch key.String() {
+		case "y":
+			entry, force := m.worktrees.confirm, m.worktrees.confirmForce
+			m.modal = ""
+			return m.removeWorktree(entry, force)
+		case "n", "esc", "q", "ctrl+c":
+			m.modal = ""
+		}
+		return m, nil
 	}
 	if m.modal == "stash-confirm" {
 		switch key.String() {
@@ -1731,11 +1869,17 @@ func (m model) View() string {
 	if m.width <= 0 || m.height <= 0 {
 		return ""
 	}
-	if m.modal == "error" || m.modal == "discard" || m.modal == "stash-confirm" {
+	if m.modal == "error" || m.modal == "discard" || m.modal == "stash-confirm" || m.modal == "branch-delete" || m.modal == "worktree-delete" {
 		return m.confirmationView()
 	}
 	if m.screen == "history" {
 		return m.historyView()
+	}
+	if m.screen == "branches" {
+		return m.branchView()
+	}
+	if m.screen == "worktrees" {
+		return m.worktreeView()
 	}
 	if m.screen == "stashes" {
 		return m.stashView()
@@ -1804,6 +1948,10 @@ func (m model) View() string {
 		status, hints = prefix+renderInput(m.search.draft, m.search.cursor, max(1, m.width-1)), keyHints("↵", "search", "esc", "cancel")
 	case "note":
 		status, hints = "Note: "+renderInput(m.input, m.inputCursor, max(1, m.width-8)), keyHints("↵", "save", "esc", "cancel")
+	case "branch-new":
+		status, hints = "New branch from "+shortHash(m.branch.newFrom)+": "+renderInput(m.input, m.inputCursor, max(1, m.width-32)), keyHints("↵", "create", "esc", "cancel")
+	case "worktree-new":
+		status, hints = "New worktree (path  branch): "+renderInput(m.input, m.inputCursor, max(1, m.width-34)), keyHints("↵", "create", "esc", "cancel")
 	case "commit":
 		status, hints = "", ""
 		if m.width < 24 || m.height < 9 {
@@ -1851,6 +1999,12 @@ func (m model) confirmationView() string {
 	if m.modal == "stash-confirm" && small {
 		return strings.Join([]string{fit(" "+strings.ToUpper(m.stash.operation)+" "+m.stash.target.ref+"?", m.width), fit(" y confirm  n/esc cancel", m.width)}, "\n")
 	}
+	if m.modal == "branch-delete" && small {
+		return strings.Join([]string{fit(" Delete branch "+m.branch.confirm.name+"?", m.width), fit(" y confirm  n/esc cancel", m.width)}, "\n")
+	}
+	if m.modal == "worktree-delete" && small {
+		return strings.Join([]string{fit(" Remove worktree "+m.worktrees.confirm.path+"?", m.width), fit(" y confirm  n/esc cancel", m.width)}, "\n")
+	}
 	if m.modal == "error" && small {
 		content := m.errorLines(m.width)
 		start := min(m.errorPos, max(0, len(content)-1))
@@ -1871,6 +2025,10 @@ func (m model) confirmationView() string {
 		m.showErrorDialog(lines)
 	} else if m.modal == "stash-confirm" {
 		m.showStashConfirm(lines)
+	} else if m.modal == "branch-delete" {
+		m.showBranchDelete(lines)
+	} else if m.modal == "worktree-delete" {
+		m.showWorktreeDelete(lines)
 	} else {
 		m.showDiscardDialog(lines)
 	}
