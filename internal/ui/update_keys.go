@@ -155,7 +155,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "p":
 		if !m.busy {
-			return m.runAction("push")
+			return m.startPush()
 		}
 	case "P":
 		if !m.busy {
@@ -239,6 +239,21 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.removeWorktree(entry, force)
 		case "n", "esc", "q", "ctrl+c":
 			m.modal = ""
+		}
+		return m, nil
+	case "push-upstream":
+		switch key.String() {
+		case "enter":
+			return m.confirmPush(false)
+		case "a":
+			return m.confirmPush(true)
+		case "esc", "q", "n", "ctrl+c":
+			m.modal = ""
+		default:
+			if selected, ok := m.selectPushRemote(key.String()); ok {
+				m = selected
+				return m.confirmPush(false)
+			}
 		}
 		return m, nil
 	}

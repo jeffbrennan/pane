@@ -180,6 +180,36 @@ func (m model) showBranchDelete(lines []string) {
 	}.render())
 }
 
+// showPushUpstream asks how to push a branch with no upstream. The remote is
+// only guessed when Git's own settings name one.
+func (m model) showPushUpstream(lines []string) {
+	boxWidth := min(max(48, ansi.StringWidth("Push "+m.push.branch+" and track it?")+6), m.width-2)
+	title := "Push " + syntax.Clean(m.push.branch) + " and track it?"
+	body := []string{""}
+	command := "Pane runs git push --set-upstream " + m.push.remote + " " + m.push.branch + "."
+	for _, line := range wrapWords(command, boxWidth-4) {
+		body = append(body, styleDim+syntax.Clean(line)+styleReset)
+	}
+	body = append(body, "")
+	hint := keyHints("↵", "push", "a", "always", "esc", "cancel")
+	if m.push.remote == "" {
+		title = "Push " + syntax.Clean(m.push.branch) + " to which remote?"
+		body = []string{""}
+		for i, remote := range m.push.remotes {
+			body = append(body, fmt.Sprintf("  %d %s", i+1, syntax.Clean(remote)))
+		}
+		if len(m.push.remotes) == 0 {
+			body = append(body, styleDim+"This repository has no remotes."+styleReset)
+		}
+		body = append(body, "")
+		hint = keyHints("1/2", "choose", "esc", "cancel")
+		boxWidth = min(max(48, ansi.StringWidth("Push "+m.push.branch+" to which remote?")+6), m.width-2)
+	}
+	placeDialog(lines, m.width, dialog{
+		width: boxWidth, title: title, body: body, hint: hint,
+	}.render())
+}
+
 func (m model) showWorktreeDelete(lines []string) {
 	title := "Remove worktree?"
 	boxWidth := min(max(48, ansi.StringWidth(title)+6), m.width-2)

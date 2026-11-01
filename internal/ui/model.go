@@ -110,6 +110,7 @@ type model struct {
 	sequence              sequenceState
 	stash                 stashState
 	branch                branchState
+	push                  pushState
 	worktrees             worktreeState
 	hotspots              hotspotState
 	base                  baseState

@@ -53,7 +53,7 @@ func (m model) View() string {
 	if m.width <= 0 || m.height <= 0 {
 		return ""
 	}
-	if m.modal == "error" || m.modal == "discard" || m.modal == "stash-confirm" || m.modal == "branch-delete" || m.modal == "worktree-delete" {
+	if m.modal == "error" || m.modal == "discard" || m.modal == "stash-confirm" || m.modal == "branch-delete" || m.modal == "worktree-delete" || m.modal == "push-upstream" {
 		return m.confirmationView()
 	}
 	if m.screen == "history" {
@@ -155,7 +155,7 @@ func (m model) View() string {
 		}
 		status, hints = prefix+renderInput(m.search.draft, m.search.cursor, max(1, m.width-1)), keyHints("↵", "search", "esc", "cancel")
 	case "branch-new":
-		status, hints = "New branch from "+shortHash(m.branch.newFrom)+": "+renderInput(m.input, m.inputCursor, max(1, m.width-32)), keyHints("↵", "create", "esc", "cancel")
+		status, hints = m.newBranchStatus()
 	case "worktree-new":
 		status, hints = "New worktree (path  branch): "+renderInput(m.input, m.inputCursor, max(1, m.width-34)), keyHints("↵", "create", "esc", "cancel")
 	case "commit":
@@ -207,6 +207,15 @@ func (m model) confirmationView() string {
 	if m.modal == "worktree-delete" && small {
 		return strings.Join([]string{fit(" Remove worktree "+m.worktrees.confirm.Path+"?", m.width), fit(" y confirm  n/esc cancel", m.width)}, "\n")
 	}
+	if m.modal == "push-upstream" && small {
+		title := " Push " + m.push.branch + " to " + m.push.remote + " and track it?"
+		hint := " enter push  a always  esc cancel"
+		if m.push.remote == "" {
+			title = " Push " + m.push.branch + " to which remote?"
+			hint = " 1/2 choose  esc cancel"
+		}
+		return strings.Join([]string{fit(title, m.width), fit(hint, m.width)}, "\n")
+	}
 	if m.modal == "error" && small {
 		content := m.errorLines(m.width)
 		start := min(m.errorPos, max(0, len(content)-1))
@@ -231,6 +240,8 @@ func (m model) confirmationView() string {
 		m.showBranchDelete(lines)
 	} else if m.modal == "worktree-delete" {
 		m.showWorktreeDelete(lines)
+	} else if m.modal == "push-upstream" {
+		m.showPushUpstream(lines)
 	} else {
 		m.showDiscardDialog(lines)
 	}

@@ -485,7 +485,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.help.reset()
 	case "p":
 		if !m.busy {
-			return m.runAction("push")
+			return m.startPush()
 		}
 	case "P":
 		if !m.busy {
@@ -964,7 +964,7 @@ func (m model) historyView() string {
 		status = syntax.Clean(m.flash)
 	}
 	if m.modal == "branch-new" {
-		status, hints = "New branch from "+shortHash(m.branch.newFrom)+": "+renderInput(m.input, m.inputCursor, max(1, m.width-32)), keyHints("↵", "create", "esc", "cancel")
+		status, hints = m.newBranchStatus()
 	}
 	if m.history.fetching && m.historyQuery() != "" {
 		status += styleDim + "  searching older commits…" + styleReset
