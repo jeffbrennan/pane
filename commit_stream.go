@@ -164,6 +164,7 @@ func (r repository) streamPatch(ctx context.Context, statusArgs, patchArgs []str
 		for _, path := range paths {
 			known[path] = true
 		}
+		generated := r.generatedPaths(paths)
 		seen := make(map[string]bool, len(paths))
 		var changes []change
 		loaded, lines := 0, 0
@@ -184,7 +185,7 @@ func (r repository) streamPatch(ctx context.Context, statusArgs, patchArgs []str
 			if err != nil {
 				return err
 			}
-			c := change{path: path, oldPath: oldPaths[path], diff: diff}
+			c := change{path: path, oldPath: oldPaths[path], diff: diff, generated: generated[path]}
 			c.syntaxSkipped = highlightable(c)
 			changes = append(changes, c)
 			seen[path] = true

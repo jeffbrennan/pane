@@ -71,6 +71,15 @@ func (m *model) appendCommitChanges(changes []change, done bool) {
 	if len(changes) == 0 {
 		return
 	}
+	seeded := *m
+	if m.screen == "base" {
+		seeded.contextCommit, seeded.contextBase = m.base.hash, true
+	} else {
+		seeded.contextCommit, seeded.contextBase = m.history.current.hash, false
+	}
+	seeded.staged = false
+	seeded.collapseGenerated(changes)
+	m.collapsedFiles, m.generatedHandled = seeded.collapsedFiles, seeded.generatedHandled
 	width := m.history.streamGutter
 	if width == 0 && !done {
 		width = 4
@@ -650,6 +659,7 @@ func (m model) inDiff(f func(*model)) model {
 	f(&view)
 	m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop = view.rows, view.pos, view.horizontal, view.viewTop
 	m.history.gutterWidth = view.gutterWidth
+	m.collapsedFiles, m.generatedHandled = view.collapsedFiles, view.generatedHandled
 	m.history.expandedDeleted = view.expandedDeleted
 	m.pending, m.count, m.modal, m.picker, m.search, m.flash = view.pending, view.count, view.modal, view.picker, view.search, view.flash
 	m.history.jumps, m.history.jumpIndex = view.jumps, view.jumpIndex
@@ -741,6 +751,7 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	m.history.rows, m.history.pos, m.history.horizontal, m.history.viewTop = view.rows, view.pos, view.horizontal, view.viewTop
 	m.history.gutterWidth = view.gutterWidth
+	m.collapsedFiles, m.generatedHandled = view.collapsedFiles, view.generatedHandled
 	return m, nil
 }
 
@@ -862,6 +873,7 @@ func (m *model) rebuildCommit() {
 	view.rebuild()
 	m.history.rows, m.history.pos, m.history.viewTop = view.rows, view.pos, view.viewTop
 	m.history.gutterWidth = view.gutterWidth
+	m.collapsedFiles, m.generatedHandled = view.collapsedFiles, view.generatedHandled
 }
 
 func (m model) commitView() string { return m.commitModel().View() }

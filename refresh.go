@@ -295,6 +295,7 @@ func (r repository) loadChanges(previous *refreshCache, deferOffscreen bool) (*r
 		for _, c := range group.changes {
 			key := changeKey{c.path, group.staged}
 			cached := next.changes[key]
+			c.generated = generatedByPath(c.path)
 			cached.change = c
 			next.changes[key] = cached
 		}

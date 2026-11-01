@@ -80,6 +80,8 @@ Commits include only staged changes if any are staged. Otherwise, pane stages al
 
 Press `ctrl-g` in the commit dialog to edit the full message in `$VISUAL` or `$EDITOR`. Saving and closing the editor submits the commit; lines beginning with `#` are ignored, and an empty message aborts. This also works when editing the latest commit's message from history, subject to the same remote checks.
 
+Lock files and generated files (`*.lock`, `*.snap`, `*.min.js`, `go.sum`, `Cargo.lock`, `bun.lock`, `package-lock.json`, and paths marked `linguist-generated` or `-diff` in `.gitattributes`) start collapsed and show `generated` with line counts on the header. Press `l` to open one; the choice lasts for the session.
+
 Detected renames show the old and new paths on separate lines in staged changes and commit views, with removed path text highlighted in red and added text in green. Press `B` to shorten displayed paths to the parent directory and filename; an ellipsis indicates omitted directories and is highlighted when they differ. The file picker displays the new path and can search either full name. Unstaged moves appear as a deletion and an untracked file, as in Git status.
 
 Submodule changes show the old and new revisions, available commit subjects, and dirty-state notices. The file picker labels submodules. In multi-commit review, search shows how many commits have loaded and includes new matches as loading continues.

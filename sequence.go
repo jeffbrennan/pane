@@ -153,6 +153,11 @@ func (m *model) rebuildSequence() {
 			for _, c := range m.sequence.changes[i] {
 				expanded[c.path] = true
 			}
+			view := *m
+			view.contextCommit = m.sequence.commits[i].hash
+			view.contextBase, view.staged = false, false
+			view.collapseGenerated(m.sequence.changes[i])
+			m.collapsedFiles, m.generatedHandled = view.collapsedFiles, view.generatedHandled
 			changes := m.applySyntaxDemand(contextKey{commit: m.sequence.commits[i].hash}, m.sequence.changes[i])
 			files, m.sequence.gutterWidths[i] = buildRowsDisplay(changes, width, m.wrap, expanded, 0, m.shortPaths)
 			if len(files) == 0 {
@@ -162,6 +167,8 @@ func (m *model) rebuildSequence() {
 			if len(block) > 0 && m.sequence.commits[i].author != "" {
 				files = append(block, files...)
 			}
+			view.contextCommit = m.sequence.commits[i].hash
+			files = view.foldContextFiles(files)
 			for j := range files {
 				files[j].commitIndex = uint16(i)
 			}
@@ -267,6 +274,27 @@ func (m model) handleSequenceKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.sequence.rowCache = nil
 		m.rebuildSequence()
 		return m, nil
+	}
+	if m.pending == "" && (key.String() == "h" || key.String() == "l") && m.pos >= 0 && m.pos < len(m.rows) && m.rows[m.pos].kind == 'f' {
+		index := int(m.rows[m.pos].commitIndex)
+		if index < len(m.sequence.commits) {
+			if m.collapsedFiles == nil {
+				m.collapsedFiles = make(map[contextKey]bool)
+			}
+			if m.generatedHandled == nil {
+				m.generatedHandled = make(map[contextKey]bool)
+			}
+			fileKey := contextKey{commit: m.sequence.commits[index].hash, path: m.rows[m.pos].path}
+			m.generatedHandled[fileKey] = true
+			if key.String() == "h" {
+				m.collapsedFiles[fileKey] = true
+			} else {
+				delete(m.collapsedFiles, fileKey)
+			}
+			m.sequence.rowCache[index] = nil
+			m.rebuildSequence()
+			return m, nil
+		}
 	}
 	if m.handleDiffNavigation(key.String()) {
 		return m, nil

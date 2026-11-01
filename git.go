@@ -22,6 +22,7 @@ type change struct {
 	// syntaxSkipped marks a file the syntax budget left plain; it is
 	// highlighted once it scrolls into view. See syntaxDemand.
 	syntaxSkipped      bool
+	generated          bool
 	conflict           bool
 	untracked          bool
 	untrackedHash      [32]byte

@@ -8,6 +8,7 @@ type row struct {
 	lineIndex, headerIndex     int32
 	commitIndex                uint16
 	renameAdded, submodule     bool
+	generated                  bool
 	// A highlighted line can have no spans but still use syntax-aware rendering.
 	syntaxPresent bool
 	kind          byte
@@ -20,7 +21,9 @@ type rowSpans struct {
 }
 
 type wideRowIndexes struct {
-	line, header int
+	line, header     int
+	generatedAdded   int
+	generatedDeleted int
 }
 
 // The sentinel preserves full native-int values, including MinInt32 itself.
@@ -52,6 +55,22 @@ func (r row) wideIndexes() *wideRowIndexes {
 		return nil
 	}
 	return r.spans.wide
+}
+
+func (r row) generatedCounts() (int, int) {
+	if r.spans == nil || r.spans.wide == nil {
+		return 0, 0
+	}
+	return r.spans.wide.generatedAdded, r.spans.wide.generatedDeleted
+}
+
+func (r *row) setGeneratedCounts(added, deleted int) {
+	wide := wideRowIndexes{}
+	if old := r.wideIndexes(); old != nil {
+		wide = *old
+	}
+	wide.generatedAdded, wide.generatedDeleted = added, deleted
+	r.spans = newRowSpans(r.syntaxSpans(), r.inlineSpans(), &wide)
 }
 
 func (r *row) setLineNumber(value int) {

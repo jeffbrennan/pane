@@ -285,6 +285,7 @@ func (r repository) commitChangesWithoutSyntax(hash string) ([]change, error) {
 	if err != nil {
 		return nil, err
 	}
+	generated := r.generatedPaths(paths)
 	changes, err := parallelDiffs(paths, func(path string) (string, error) {
 		if r.context != nil && r.context.Err() != nil {
 			return "", r.context.Err()
@@ -294,6 +295,7 @@ func (r repository) commitChangesWithoutSyntax(hash string) ([]change, error) {
 	})
 	for i := range changes {
 		changes[i].oldPath = oldPaths[changes[i].path]
+		changes[i].generated = generated[changes[i].path]
 	}
 	return changes, err
 }

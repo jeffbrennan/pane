@@ -100,6 +100,7 @@ type model struct {
 	expandedDeleted       map[string]bool
 	contextFiles          map[contextKey]contextFile
 	collapsedFiles        map[contextKey]bool
+	generatedHandled      map[contextKey]bool
 	contextRequest        int
 	contextCommit         string
 	syntaxDemand          *syntaxDemand
@@ -1219,6 +1220,7 @@ func (m *model) refreshRows() {
 		m.rebuildSequence()
 		return
 	}
+	m.collapseGenerated(m.currentChanges())
 	byPath := make(map[string][]row)
 	for start := 0; start < len(m.rows); {
 		begin := start
@@ -1250,6 +1252,7 @@ func (m *model) rebuildRows(previous func(path string) ([]row, bool)) {
 		changes = m.snapshot.staged
 	}
 	changes = m.applySyntaxDemand(contextKey{commit: m.contextCommit, staged: m.staged, base: m.contextBase}, changes)
+	m.collapseGenerated(changes)
 	var rows []row
 	gutterWidth := m.gutterFloor
 	if previous != nil {
@@ -2005,7 +2008,14 @@ func (m model) renderDiffRowWithGutter(r row, active bool, gutter string) string
 			color = styleDim
 		}
 	case 'f', 'F':
-		text += strings.Repeat(" ", max(0, contentWidth-stringWidth(text)))
+		if r.kind == 'f' && r.generated && (r.oldPath == "" || r.renameAdded) {
+			suffix := generatedLabel(r)
+			head := fit(text, max(0, contentWidth-stringWidth(suffix)))
+			padding := strings.Repeat(" ", max(0, contentWidth-stringWidth(head)-stringWidth(suffix)))
+			text = head + padding + styleDim + suffix + styleReset
+		} else {
+			text += strings.Repeat(" ", max(0, contentWidth-stringWidth(text)))
+		}
 		color = renameHeaderDark
 		if m.lightTheme {
 			color = renameHeaderLight

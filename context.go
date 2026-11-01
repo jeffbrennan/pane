@@ -39,11 +39,15 @@ func (m model) foldContextFiles(rows []row) []row {
 	}
 	folded := make([]row, 0, len(rows))
 	collapsed := false
+	var commit uint16
 	for _, r := range rows {
+		if r.commitIndex != commit {
+			commit, collapsed = r.commitIndex, false
+		}
 		if r.kind == 'f' {
 			collapsed = m.collapsedFiles[contextKey{path: r.path, commit: m.contextCommit, staged: m.staged, base: m.contextBase}]
 		}
-		if !collapsed || r.kind == 'f' || r.kind == 'F' || r.kind == 's' {
+		if !collapsed || r.kind == 'f' || r.kind == 'F' || r.kind == 's' || r.kind == 'm' || r.kind == 'M' {
 			folded = append(folded, r)
 		}
 	}

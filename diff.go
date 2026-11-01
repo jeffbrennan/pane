@@ -145,7 +145,11 @@ func changeRows(c change, separated bool, width int, wrap bool, expanded bool, g
 		name = displayPath(c.oldPath, shortPaths)
 	}
 	_, _, submodule := submoduleLine(strings.SplitN(c.diff, "\n", 2)[0])
-	header := row{path: c.path, oldPath: c.oldPath, lineIndex: -1, text: " " + name, kind: 'f', submodule: submodule}
+	header := row{path: c.path, oldPath: c.oldPath, lineIndex: -1, text: " " + name, kind: 'f', submodule: submodule, generated: c.generated}
+	if c.generated {
+		added, deleted := countGeneratedLines(c.diff)
+		header.setGeneratedCounts(added, deleted)
+	}
 	if deletedFile && !expanded {
 		header.deletedLines = deletedLines
 	}
