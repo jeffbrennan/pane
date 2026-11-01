@@ -99,6 +99,7 @@ var shortcutSections = []struct {
 		{"s", "Sort by score or path"},
 		{"h / l", "Fold a directory"},
 		{"↵", "Open file history or filter by author"},
+		{"V", "Review the selected file or directory as a commit range"},
 		{"esc / q", "Back to history"},
 	}},
 	{"Search input", []shortcut{

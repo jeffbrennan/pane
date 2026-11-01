@@ -2,8 +2,13 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,11 +57,25 @@ type hotspotsLoaded struct {
 	err     error
 }
 
+type hotspotSequenceLoaded struct {
+	commits []commitInfo
+	request int
+	err     error
+}
+
 func hotSinceDefault() string { return "1.year" }
 
 // hotspots runs one streamed git log over the window and folds numstat into
 // per-file and per-author churn.
 func (r repository) hotspots(since, author string) ([]hotFile, map[string]*hotAuthor, error) {
+	head := ""
+	if out, err := r.command("rev-parse", "--verify", "--quiet", "HEAD"); err == nil {
+		head = strings.TrimSpace(string(out))
+	}
+	cachePath := hotCachePath(r.root, since, author)
+	if files, authors, ok := readHotCache(cachePath, head); ok {
+		return files, authors, nil
+	}
 	args := []string{"log", "--numstat", "-M", "-z", "--format=%x00%H%x00%at%x00%aN"}
 	if since != "" {
 		args = append(args, "--since="+since)
@@ -153,6 +172,7 @@ func (r repository) hotspots(since, author string) ([]hotFile, map[string]*hotAu
 		result = append(result, *file)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].score > result[j].score })
+	writeHotCache(cachePath, head, since, author, result, authors)
 	return result, authors, nil
 }
 
@@ -161,6 +181,84 @@ func topDir(path string) string {
 		return path[:i]
 	}
 	return "."
+}
+
+type hotCache struct {
+	Head    string           `json:"head"`
+	Since   string           `json:"since"`
+	Author  string           `json:"author"`
+	Files   []hotCacheFile   `json:"files"`
+	Authors []hotCacheAuthor `json:"authors"`
+}
+
+type hotCacheFile struct {
+	Path    string         `json:"path"`
+	Added   int            `json:"added"`
+	Deleted int            `json:"deleted"`
+	Commits int            `json:"commits"`
+	Score   float64        `json:"score"`
+	Last    int64          `json:"last"`
+	Authors map[string]int `json:"authors"`
+}
+
+type hotCacheAuthor struct {
+	Name    string         `json:"name"`
+	Commits int            `json:"commits"`
+	Churn   int            `json:"churn"`
+	Dirs    map[string]int `json:"dirs"`
+}
+
+func hotCachePath(root, since, author string) string {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(root + "\x00" + since + "\x00" + author))
+	return filepath.Join(dir, "pane", "hot-"+hex.EncodeToString(sum[:8]))
+}
+
+func readHotCache(path, head string) ([]hotFile, map[string]*hotAuthor, bool) {
+	if path == "" || head == "" {
+		return nil, nil, false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, nil, false
+	}
+	var cache hotCache
+	if err := json.Unmarshal(data, &cache); err != nil || cache.Head != head {
+		return nil, nil, false
+	}
+	files := make([]hotFile, len(cache.Files))
+	for i, file := range cache.Files {
+		files[i] = hotFile{path: file.Path, added: file.Added, deleted: file.Deleted, commits: file.Commits, score: file.Score, last: time.Unix(file.Last, 0), authors: file.Authors}
+	}
+	authors := make(map[string]*hotAuthor, len(cache.Authors))
+	for _, author := range cache.Authors {
+		authors[author.Name] = &hotAuthor{name: author.Name, commits: author.Commits, churn: author.Churn, dirs: author.Dirs}
+	}
+	return files, authors, true
+}
+
+func writeHotCache(path, head, since, author string, files []hotFile, authors map[string]*hotAuthor) {
+	if path == "" {
+		return
+	}
+	cache := hotCache{Head: head, Since: since, Author: author}
+	for _, file := range files {
+		cache.Files = append(cache.Files, hotCacheFile{Path: file.path, Added: file.added, Deleted: file.deleted, Commits: file.commits, Score: file.score, Last: file.last.Unix(), Authors: file.authors})
+	}
+	for _, item := range authors {
+		cache.Authors = append(cache.Authors, hotCacheAuthor{Name: item.name, Commits: item.commits, Churn: item.churn, Dirs: item.dirs})
+	}
+	data, err := json.Marshal(cache)
+	if err != nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return
+	}
+	_ = os.WriteFile(path, data, 0600)
 }
 
 func (m model) loadHotspots() tea.Cmd {
@@ -305,6 +403,37 @@ func (m model) hotItems() []hotItem {
 }
 
 func filepathToSlash(path string) string { return strings.ReplaceAll(path, "\\", "/") }
+
+func (m model) hotspotSequence(path string) tea.Cmd {
+	repo, request := m.repo, m.hotspots.request
+	since, author := m.hotspots.since, m.hotspots.author
+	return func() tea.Msg {
+		args := []string{"log", "-z", "--format=%H"}
+		if since != "" {
+			args = append(args, "--since="+since)
+		}
+		if author != "" {
+			args = append(args, "--author="+author)
+		}
+		args = append(args, "--", path)
+		out, err := repo.commandStdout(args...)
+		if err != nil {
+			return hotspotSequenceLoaded{request: request, err: gitError(out, err)}
+		}
+		var commits []commitInfo
+		for _, field := range bytes.Split(out, []byte{0}) {
+			hash := strings.TrimSpace(string(field))
+			if hash == "" {
+				continue
+			}
+			if len(commits) == maxSequenceCommits {
+				break
+			}
+			commits = append(commits, commitInfo{hash: hash})
+		}
+		return hotspotSequenceLoaded{commits: commits, request: request}
+	}
+}
 
 func (m model) hotViewport(count int) (int, int) {
 	available := max(1, m.height-2)
@@ -486,6 +615,13 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.hotspots.collapsed = make(map[string]bool)
 				}
 				m.hotspots.collapsed[items[m.hotspots.selected].path] = key.String() == "h"
+			}
+		}
+	case "V":
+		if m.hotspots.mode == "" {
+			items := m.hotItems()
+			if len(items) > 0 {
+				return m, m.hotspotSequence(items[min(m.hotspots.selected, len(items)-1)].path)
 			}
 		}
 	case "enter":

@@ -2,6 +2,7 @@ package main
 
 import (
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -141,4 +142,50 @@ func m0Authors(t *testing.T, r repository) map[string]*hotAuthor {
 		t.Fatal(err)
 	}
 	return authors
+}
+
+func TestHotspotVOpensFilteredSequence(t *testing.T) {
+	r := hotFixture(t)
+	m := model{width: 120, height: 30, wrap: true, repo: r, viewed: newViewedStore(r.root)}
+	updated, cmd := m.openHotspots("2.year", "")
+	m = updated.(model)
+	m, _ = applyBatch(t, m, cmd)
+	items := m.hotItems()
+	if len(items) == 0 {
+		t.Fatal("no hotspot items")
+	}
+	cmd = m.hotspotSequence(items[0].path)
+	if cmd == nil {
+		t.Fatal("no sequence command")
+	}
+	msg, ok := cmd().(hotspotSequenceLoaded)
+	if !ok || msg.err != nil || len(msg.commits) == 0 {
+		t.Fatalf("sequence message: %#v", msg)
+	}
+	updated, cmd = m.Update(msg)
+	m = updated.(model)
+	if m.screen != "sequence" || len(m.sequence.commits) == 0 || cmd == nil {
+		t.Fatalf("sequence review: screen=%q commits=%d", m.screen, len(m.sequence.commits))
+	}
+}
+
+func TestHotspotCacheAvoidsSecondScan(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	r := hotFixture(t)
+	if _, _, err := r.hotspots("2.year", ""); err != nil {
+		t.Fatal(err)
+	}
+	var logs atomic.Int64
+	r.commandHook = func(args []string) {
+		if len(args) > 0 && args[0] == "log" {
+			logs.Add(1)
+		}
+	}
+	files, authors, err := r.hotspots("2.year", "")
+	if err != nil || len(files) != 2 || len(authors) == 0 {
+		t.Fatalf("cached load: %d files %v", len(files), err)
+	}
+	if logs.Load() != 0 {
+		t.Fatalf("second load ran %d git log processes", logs.Load())
+	}
 }

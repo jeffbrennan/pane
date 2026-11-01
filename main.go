@@ -801,6 +801,26 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.stash.entries = msg.entries
 		m.stash.selected = min(m.stash.selected, max(0, len(msg.entries)-1))
+	case hotspotSequenceLoaded:
+		if m.screen != "hotspots" || msg.request != m.hotspots.request {
+			break
+		}
+		if msg.err != nil {
+			m.flash = "Hotspots: " + msg.err.Error()
+			break
+		}
+		if len(msg.commits) == 0 {
+			m.flash = "No commits in the window"
+			break
+		}
+		next, err := newSequenceModel(m.repo, msg.commits)
+		if err != nil {
+			m.flash = err.Error()
+			break
+		}
+		next.width, next.height, next.wrap = m.width, m.height, m.wrap
+		next.viewed = m.viewed
+		return next, next.Init()
 	case hotspotsLoaded:
 		if m.screen != "hotspots" || msg.request != m.hotspots.request {
 			break
