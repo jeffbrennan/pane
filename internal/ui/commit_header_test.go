@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -52,7 +53,7 @@ func TestCommitDetailAndMergeParents(t *testing.T) {
 	if len(commit.Parents) != 2 || commit.Author != "Test" || commit.Committer != "Test" {
 		t.Fatalf("detail: %#v", commit)
 	}
-	rows := commitHeaderBlock(commit, 80, false, time.Now())
+	rows := commitHeaderBlock(commit, 80, false, false, time.Now())
 	text := headerText(rows)
 	if !strings.Contains(text, "merge") || !strings.Contains(text, shortHash(commit.Parents[0])) || !strings.Contains(text, shortHash(commit.Parents[1])) {
 		t.Fatalf("missing merge parents: %s", text)
@@ -116,5 +117,34 @@ func TestStreamCommitAttachesMetadata(t *testing.T) {
 		t.Fatalf("first chunk metadata: %#v", first.Meta)
 	}
 	for range stream {
+	}
+}
+
+func TestCommitHeaderCapsLongBodyAndStripsCarriageReturns(t *testing.T) {
+	var message strings.Builder
+	message.WriteString("subject\r\n\r\n")
+	for i := 0; i < 30; i++ {
+		fmt.Fprintf(&message, "* line %d\r\n", i)
+	}
+	commit := git.CommitInfo{Hash: "abcdef1234567890", Author: "Alice", Email: "alice@example.com", Date: time.Now().Format(time.RFC3339), Subject: "subject", Message: message.String()}
+	capped := commitHeaderBlock(commit, 80, false, false, time.Now())
+	full := commitHeaderBlock(commit, 80, false, true, time.Now())
+	for _, r := range full {
+		if strings.Contains(r.text, "�") {
+			t.Fatalf("carriage return rendered: %q", r.text)
+		}
+	}
+	if len(full)-len(capped) != 30-commitBodyRows-1 || !strings.Contains(capped[len(capped)-2].text, "20 more lines") {
+		t.Fatalf("capped %d rows, full %d rows, last %q", len(capped), len(full), capped[len(capped)-2].text)
+	}
+	var h historyState
+	h.toggleCommitHeader("l")
+	if !h.bodyExpanded {
+		t.Fatal("l on an open header did not expand the body")
+	}
+	h.toggleCommitHeader("h")
+	h.toggleCommitHeader("h")
+	if h.bodyExpanded || !h.headerCollapsed {
+		t.Fatalf("h did not step back: %#v", h)
 	}
 }

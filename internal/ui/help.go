@@ -111,7 +111,7 @@ var shortcutSections = []shortcutSection{
 		{"o", "Open the file in $EDITOR"},
 		{"v", "Mark the file viewed / unviewed"},
 		{"e", "Expand / collapse a deleted file"},
-		{"h / l", "Fold / unfold the thing under the cursor"},
+		{"h / l", "Fold / unfold the cursor: a file, commit body, or context"},
 	}},
 	{"Toggles", nil, []shortcut{
 		{"w", "Toggle line wrapping"},

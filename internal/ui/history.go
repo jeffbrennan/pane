@@ -41,7 +41,7 @@ type historyState struct {
 	current                           git.CommitInfo
 	meta                              git.CommitInfo
 	moved                             *movedIndex
-	headerCollapsed                   bool
+	headerCollapsed, bodyExpanded     bool
 	positions                         map[string]commitPosition
 	pendingPosition                   *commitPosition
 	pendingStep                       int
@@ -604,6 +604,7 @@ func (m model) openCommit(commit git.CommitInfo) (tea.Model, tea.Cmd) {
 	m.history.streamError = ""
 	m.history.streamEndPending = false
 	m.history.meta = git.CommitInfo{}
+	m.history.bodyExpanded = false
 	m.history.moved = nil
 	if position, ok := m.history.positions[commit.Hash]; ok && commit.FilePath == "" {
 		m.history.pendingPosition = &position
@@ -654,7 +655,7 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startBlame()
 	}
 	if m.pending == "" && (key.String() == "h" || key.String() == "l") && m.commitModel().onCommitHeader() {
-		m.history.headerCollapsed = key.String() == "h"
+		m.history.toggleCommitHeader(key.String())
 		m.rebuildCommit()
 		return m, nil
 	}

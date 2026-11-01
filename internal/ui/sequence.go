@@ -224,7 +224,7 @@ func (m *model) rebuildSequence() {
 			if len(files) == 0 {
 				files = append(files, row{kind: '@', text: "  No file changes"})
 			}
-			block := commitHeaderBlock(m.sequence.commits[i], width, m.history.headerCollapsed, now)
+			block := commitHeaderBlock(m.sequence.commits[i], width, m.history.headerCollapsed, m.history.bodyExpanded, now)
 			if len(block) > 0 && m.sequence.commits[i].Author != "" {
 				files = append(block, files...)
 			}
@@ -350,7 +350,7 @@ func (m model) handleSequenceKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.sequence.endPending = false
 	}
 	if m.pending == "" && (key.String() == "h" || key.String() == "l") && m.onCommitHeader() {
-		m.history.headerCollapsed = key.String() == "h"
+		m.history.toggleCommitHeader(key.String())
 		m.sequence.rowCache = nil
 		m.rebuildSequence()
 		return m, nil

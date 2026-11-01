@@ -27,7 +27,7 @@ func (m model) commitHeaderRows(rows []row) []row {
 	if commit.Hash == "" {
 		return rows
 	}
-	block := commitHeaderBlock(commit, m.diffContentWidth(), m.history.headerCollapsed, time.Now())
+	block := commitHeaderBlock(commit, m.diffContentWidth(), m.history.headerCollapsed, m.history.bodyExpanded, time.Now())
 	if len(block) == 0 {
 		return rows
 	}
@@ -37,9 +37,28 @@ func (m model) commitHeaderRows(rows []row) []row {
 	return result
 }
 
+// commitBodyRows is how many message rows show before the body folds behind
+// an "l expand" row, so a long description doesn't push the diff off screen.
+const commitBodyRows = 10
+
+// toggleCommitHeader steps the header through its three states: l goes from
+// collapsed to a capped body to the full body, and h goes back.
+func (h *historyState) toggleCommitHeader(key string) {
+	switch {
+	case key == "l" && h.headerCollapsed:
+		h.headerCollapsed = false
+	case key == "l":
+		h.bodyExpanded = true
+	case h.bodyExpanded:
+		h.bodyExpanded = false
+	default:
+		h.headerCollapsed = true
+	}
+}
+
 // commitHeaderBlock lays out the author, dates, parents, refs and message body.
 // The last row of the block is blank, which separates it from the first file.
-func commitHeaderBlock(commit git.CommitInfo, width int, collapsed bool, now time.Time) []row {
+func commitHeaderBlock(commit git.CommitInfo, width int, collapsed, expanded bool, now time.Time) []row {
 	age := git.RelativeCommitTime(commit.Date, now)
 	if collapsed {
 		summary := fmt.Sprintf("  %s · %s · commit details · l expand", syntax.Clean(commit.Author), age)
@@ -75,11 +94,16 @@ func commitHeaderBlock(commit git.CommitInfo, width int, collapsed bool, now tim
 	if len(body) > 0 || len(trailers) > 0 {
 		rows = append(rows, row{kind: 'm'})
 	}
+	start := len(rows)
 	for _, line := range body {
 		add("  "+line, 'm')
 	}
 	for _, line := range trailers {
 		add("  "+line, 'M')
+	}
+	if hidden := len(rows) - start - commitBodyRows; !expanded && hidden > 1 {
+		rows = rows[:start+commitBodyRows]
+		rows = append(rows, row{text: fit(fmt.Sprintf("  … %d more lines · l expand", hidden), max(1, width)), kind: 'M'})
 	}
 	rows = append(rows, row{kind: 'm'})
 	return rows
@@ -100,6 +124,10 @@ func formatRefs(refs string) string {
 // splitCommitMessage separates the body from trailing trailers such as
 // Co-authored-by, so the trailers can render dim.
 func splitCommitMessage(subject, message string) ([]string, []string) {
+	// Messages written on Windows keep their carriage returns, which would
+	// otherwise render as replacement glyphs.
+	message = strings.ReplaceAll(message, "\r\n", "\n")
+	message = strings.ReplaceAll(message, "\r", "")
 	lines := strings.Split(strings.TrimRight(message, "\n"), "\n")
 	if len(lines) > 0 && strings.TrimSpace(lines[0]) == strings.TrimSpace(subject) {
 		lines = lines[1:]
