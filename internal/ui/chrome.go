@@ -85,6 +85,13 @@ func (m model) mergesBadge() string {
 	return ""
 }
 
+func (m model) botsBadge() string {
+	if !m.showBotCommits {
+		return "bots hidden"
+	}
+	return ""
+}
+
 func (m model) whitespaceBadge() string {
 	if m.repo.IgnoreSpace {
 		return "ignoring whitespace"

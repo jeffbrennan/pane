@@ -56,6 +56,8 @@ var shortcutSections = []shortcutSection{
 		hint("Review from this commit to the working tree", "history.review-to-worktree"),
 		hint("Select a commit range to review", "history.select-range"),
 		hint("Collapse / expand merged commits", "history.collapse-merges"),
+		hint("Show / hide author badges", "history.author-badges"),
+		hint("Show / hide bot commits", "history.bot-commits"),
 	}},
 	{"Stashes", []string{"stashes"}, []shortcut{
 		hint("View stash", "open", "stashes.open"),

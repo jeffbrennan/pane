@@ -17,7 +17,7 @@ func (m model) historyHeader() []string {
 		title = "history · " + syntax.Clean(m.history.path)
 		badge = styleDim + "whole-commit counts" + styleReset
 	}
-	badge = stateBadges(badge, m.mergesBadge(), m.selectionBadge(), m.filterBadge(m.history.list.filter))
+	badge = stateBadges(badge, m.mergesBadge(), m.botsBadge(), m.selectionBadge(), m.filterBadge(m.history.list.filter))
 	lines := []string{m.titleBar(" "+title, badge)}
 	if m.height-4 <= 0 {
 		return lines

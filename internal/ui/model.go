@@ -61,6 +61,8 @@ type model struct {
 	relativeLines         bool
 	startsInHistory       bool
 	lightTheme            bool
+	hideAuthorBadges      bool
+	showBotCommits        bool
 	themeAuto             bool
 	themeNotify           bool
 	themeQuery            func()
