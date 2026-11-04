@@ -96,11 +96,14 @@ func (m model) authorGutter(c git.CommitInfo, row int, next *git.CommitInfo, sel
 	color := m.authorColor(c)
 	switch {
 	case row == 0:
-		style := color
+		style, badge := color, authorInitials(c.Author)
+		if isBotAuthor(c.Author) {
+			badge = "⚙ "
+		}
 		if selected {
 			style = styleBold + color
 		}
-		return " " + style + authorInitials(c.Author) + styleReset + " "
+		return " " + style + badge + styleReset + " "
 	case row == 1 || next != nil && authorKey(*next) == authorKey(c):
 		return " " + color + "│" + styleReset + "  "
 	default:

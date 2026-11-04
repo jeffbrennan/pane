@@ -444,7 +444,7 @@ func (m model) loadMoreHistory() (model, tea.Cmd) {
 	if m.screen != "history" || m.history.loading || m.history.fetching || !m.history.more {
 		return m, nil
 	}
-	if m.historyQuery() == "" && m.history.list.selected < len(m.history.commits)-git.HistoryPage/4 {
+	if m.historyQuery() == "" && m.history.list.selected < len(m.filteredHistory())-git.HistoryPage/4 {
 		return m, nil
 	}
 	m.history.fetching = true
@@ -477,11 +477,14 @@ func (m model) historyQuery() string { return m.history.list.filter }
 
 func (m model) filteredHistory() []git.CommitInfo {
 	query := strings.ToLower(m.historyQuery())
-	if query == "" {
+	if query == "" && m.showBotCommits {
 		return m.history.commits
 	}
 	var matches []git.CommitInfo
 	for _, c := range m.history.commits {
+		if !m.showBotCommits && isBotAuthor(c.Author) {
+			continue
+		}
 		search := c.Search
 		if search == "" {
 			search = strings.ToLower(c.Hash + "\n" + c.Author + "\n" + c.Email + "\n" + c.Message + "\n" + c.Subject)
@@ -650,7 +653,33 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.history.reselectRow = selected - min(m.history.list.offset, selected)
 		}
 		return m.reloadHistory()
-
+	case actAuthorBadges:
+		m.hideAuthorBadges = !m.hideAuthorBadges
+		m.flash = "Author badges shown"
+		if m.hideAuthorBadges {
+			m.flash = "Author badges hidden"
+		}
+	case actBotCommits:
+		m.showBotCommits = !m.showBotCommits
+		m.flash = "Showing bot commits"
+		if !m.showBotCommits {
+			m.flash = "Bot commits hidden"
+		}
+		m.history.visualActive = false
+		m.history.reselect, m.history.reselectRow = nil, 0
+		if len(matches) > 0 {
+			selected := min(m.history.list.selected, len(matches)-1)
+			for i := selected; i >= 0; i-- {
+				m.history.reselect = append(m.history.reselect, matches[i].Hash)
+			}
+			m.history.reselectRow = selected - min(m.history.list.offset, selected)
+		}
+		if !m.restoreSelection() {
+			m.history.reselect = nil
+			m.history.list.selected, m.history.list.offset = 0, 0
+		}
+		m.revealHistorySelection()
+		return m.loadMoreHistory()
 	}
 	return m, nil
 }
@@ -979,21 +1008,37 @@ func (m model) historyView() string {
 		content = append(content, "")
 	}
 	now := time.Now()
+	gutter := m.historyGutter()
+	width := m.width - gutter
 	for i := offset; i < len(matches); i++ {
 		c := matches[i]
-		subject := styleDim + "  " + fit(syntax.Clean(c.Subject), max(0, m.width-2)) + styleReset
+		subject := styleDim + "  " + fit(syntax.Clean(c.Subject), max(0, width-2)) + styleReset
 		if i == selected {
-			subject = styleBold + m.accent() + "▸ " + styleReset + styleBold + fit(syntax.Clean(c.Subject), max(0, m.width-2)) + styleReset
+			subject = styleBold + m.accent() + "▸ " + styleReset + styleBold + fit(syntax.Clean(c.Subject), max(0, width-2)) + styleReset
 		} else if i >= visualLo && i <= visualHi {
-			subject = styleBold + m.accent() + "│ " + styleReset + styleBold + fit(syntax.Clean(c.Subject), max(0, m.width-2)) + styleReset
+			subject = styleBold + m.accent() + "│ " + styleReset + styleBold + fit(syntax.Clean(c.Subject), max(0, width-2)) + styleReset
 		}
 		date := git.HistoryCommitTime(c.Date, now)
 		merged := 0
 		if m.repo.FirstParent {
 			merged = m.history.mergeCounts[c.Hash]
 		}
-		meta := historyMetadata(c, date, merged, m.width, i == selected, m.accent(), m.worktreeHeads)
-		content = append(content, subject, meta, "")
+		authorStyle := ""
+		if gutter > 0 {
+			authorStyle = m.authorColor(c)
+		}
+		meta := historyMetadata(c, date, merged, width, i == selected, m.accent(), authorStyle, m.worktreeHeads)
+		spacer := ""
+		if gutter > 0 {
+			var next *git.CommitInfo
+			if i+1 < len(matches) {
+				next = &matches[i+1]
+			}
+			subject = m.authorGutter(c, 0, next, i == selected) + subject
+			meta = m.authorGutter(c, 1, next, i == selected) + meta
+			spacer = m.authorGutter(c, 2, next, i == selected)
+		}
+		content = append(content, subject, meta, spacer)
 		if len(content) >= available {
 			break
 		}
@@ -1083,11 +1128,16 @@ func (m *model) revealHistorySelection() {
 	}
 }
 
-func historyMetadata(c git.CommitInfo, date string, merged, width int, selected bool, accent string, worktreeHeads map[string]string) string {
+// historyMetadata renders a commit's second row. authorStyle colors the
+// author's name to match their badge; empty leaves it dim.
+func historyMetadata(c git.CommitInfo, date string, merged, width int, selected bool, accent, authorStyle string, worktreeHeads map[string]string) string {
 	type segment struct{ text, style string }
 	green, red, cyan := "\x1b[32m", "\x1b[31m", accent
 	if !selected {
 		green, red, cyan = "\x1b[2;32m", "\x1b[2;31m", styleDim+accent
+	}
+	if authorStyle == "" {
+		authorStyle = "\x1b[2m"
 	}
 	segments := []segment{{"  ", ""}}
 	if c.StatsLoaded {
@@ -1107,7 +1157,7 @@ func historyMetadata(c git.CommitInfo, date string, merged, width int, selected 
 	}
 	segments = append(segments,
 		segment{"  " + syntax.Clean(date), "\x1b[2m"},
-		segment{"  " + syntax.Clean(c.Author), "\x1b[2m"},
+		segment{"  " + syntax.Clean(c.Author), authorStyle},
 		segment{"  " + shortHash(c.Hash), cyan},
 	)
 	if name := worktreeHeads[c.Hash]; name != "" {

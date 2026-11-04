@@ -93,6 +93,8 @@ const (
 	actReviewBase     action = "review-to-worktree"
 	actSelectRange    action = "select-range"
 	actCollapseMerges action = "collapse-merges"
+	actAuthorBadges   action = "author-badges"
+	actBotCommits     action = "bot-commits"
 	actNewBranch      action = "new-branch"
 	actNewWorktree    action = "new-worktree"
 	actPop            action = "pop"
@@ -232,6 +234,8 @@ var defaultBindings = []binding{
 	{scopeHistory, actReviewBase, []string{"R"}, "Review from this commit to the working tree"},
 	{scopeHistory, actSelectRange, []string{"V"}, "Select a commit range to review"},
 	{scopeHistory, actCollapseMerges, []string{"m"}, "Collapse / expand merged commits"},
+	{scopeHistory, actAuthorBadges, []string{"a"}, "Show / hide author badges"},
+	{scopeHistory, actBotCommits, []string{"B"}, "Show / hide bot commits"},
 	{scopeHistory, actNewBranch, []string{"n"}, "New branch from the selected commit"},
 	{scopeHistory, actPush, []string{"p"}, "Push"},
 	{scopeHistory, actPull, []string{"P"}, "Pull"},

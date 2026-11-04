@@ -109,6 +109,13 @@ then the shared motion, finding, acting, and toggle grammar.
 | `R` | Review from this commit to the working tree |
 | `V` | Select a commit range to review |
 | `m` | Collapse / expand merged commits |
+| `a` | Show / hide author badges |
+| `B` | Show / hide bot commits |
+
+Each commit starts with its author's initials in a color fixed to their name,
+and a bar joins consecutive commits by the same author. The badges hide on
+terminals narrower than 30 columns. Commits by bots (a `[bot]` suffix, or a
+name such as `ci` or `release`) are hidden until `B` shows them, marked `⚙`.
 
 In a commit, `)` and `(` open the next and previous commit without leaving the
 view. In a range review they move to the next and previous commit's header,
