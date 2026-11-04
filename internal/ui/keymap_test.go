@@ -196,8 +196,8 @@ func TestKeyEditorSwapsWithinAScope(t *testing.T) {
 	useKeys(t, nil)
 	m := model{width: 100, height: 30, rows: []row{{text: "x"}}}
 	m = send(t, m, "?", "e", "/", "P", "u", "s", "h", "enter", "s")
-	if !strings.Contains(m.keyEditor.message, "Stage / unstage hunk") {
-		t.Fatalf("no swap prompt: %q", m.keyEditor.message)
+	if view := plain(m.View()); !strings.Contains(view, "Bind s to Push (Changes)?") || !strings.Contains(view, "Stage / unstage hunk") {
+		t.Fatalf("no swap prompt:\n%s", view)
 	}
 	m = send(t, m, "enter")
 	if got := activeKeys.keys["changes.push"]; !slices.Equal(got, []string{"s"}) {
@@ -211,12 +211,26 @@ func TestKeyEditorSwapsWithinAScope(t *testing.T) {
 	}
 }
 
-func TestKeyEditorRefusesSequenceStarts(t *testing.T) {
+func TestKeyEditorConfirmsEndingSequences(t *testing.T) {
 	useKeys(t, nil)
 	m := model{width: 100, height: 30, rows: []row{{text: "x"}}}
-	m = send(t, m, "?", "e", "/", "w", "r", "a", "p", "enter", "g")
-	if !slices.Equal(activeKeys.keys["wrap"], []string{"w"}) || !strings.Contains(m.keyEditor.message, "starts") {
-		t.Fatalf("g was bound: %q %q", activeKeys.keys["wrap"], m.keyEditor.message)
+	m = send(t, m, "?", "e", "/", "w", "r", "a", "p", "enter", "z")
+	view := plain(m.View())
+	if !strings.Contains(view, "Bind z to Toggle line wrapping?") || !strings.Contains(view, "Align the active line to the top · unbound") ||
+		!strings.Contains(view, "Scroll left · keeps backspace") {
+		t.Fatalf("no confirmation listing the sequences:\n%s", view)
+	}
+	m = send(t, m, "esc")
+	if !slices.Equal(activeKeys.keys["wrap"], []string{"w"}) || !slices.Equal(activeKeys.keys["align-top"], []string{"z t"}) {
+		t.Fatal("cancel changed keys")
+	}
+	m = send(t, m, "enter", "z", "enter")
+	if !slices.Equal(activeKeys.keys["wrap"], []string{"z"}) || len(activeKeys.keys["align-top"]) != 0 ||
+		!slices.Equal(activeKeys.keys["scroll-left"], []string{"ctrl+h", "backspace"}) {
+		t.Fatalf("wrap %q, align-top %q, scroll-left %q", activeKeys.keys["wrap"], activeKeys.keys["align-top"], activeKeys.keys["scroll-left"])
+	}
+	if m.keyEditor.swap != "" || m.keyEditor.capturing {
+		t.Fatal("confirmation stayed open")
 	}
 }
 

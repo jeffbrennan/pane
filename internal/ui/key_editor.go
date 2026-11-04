@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -108,10 +109,12 @@ func canonicalKey(key string) string {
 
 // keyGroups gathers the keys bound to id that are the same physical key, so
 // the editor lists, and removes, each once.
-func keyGroups(id string) [][]string {
+func keyGroups(id string) [][]string { return groupKeys(activeKeys.keys[id]) }
+
+func groupKeys(keys []string) [][]string {
 	var groups [][]string
 	at := make(map[string]int)
-	for _, key := range activeKeys.keys[id] {
+	for _, key := range keys {
 		canonical := canonicalKey(key)
 		if i, ok := at[canonical]; ok {
 			groups[i] = append(groups[i], key)
@@ -131,8 +134,10 @@ func groupLabel(group []string) string {
 }
 
 // bindingKeys lists every key bound to id, as the editor shows them.
-func bindingKeys(id string) string {
-	groups := keyGroups(id)
+func bindingKeys(id string) string { return keysLabel(activeKeys.keys[id]) }
+
+func keysLabel(keys []string) string {
+	groups := groupKeys(keys)
 	labels := make([]string, len(groups))
 	for i, group := range groups {
 		labels[i] = groupLabel(group)
@@ -209,44 +214,98 @@ func (m *model) removeKey(b binding, group []string) {
 }
 
 // captureKey binds the captured key, asking first when it would take the key
-// from another action in the same scope.
+// from another action in the same scope or would end sequences that start
+// with it.
 func (m model) captureKey(key tea.KeyMsg, matches []binding, selected int) (tea.Model, tea.Cmd) {
 	editor := &m.keyEditor
 	name := keyName(key)
-	if name == "esc" || name == "ctrl+c" || len(matches) == 0 || (key.Type == tea.KeyRunes && len(key.Runes) != 1) {
+	cancel := name == "esc" || name == "ctrl+c" || len(matches) == 0 || (key.Type == tea.KeyRunes && len(key.Runes) != 1)
+	if editor.swap != "" {
+		cancel = name != "enter"
+		name = editor.swap
+	}
+	if cancel {
 		editor.capturing, editor.swap, editor.message = false, "", ""
 		return m, nil
 	}
 	b := matches[selected]
-	if editor.swap != "" {
-		if name == "enter" {
-			name = editor.swap
-		} else {
-			editor.capturing, editor.swap, editor.message = false, "", ""
-			return m, nil
-		}
-	}
-	note := ""
-	if editor.swap == "" {
-		same, shadowed, prefixes := activeKeys.conflicts(b, name)
-		if len(prefixes) > 0 {
-			editor.capturing = false
-			editor.message = fmt.Sprintf("%s starts %s; choose another key", keyLabel(name), describe(prefixes))
-			return m, nil
-		}
-		if len(same) > 0 {
-			editor.swap = name
-			editor.message = fmt.Sprintf("%s is bound to %s: ↵ take it, esc cancel", keyLabel(name), describe(same))
-			return m, nil
-		}
-		if len(shadowed) > 0 {
-			note = " · also bound to " + describe(shadowed)
-		}
+	if same, _, prefixes := activeKeys.conflicts(b, name); editor.swap == "" && len(same)+len(prefixes) > 0 {
+		editor.swap = name
+		return m, nil
 	}
 	editor.capturing, editor.swap = false, ""
-	activeKeys.rebind(b, name, editor.adding)
+	note := ""
+	if shadowed := activeKeys.assign(b, name, editor.adding); len(shadowed) > 0 {
+		note = " · also bound to " + describe(shadowed)
+	}
 	editor.message = m.saveKeys(fmt.Sprintf("%s: %s%s", b.description, bindingKeys(b.id()), note))
 	return m, nil
+}
+
+// assign binds key to b, first unbinding the sequences key starts, since
+// they could no longer be typed. It returns the bindings in overlapping
+// scopes that still share key.
+func (k *keymap) assign(b binding, key string, add bool) []binding {
+	_, shadowed, prefixes := k.conflicts(b, key)
+	for _, other := range prefixes {
+		k.keys[other.id()] = slices.DeleteFunc(slices.Clone(k.keys[other.id()]), func(existing string) bool {
+			return strings.HasPrefix(existing, key+" ")
+		})
+	}
+	k.rebind(b, key, add)
+	return shadowed
+}
+
+// keyChange is how binding key to another action would change one binding.
+type keyChange struct {
+	binding binding
+	removed []string
+	after   []string
+}
+
+// previewAssign lists the other bindings that assigning key to b would
+// change, without changing any.
+func previewAssign(b binding, key string, add bool) []keyChange {
+	trial := &keymap{keys: maps.Clone(activeKeys.keys)}
+	trial.assign(b, key, add)
+	var changes []keyChange
+	for _, other := range defaultBindings {
+		before, after := activeKeys.keys[other.id()], trial.keys[other.id()]
+		if other.id() == b.id() || slices.Equal(before, after) {
+			continue
+		}
+		removed := slices.DeleteFunc(slices.Clone(before), func(k string) bool { return slices.Contains(after, k) })
+		changes = append(changes, keyChange{other, removed, after})
+	}
+	return changes
+}
+
+// showKeyConflict draws the confirmation for a captured key in place of the
+// editor.
+func (m model) showKeyConflict(lines []string, b binding) {
+	key := m.keyEditor.swap
+	changes := previewAssign(b, key, m.keyEditor.adding)
+	keyWidth := 0
+	for _, c := range changes {
+		keyWidth = max(keyWidth, stringWidth(keysLabel(c.removed)))
+	}
+	body := []string{"", "This unbinds:"}
+	for _, c := range changes {
+		removed := keysLabel(c.removed)
+		result := "unbound"
+		if len(c.after) > 0 {
+			result = "keeps " + keysLabel(c.after)
+		}
+		body = append(body, "  "+m.accent()+removed+styleReset+strings.Repeat(" ", keyWidth-stringWidth(removed))+"  "+
+			describe([]binding{c.binding})+styleDim+" · "+result+styleReset)
+	}
+	body = append(body, "")
+	placeDialog(lines, m.width, dialog{
+		width: min(helpBoxWidth, m.width-2),
+		title: fmt.Sprintf("Bind %s to %s?", keyLabel(key), describe([]binding{b})),
+		body:  body,
+		hint:  keyHints("↵", "bind", "esc", "cancel"),
+	}.render())
 }
 
 // saveKeys persists the bindings and returns status for the editor.
@@ -339,6 +398,10 @@ func (m model) showKeyEditor(lines []string) {
 	matches := m.editorBindings()
 	visible := keyEditorPage(len(lines))
 	selected := min(editor.list.selected, max(0, len(matches)-1))
+	if editor.swap != "" && len(matches) > 0 {
+		m.showKeyConflict(lines, matches[selected])
+		return
+	}
 	rows := editorRows(matches)
 	top := keyEditorTop(rows, selected, editor.top, visible)
 	var body []string
@@ -351,7 +414,7 @@ func (m model) showKeyEditor(lines []string) {
 			choices = append(choices, fmt.Sprintf("%s%d%s %s", m.accent(), i+1, styleReset, groupLabel(group)))
 		}
 		body = append(body, "Remove which key? "+strings.Join(choices, "  ")+styleDim+"  esc cancel"+styleReset)
-	case editor.capturing && editor.swap == "":
+	case editor.capturing:
 		body = append(body, m.accent()+"Press a key for "+matches[selected].description+styleReset+styleDim+"  esc cancel"+styleReset)
 	case editor.message != "":
 		body = append(body, syntax.Clean(editor.message))

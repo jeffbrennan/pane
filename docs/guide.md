@@ -251,7 +251,8 @@ changes.push = ctrl+p
 Shared actions such as `down` or `wrap` apply on every screen. Actions
 prefixed with a screen, such as `changes.push` or `branches.delete`, apply
 only there and take precedence over shared ones. Binding a key that another
-action in the same scope uses offers to swap them. The key editor lists every
+action in the same scope uses, or that starts a sequence such as `z` in `zt`,
+first shows what it would unbind and asks to confirm. The key editor lists every
 action ID. Keys use bubbletea names: `ctrl+x`, `alt+x`, `shift+tab`, `f3`,
 `pgdown`, `space`. `ctrl+c` always interrupts, and text inputs such as the
 commit message keep their editing keys. Terminals do not pass Cmd shortcuts
