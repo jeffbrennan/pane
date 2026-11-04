@@ -315,6 +315,7 @@ func (m model) switchWorktree(path string) (tea.Model, tea.Cmd) {
 		m.flash = err.Error()
 		return m, nil
 	}
+	repo.FirstParent = m.repo.FirstParent
 	next := model{
 		repo: repo, width: m.width, height: m.height, wrap: m.wrap,
 		lightTheme: m.lightTheme, themeAuto: m.themeAuto, themeNotify: m.themeNotify,

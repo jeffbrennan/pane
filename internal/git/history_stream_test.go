@@ -154,3 +154,49 @@ func TestHistoryStreamClosesBlockedProcess(t *testing.T) {
 		t.Fatal("closing a blocked process did not reap it")
 	}
 }
+
+func TestHistoryStreamFirstParentCollapsesMerges(t *testing.T) {
+	r := testRepo(t)
+	commitFile(t, r, "a", "a\n", "base")
+	for _, args := range [][]string{{"checkout", "-q", "-b", "feature"}} {
+		if out, err := r.Command(args...); err != nil {
+			t.Fatalf("git %v: %s: %v", args, out, err)
+		}
+	}
+	commitFile(t, r, "b", "b\n", "feature work")
+	for _, args := range [][]string{{"checkout", "-q", "-"}, {"merge", "-q", "--no-ff", "-m", "merge feature", "feature"}} {
+		if out, err := r.Command(args...); err != nil {
+			t.Fatalf("git %v: %s: %v", args, out, err)
+		}
+	}
+	subjects := func(r Repo) []string {
+		s := NewHistoryStream(r, "")
+		defer s.Close()
+		page, err := s.NextPage(HistoryPage)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, c := range page {
+			out = append(out, c.Subject)
+		}
+		return out
+	}
+	if got := subjects(r); len(got) != 3 {
+		t.Fatalf("full history = %v", got)
+	}
+	r.FirstParent = true
+	if got := strings.Join(subjects(r), ","); got != "merge feature,base" {
+		t.Fatalf("first-parent history = %s", got)
+	}
+	s := NewHistoryStream(r, "")
+	defer s.Close()
+	page, err := s.NextPage(1)
+	if err != nil || len(page) != 1 || len(page[0].Parents) != 2 {
+		t.Fatalf("merge parents: %#v %v", page, err)
+	}
+	counts, err := r.MergedCounts([]string{page[0].Hash})
+	if err != nil || counts[page[0].Hash] != 1 {
+		t.Fatalf("merged counts = %v, %v", counts, err)
+	}
+}

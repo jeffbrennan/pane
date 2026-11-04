@@ -320,6 +320,14 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cacheHistoryStats()
 		}
 		m.history.more = len(msg.commits) == msg.limit
+		if len(m.history.reselect) > 0 && m.screen == "history" && !m.restoreSelection() {
+			if m.history.more {
+				// The commit is further down; keep paging until it loads.
+				m.history.fetching = true
+				return m, m.fetchHistory(len(m.history.commits), git.HistoryPage)
+			}
+			m.history.reselect = nil
+		}
 		m.history.list.selected = min(m.history.list.selected, max(0, len(m.filteredHistory())-1))
 		if m.screen == "commit" {
 			if direction := m.history.pendingStep; direction != 0 {
@@ -366,6 +374,19 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.cacheHistoryStats()
 		return m.loadHistoryStats()
+	case mergeCountsLoaded:
+		if msg.request != m.history.request || !m.history.mergeCountsFetching {
+			break
+		}
+		m.history.mergeCountsFetching = false
+		if m.history.mergeCounts == nil {
+			m.history.mergeCounts = make(map[string]int)
+		}
+		for _, hash := range msg.hashes {
+			// Missing counts are stored as zero so they are not retried.
+			m.history.mergeCounts[hash] = msg.counts[hash]
+		}
+		return m.loadMergeCounts()
 	case stashesLoaded:
 		if m.screen != "stashes" || msg.request != m.stash.request {
 			break

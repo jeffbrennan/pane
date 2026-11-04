@@ -167,6 +167,24 @@ func (r Repo) HistoryStats(hashes []string) ([]CommitInfo, error) {
 	return commits, err
 }
 
+// MergedCounts reports how many commits each merge brought in: those
+// reachable from the merge but not from its first parent.
+func (r Repo) MergedCounts(hashes []string) (map[string]int, error) {
+	counts := make(map[string]int, len(hashes))
+	for _, hash := range hashes {
+		out, err := r.CommandStdout("rev-list", "--count", hash, "^"+hash+"^1", "--")
+		if err != nil {
+			return nil, CommandError(out, err)
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(string(out)))
+		if err != nil {
+			return nil, fmt.Errorf("unexpected Git commit count %q", out)
+		}
+		counts[hash] = max(0, n-1)
+	}
+	return counts, nil
+}
+
 func parseHistory(out []byte, statsLoaded bool) ([]CommitInfo, error) {
 	fields := bytes.Split(out, []byte{0})
 	var commits []CommitInfo

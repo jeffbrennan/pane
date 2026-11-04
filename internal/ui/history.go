@@ -17,15 +17,21 @@ import (
 )
 
 type historyState struct {
-	commitContext                     context.Context
-	commitCancel                      context.CancelFunc
-	streamPaths                       []string
-	streamError                       string
-	streamLoaded, streamGutter        int
-	streamActive, streamEndPending    bool
-	stream                            *git.HistoryStream
-	commits                           []git.CommitInfo
-	statsCache                        map[string]git.CommitInfo
+	commitContext                  context.Context
+	commitCancel                   context.CancelFunc
+	streamPaths                    []string
+	streamError                    string
+	streamLoaded, streamGutter     int
+	streamActive, streamEndPending bool
+	stream                         *git.HistoryStream
+	commits                        []git.CommitInfo
+	statsCache                     map[string]git.CommitInfo
+	mergeCounts                    map[string]int
+	mergeCountsFetching            bool
+	// reselect lists the selected commit and those above it, newest last, so
+	// a reload can land on the same commit or the nearest one still shown.
+	reselect                          []string
+	reselectRow                       int
 	changes                           []git.Change
 	rows                              []row
 	viewedFiles, totalFiles           int
@@ -270,6 +276,7 @@ func (m model) openHistory() (tea.Model, tea.Cmd) {
 	m.pickerReturn, m.pickerBackToHistory = false, false
 	m.history.commits = nil
 	m.history.list = listState{}
+	m.history.reselect = nil
 	m.pending = ""
 	m, cmd := m.reloadHistory()
 	return m, tea.Batch(cmd, m.loadWorktreeHeads())
@@ -281,6 +288,7 @@ func (m model) reloadHistory() (model, tea.Cmd) {
 	m.history.stale = false
 	m.history.fetching = false
 	m.history.statsFetching = false
+	m.history.mergeCountsFetching = false
 	m.history.request++
 	if prefetch := m.prefetch; prefetch != nil && m.history.path == "" {
 		m.prefetch = nil
@@ -351,17 +359,43 @@ func (m model) loadHistoryStats() (model, tea.Cmd) {
 	}
 }
 
+type mergeCountsLoaded struct {
+	counts  map[string]int
+	hashes  []string
+	request int
+}
+
+// loadMergeCounts counts the commits behind each visible collapsed merge.
+func (m model) loadMergeCounts() (model, tea.Cmd) {
+	if m.screen != "history" || m.history.loading || m.history.mergeCountsFetching || !m.repo.FirstParent {
+		return m, nil
+	}
+	matches := m.filteredHistory()
+	start, visible := m.historyViewport(len(matches))
+	var hashes []string
+	for _, c := range matches[start:min(len(matches), start+visible+historyStatsLookahead)] {
+		if _, ok := m.history.mergeCounts[c.Hash]; !ok && len(c.Parents) > 1 {
+			hashes = append(hashes, c.Hash)
+		}
+	}
+	if len(hashes) == 0 {
+		return m, nil
+	}
+	m.history.mergeCountsFetching = true
+	repo, request := m.repo, m.history.request
+	return m, func() tea.Msg {
+		// A failed count only hides the badge.
+		counts, _ := repo.MergedCounts(hashes)
+		return mergeCountsLoaded{counts: counts, hashes: hashes, request: request}
+	}
+}
+
 func (m model) loadHistoryBackground() (model, tea.Cmd) {
-	var pages, stats tea.Cmd
+	var pages, stats, merges tea.Cmd
 	m, pages = m.loadMoreHistory()
 	m, stats = m.loadHistoryStats()
-	if pages == nil {
-		return m, stats
-	}
-	if stats == nil {
-		return m, pages
-	}
-	return m, tea.Batch(pages, stats)
+	m, merges = m.loadMergeCounts()
+	return m, tea.Batch(pages, stats, merges)
 }
 
 func (m model) fetchHistory(skip, limit int) tea.Cmd {
@@ -419,6 +453,24 @@ func (m model) loadMoreHistory() (model, tea.Cmd) {
 		limit = 5 * git.HistoryPage
 	}
 	return m, m.fetchHistory(len(m.history.commits), limit)
+}
+
+// restoreSelection moves the cursor to the first reselect commit present in
+// the list. It reports false when none is loaded yet.
+func (m *model) restoreSelection() bool {
+	index := make(map[string]int)
+	for i, c := range m.filteredHistory() {
+		index[c.Hash] = i
+	}
+	for _, hash := range m.history.reselect {
+		if i, ok := index[hash]; ok {
+			m.history.list.selected = i
+			m.history.list.offset = max(0, i-m.history.reselectRow)
+			m.history.reselect = nil
+			return true
+		}
+	}
+	return false
 }
 
 func (m model) historyQuery() string { return m.history.list.filter }
@@ -586,6 +638,22 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "V":
 		m.history.visualActive = !m.history.visualActive
 		m.history.visualAnchor = m.history.list.selected
+	case "m":
+		m.repo.FirstParent = !m.repo.FirstParent
+		m.flash = "Showing merged commits"
+		if m.repo.FirstParent {
+			m.flash = "Merges collapsed"
+		}
+		m.history.visualActive = false
+		m.history.reselect, m.history.reselectRow = nil, 0
+		if len(matches) > 0 {
+			selected := min(m.history.list.selected, len(matches)-1)
+			for i := selected; i >= 0; i-- {
+				m.history.reselect = append(m.history.reselect, matches[i].Hash)
+			}
+			m.history.reselectRow = selected - min(m.history.list.offset, selected)
+		}
+		return m.reloadHistory()
 
 	}
 	return m, nil
@@ -605,6 +673,7 @@ func (m model) openCommit(commit git.CommitInfo) (tea.Model, tea.Cmd) {
 	m.history.commitLoadingVisible = false
 	m.history.fetching = false
 	m.history.statsFetching = false
+	m.history.mergeCountsFetching = false
 	m.history.changes, m.history.rows = nil, nil
 	m.history.viewedFiles, m.history.totalFiles = 0, 0
 	m.history.streamActive = true
@@ -931,7 +1000,11 @@ func (m model) historyView() string {
 			subject = styleBold + m.accent() + "│ " + styleReset + styleBold + fit(syntax.Clean(c.Subject), max(0, m.width-2)) + styleReset
 		}
 		date := git.HistoryCommitTime(c.Date, now)
-		meta := historyMetadata(c, date, m.width, i == selected, m.accent(), m.worktreeHeads)
+		merged := 0
+		if m.repo.FirstParent {
+			merged = m.history.mergeCounts[c.Hash]
+		}
+		meta := historyMetadata(c, date, merged, m.width, i == selected, m.accent(), m.worktreeHeads)
 		content = append(content, subject, meta, "")
 		if len(content) >= available {
 			break
@@ -1022,7 +1095,7 @@ func (m *model) revealHistorySelection() {
 	}
 }
 
-func historyMetadata(c git.CommitInfo, date string, width int, selected bool, accent string, worktreeHeads map[string]string) string {
+func historyMetadata(c git.CommitInfo, date string, merged, width int, selected bool, accent string, worktreeHeads map[string]string) string {
 	type segment struct{ text, style string }
 	green, red, cyan := "\x1b[32m", "\x1b[31m", accent
 	if !selected {
@@ -1036,6 +1109,13 @@ func historyMetadata(c git.CommitInfo, date string, width int, selected bool, ac
 	}
 	if c.Binary > 0 {
 		segments = append(segments, segment{fmt.Sprintf("  %d binary", c.Binary), "\x1b[2m"})
+	}
+	if merged > 0 {
+		label := fmt.Sprintf("  (%d commits)", merged)
+		if merged == 1 {
+			label = "  (1 commit)"
+		}
+		segments = append(segments, segment{label, cyan})
 	}
 	segments = append(segments,
 		segment{"  " + syntax.Clean(date), "\x1b[2m"},
