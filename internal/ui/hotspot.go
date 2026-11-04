@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -532,8 +533,8 @@ func topDir(path string) string {
 	return "."
 }
 
-// 4: bots no longer count as people or owners in the cached summary.
-const hotCacheVersion = 4
+// 5: bots are recognised by convention instead of a name list.
+const hotCacheVersion = 5
 
 type hotCache struct {
 	Version  int                  `json:"version"`
@@ -1362,16 +1363,30 @@ func (m model) hotFileItems() []hotItem {
 	return items
 }
 
-// knownBots covers bot accounts whose names don't end in "bot".
-var knownBots = []string{"robobun", "renovate", "dependabot", "github-actions", "github actions"}
+// botWords are the words automation accounts use where a person's name would
+// go. They match as whole tokens, so "Robot Human" and "Henry Talbot" stay
+// human.
+var botWords = map[string]bool{
+	"bot": true, "automation": true, "actions": true, "ci": true, "cd": true,
+	"build": true, "builder": true, "release": true, "deploy": true,
+	"pipeline": true, "scheduler": true, "cron": true,
+}
 
+// isBotAuthor reports whether an author is automation rather than a person.
+// GitHub Apps carry a [bot] suffix, and CI services use a token such as ci or
+// automation. Anything else is a person as far as Git can say.
 func isBotAuthor(name string) bool {
-	lower := strings.ToLower(name)
-	if strings.HasSuffix(lower, "[bot]") || strings.HasSuffix(lower, "bot") {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	if lower == "" {
+		return false
+	}
+	if strings.Contains(lower, "[bot]") {
 		return true
 	}
-	for _, bot := range knownBots {
-		if strings.Contains(lower, bot) {
+	for _, word := range strings.FieldsFunc(lower, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		if botWords[word] {
 			return true
 		}
 	}

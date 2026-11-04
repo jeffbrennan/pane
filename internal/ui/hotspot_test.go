@@ -707,14 +707,35 @@ func TestHotspotAuthorAreasNameTheRoot(t *testing.T) {
 	}
 }
 
-func TestHotspotBotsWithoutBotSuffix(t *testing.T) {
-	for _, name := range []string{"robobun", "renovate", "dependabot", "GitHub Actions"} {
+func TestBotAccountsAreRecognisedByConvention(t *testing.T) {
+	bots := []string{
+		"github-actions[bot]",
+		"dependabot[bot]",
+		"renovate[bot]",
+		"pre-commit-ci[bot]",
+		"snyk-bot",
+		"GitHub Actions",
+		"Build Automation",
+		"ci",
+	}
+	for _, name := range bots {
 		if !isBotAuthor(name) {
 			t.Fatalf("%q should count as a bot", name)
 		}
 	}
-	if isBotAuthor("Robot Human") {
-		t.Fatal("a human name should not count as a bot")
+	humans := []string{
+		"Robot Human",
+		"Henry Talbot",
+		"Dylan Conway",
+		"Alistair Smith",
+		// A project-run account under an ordinary handle. It writes real
+		// features and fixes, so it counts as a contributor.
+		"robobun",
+	}
+	for _, name := range humans {
+		if isBotAuthor(name) {
+			t.Fatalf("%q should not count as a bot", name)
+		}
 	}
 }
 
@@ -767,7 +788,7 @@ func TestHotspotBotsAreNotPeopleOrOwners(t *testing.T) {
 	now := time.Now()
 	when := now.Unix()
 	commits := []git.HotCacheCommit{
-		git.NewHotCacheCommit("a", when, "robobun", []git.HotCacheChange{{Path: "src/huge.rs", Added: 9000}}),
+		git.NewHotCacheCommit("a", when, "dependabot[bot]", []git.HotCacheChange{{Path: "src/huge.rs", Added: 9000}}),
 		git.NewHotCacheCommit("b", when, "Dylan Conway", []git.HotCacheChange{{Path: "src/huge.rs", Added: 20}}),
 	}
 	files, _, dirs, _ := aggregateHotspots(commits, git.PathMarks{}, 0, now)
@@ -796,11 +817,11 @@ func TestHotspotBotsAreNotPeopleOrOwners(t *testing.T) {
 func TestHotspotBotOnlyAreaStillNamesTheBot(t *testing.T) {
 	now := time.Now()
 	commits := []git.HotCacheCommit{
-		git.NewHotCacheCommit("a", now.Unix(), "robobun", []git.HotCacheChange{{Path: "tools/x.rs", Added: 10}}),
+		git.NewHotCacheCommit("a", now.Unix(), "dependabot[bot]", []git.HotCacheChange{{Path: "tools/x.rs", Added: 10}}),
 	}
 	_, _, dirs, _ := aggregateHotspots(commits, git.PathMarks{}, 0, now)
 	owners := hotOwners(dirs["tools"].owners)
-	if len(owners) != 1 || owners[0].name != "robobun" {
+	if len(owners) != 1 || owners[0].name != "dependabot[bot]" {
 		t.Fatalf("owners = %#v, want the bot when there is nobody else", owners)
 	}
 }

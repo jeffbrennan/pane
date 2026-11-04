@@ -67,7 +67,10 @@ level deep and merges single-child directories. Rows show the activity bar,
 distinct commits, people, last change, and the top two owners, with a detail
 line for the selection. Bots are not people to ask: they stay listed and dimmed
 in the authors view, but they are left out of the people counts and out of the
-owners column unless an area has no human author at all. The hotspot keys below
+owners column unless an area has no human author at all. Automation is
+recognised by convention — a `[bot]` suffix, or a word such as `bot`, `ci`, or
+`automation` in the name. An account a project runs under an ordinary-looking
+handle carries no marker in Git and counts as a person. The hotspot keys below
 cycle the window and reveal generated and vendored files. Tests and docs rank
 below source, and paths deleted inside the window are dropped.
 
