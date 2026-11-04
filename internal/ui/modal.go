@@ -210,6 +210,30 @@ func (m model) showPushUpstream(lines []string) {
 	}.render())
 }
 
+// showPullGone offers the default branch when the current branch's upstream
+// was deleted, instead of failing with Git's merge-ref error.
+func (m model) showPullGone(lines []string) {
+	title := "Switch to " + syntax.Clean(m.pull.Target) + "?"
+	boxWidth := min(max(56, ansi.StringWidth(m.pull.Upstream)+30), m.width-2)
+	body := []string{""}
+	explain := syntax.Clean(m.pull.Upstream) + " was deleted on the remote."
+	if m.pull.Merged {
+		explain = syntax.Clean(m.pull.Branch) + " was merged into " + syntax.Clean(m.pull.Target) + " and " + syntax.Clean(m.pull.Upstream) + " was deleted."
+	}
+	for _, line := range wrapWords(explain, boxWidth-4) {
+		body = append(body, line)
+	}
+	body = append(body, "")
+	command := "Pane runs git switch " + m.pull.Target + " and git pull. " + m.pull.Branch + " is kept."
+	for _, line := range wrapWords(command, boxWidth-4) {
+		body = append(body, styleDim+syntax.Clean(line)+styleReset)
+	}
+	body = append(body, "")
+	placeDialog(lines, m.width, dialog{
+		width: boxWidth, title: title, body: body, hint: keyHints("↵", "switch", "esc", "cancel"),
+	}.render())
+}
+
 func (m model) showWorktreeDelete(lines []string) {
 	title := "Remove worktree?"
 	boxWidth := min(max(48, ansi.StringWidth(title)+6), m.width-2)

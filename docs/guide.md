@@ -310,6 +310,11 @@ configured choice, the dialog lists them by number. Press `a` to also set
 `push.autoSetupRemote` in your global Git configuration; pane never changes
 that setting unless you ask.
 
+`P` pulls the current branch. When the pull fails because the branch's upstream
+was deleted on the remote, as after a merged pull request, pane offers to
+switch to the default branch (the remote's `HEAD`, then `main`, then `master`)
+and pull it. The old branch is kept.
+
 ## Commits, details, and blame
 
 A commit and each commit in a multi-commit review start with a details block:

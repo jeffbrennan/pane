@@ -541,7 +541,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "P":
 		if !m.busy {
-			return m.runAction("pull")
+			return m.startPull()
 		}
 	case "S":
 		if m.history.path != "" {

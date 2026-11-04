@@ -159,7 +159,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "P":
 		if !m.busy {
-			return m.runAction("pull")
+			return m.startPull()
 		}
 	}
 	return m, nil
@@ -238,6 +238,14 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.modal = ""
 			return m.removeWorktree(entry, force)
 		case "n", "esc", "q", "ctrl+c":
+			m.modal = ""
+		}
+		return m, nil
+	case "pull-gone":
+		switch key.String() {
+		case "enter", "y":
+			return m.confirmSwitchToDefault()
+		case "esc", "q", "n", "ctrl+c":
 			m.modal = ""
 		}
 		return m, nil
