@@ -282,6 +282,20 @@ func (m model) errorMaxPos() int {
 	return max(0, len(m.errorLines(min(100, m.width-2)-4))-max(1, m.height-6))
 }
 
+// blockedByChanges recognizes Git refusing a switch, pull, or merge because of
+// uncommitted changes, which the changes view can stash or commit.
+func blockedByChanges(text string) bool {
+	text = strings.ToLower(text)
+	return strings.Contains(text, "commit your changes or stash them") || strings.Contains(text, "commit or stash changes")
+}
+
+func (m model) errorHint() string {
+	if blockedByChanges(m.errorText) {
+		return keyHints("j/k", "scroll", "↵", "show changes", "esc", "dismiss")
+	}
+	return keyHints("j/k", "scroll", "↵/esc", "dismiss")
+}
+
 func (m model) showErrorDialog(lines []string) {
 	boxWidth := min(100, m.width-2)
 	content := m.errorLines(boxWidth - 4)
@@ -300,6 +314,6 @@ func (m model) showErrorDialog(lines []string) {
 		titleStyle: m.danger(),
 		info:       info,
 		body:       content[start : start+visible],
-		hint:       keyHints("j/k", "scroll", "↵/esc", "dismiss"),
+		hint:       m.errorHint(),
 	}.render())
 }

@@ -524,11 +524,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.flash = "q quits"
 			return m, nil
 		}
-		m.screen = ""
-		m.history.stream.Close()
-		m.history.stream = nil
-		m.history.request++
-		return m.refresh()
+		return m.showChanges()
 	case "ctrl+c":
 		m.closeHistoryStreams()
 		return m, tea.Quit
@@ -1142,4 +1138,18 @@ func historyMetadata(c git.CommitInfo, date string, merged, width int, selected 
 		remaining -= stringWidth(text)
 	}
 	return b.String()
+}
+
+// showChanges leaves history, or a screen opened from it, for the working-tree
+// diff, on the staged tab when only staged changes remain.
+func (m model) showChanges() (tea.Model, tea.Cmd) {
+	m.screen = ""
+	m.startsInHistory = false
+	m.history.stream.Close()
+	m.history.stream = nil
+	m.history.request++
+	if len(m.snapshot.Unstaged) == 0 && len(m.snapshot.Staged) > 0 {
+		m.staged = true
+	}
+	return m.refresh()
 }

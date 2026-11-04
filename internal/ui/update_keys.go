@@ -337,7 +337,12 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.errorPos = min(m.errorPos+1, m.errorMaxPos())
 		case "k", "up":
 			m.errorPos = max(0, m.errorPos-1)
-		case "esc", "enter", "q":
+		case "enter":
+			m.modal = ""
+			if blockedByChanges(m.errorText) {
+				return m.showChanges()
+			}
+		case "esc", "q":
 			m.modal = ""
 		}
 		return m, nil

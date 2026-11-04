@@ -230,7 +230,11 @@ func (m model) confirmationView() string {
 				lines = append(lines, "")
 			}
 		}
-		lines = append(lines, fit("j/k scroll  enter/esc dismiss", m.width))
+		hint := "j/k scroll  enter/esc dismiss"
+		if blockedByChanges(m.errorText) {
+			hint = "j/k scroll  enter show changes  esc dismiss"
+		}
+		lines = append(lines, fit(hint, m.width))
 		return strings.Join(lines, "\n")
 	}
 	clearBody(lines)

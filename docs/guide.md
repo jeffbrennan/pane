@@ -315,6 +315,9 @@ was deleted on the remote, as after a merged pull request, pane offers to
 switch to the default branch (the remote's `HEAD`, then `main`, then `master`)
 and pull it. The old branch is kept.
 
+When Git refuses a switch, pull, or merge because of uncommitted changes, Enter
+on the error opens the changes view so you can stash or commit them.
+
 ## Commits, details, and blame
 
 A commit and each commit in a multi-commit review start with a details block:

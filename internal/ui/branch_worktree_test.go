@@ -429,3 +429,52 @@ func TestDeleteCurrentBranchWithChangesRefuses(t *testing.T) {
 		t.Fatalf("refusal still switched to %q", out)
 	}
 }
+
+func TestSwitchBlockedByChangesOffersChangesView(t *testing.T) {
+	r := testRepo(t)
+	writeFile(t, r, "file.txt", "one\n")
+	if _, err := r.Commit("initial"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Command("switch", "-c", "side"); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, r, "file.txt", "side\n")
+	if _, err := r.Commit("side"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Command("switch", "main"); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, r, "file.txt", "local\n")
+	snapshot, err := r.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := model{screen: "branches", repo: r, width: 100, height: 30, snapshot: snapshot, startsInHistory: true}
+	_, cmd := m.switchBranch(git.BranchEntry{Name: "side"})
+	updated, _ := m.Update(cmd())
+	m = updated.(model)
+	if m.modal != "error" {
+		t.Fatalf("switch over local changes did not fail: modal=%q", m.modal)
+	}
+	if view := plain(m.View()); !strings.Contains(view, "show changes") {
+		t.Fatalf("error does not offer the changes view: %q", view)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(model)
+	if m.modal != "" || m.screen != "" || m.startsInHistory {
+		t.Fatalf("enter did not open changes: modal=%q screen=%q", m.modal, m.screen)
+	}
+}
+
+func TestOtherErrorsOnlyDismiss(t *testing.T) {
+	m := model{screen: "branches", width: 100, height: 30, modal: "error", errorText: "fatal: something else"}
+	if view := plain(m.View()); strings.Contains(view, "show changes") {
+		t.Fatalf("unrelated error offers the changes view: %q", view)
+	}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m = updated.(model); m.modal != "" || m.screen != "branches" {
+		t.Fatalf("enter should only dismiss: modal=%q screen=%q", m.modal, m.screen)
+	}
+}
