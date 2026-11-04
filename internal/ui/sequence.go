@@ -335,7 +335,7 @@ func (m model) sequenceView() string {
 			view.viewBadge = stateBadges(fmt.Sprintf("%d/%d", index+1, len(m.sequence.commits)), viewed, m.whitespaceBadge())
 		}
 	}
-	view.viewHints = keyHints("esc", "back", "?", "help")
+	view.viewHints = footer(true)
 	view.message = ""
 	if m.sequence.loading {
 		view.message = "Loading commits…"
@@ -351,26 +351,31 @@ func (m model) sequenceView() string {
 }
 
 func (m model) handleSequenceKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if key.String() == "G" && m.pending == "" && m.count == 0 && len(m.sequence.states) > 0 {
+	p := m.press(key, scopeReview)
+	if p.action == actBottom && !p.hadCount && len(m.sequence.states) > 0 {
 		last := m.sequence.states[len(m.sequence.states)-1]
 		m.sequence.endPending = last == sequencePending || last == sequenceLoading
-	} else if key.String() != "G" {
+	} else if p.action != actBottom {
 		m.sequence.endPending = false
 	}
-	if m.pending == "" && (key.String() == ")" || key.String() == "(") {
+	if next, cmd, ok := m.handleSharedAction(p); ok {
+		return next, cmd
+	}
+	if p.action == actNextCommit || p.action == actPrevCommit {
 		direction := 1
-		if key.String() == "(" {
+		if p.action == actPrevCommit {
 			direction = -1
 		}
 		return m.stepSequenceCommit(direction)
 	}
-	if m.pending == "" && (key.String() == "h" || key.String() == "l") && m.onCommitHeader() {
-		m.history.toggleCommitHeader(key.String())
+	fold := p.action == actFold || p.action == actUnfold
+	if fold && m.onCommitHeader() {
+		m.history.toggleCommitHeader(foldKey(p.action))
 		m.sequence.rowCache = nil
 		m.rebuildSequence()
 		return m, nil
 	}
-	if m.pending == "" && (key.String() == "h" || key.String() == "l") && m.pos >= 0 && m.pos < len(m.rows) && m.rows[m.pos].kind == 'f' {
+	if fold && m.pos >= 0 && m.pos < len(m.rows) && m.rows[m.pos].kind == 'f' {
 		index := int(m.rows[m.pos].commitIndex)
 		if index < len(m.sequence.commits) {
 			if m.collapsedFiles == nil {
@@ -381,7 +386,7 @@ func (m model) handleSequenceKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			fileKey := git.Context{Commit: m.sequence.commits[index].Hash, Path: m.rows[m.pos].path}
 			m.generatedHandled[fileKey] = true
-			if key.String() == "h" {
+			if p.action == actFold {
 				m.collapsedFiles[fileKey] = true
 			} else {
 				delete(m.collapsedFiles, fileKey)
@@ -391,17 +396,17 @@ func (m model) handleSequenceKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
-	if m.handleDiffNavigation(key.String()) {
+	if m.handleDiffNavigation(p) {
 		return m, nil
 	}
-	switch key.String() {
-	case "/":
+	switch p.action {
+	case actSearch:
 		m.startSearch()
-	case "v":
+	case actViewed:
 		return m.toggleViewedSequence()
-	case "o":
+	case actEditor:
 		return m.openEditor()
-	case "y":
+	case actCopy:
 		if len(m.rows) > 0 {
 			index := int(m.rows[m.pos].commitIndex)
 			if index < len(m.sequence.commits) {
@@ -409,32 +414,29 @@ func (m model) handleSequenceKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, copyCmd(hash, shortHash(hash))
 			}
 		}
-	case "Y":
+	case actCopyLocation:
 		if m.pos >= 0 && m.pos < len(m.rows) {
 			index := int(m.rows[m.pos].commitIndex)
 			if index < len(m.sequence.commits) {
 				return m, m.copyDiffLocation(m.sequence.commits[index].Hash)
 			}
 		}
-	case "w":
+	case actWrap:
 		m.wrap = !m.wrap
 		m.horizontal = 0
 		m.flash = wrapFlash(m.wrap)
 		m.rebuildSequence()
-	case "?":
-		m.modal = "help"
-		m.help.reset()
-	case "f":
+	case actFiles:
 		m.openPicker()
-	case "e":
+	case actExpandDeleted:
 		m.flash = "Not available in multi-commit review"
-	case "esc", "q":
+	case actBack, actQuit:
 		if m.pickerReturn {
 			m.restorePicker()
 			return m, nil
 		}
 		return m.leaveSequence()
-	case "ctrl+c":
+	case actInterrupt:
 		return m, tea.Quit
 	}
 	return m, nil

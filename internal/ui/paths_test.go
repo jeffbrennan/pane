@@ -40,7 +40,7 @@ func TestShortPathsToggleInDiffViews(t *testing.T) {
 				m.sequence = sequenceState{commits: []git.CommitInfo{{Hash: "abcd"}}, changes: [][]git.Change{{c}}, states: []sequenceLoadState{sequenceReady}}
 				m.rebuildSequence()
 			}
-			key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("B")}
+			key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("~")}
 			updated, cmd := m.Update(key)
 			m = updated.(model)
 			if cmd != nil || !m.shortPaths {

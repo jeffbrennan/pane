@@ -80,6 +80,7 @@ type model struct {
 	errorText             string
 	errorPos              int
 	help                  listState
+	keyEditor             keyEditorState
 	helpContext           string
 	screen, viewTitle     string
 	viewBadge, viewHints  string

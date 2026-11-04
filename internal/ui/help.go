@@ -4,7 +4,24 @@ import (
 	"strings"
 )
 
-type shortcut struct{ keys, action string }
+// shortcut is one row of the help dialog or a footer. Rows for customizable
+// keys name their bindings in ids and read their keys from activeKeys; the
+// rest, such as text editing keys, spell them out in keys.
+type shortcut struct {
+	keys, action string
+	ids          []string
+}
+
+// hint describes the bindings ids as action.
+func hint(action string, ids ...string) shortcut { return shortcut{action: action, ids: ids} }
+
+// label renders the shortcut's keys under the active bindings.
+func (s shortcut) label() string {
+	if len(s.ids) == 0 {
+		return s.keys
+	}
+	return activeKeys.labels(s.ids...)
+}
 
 type shortcutSection struct {
 	title string
@@ -19,110 +36,112 @@ type shortcutSection struct {
 // motion, finding, acting, toggles, general.
 var shortcutSections = []shortcutSection{
 	{"Changes", []string{""}, []shortcut{
-		{"tab", "Switch unstaged / staged"},
-		{"space", "Stage / unstage file"},
-		{"s", "Stage / unstage hunk"},
-		{"S", "Stash all changes, including untracked"},
-		{"d", "Discard hunk / file"},
-		{"c", "Commit changes"},
-		{"p / P", "Push / pull"},
-		{"F", "Fetch remote changes"},
-		{"r", "Refresh"},
+		hint("Switch unstaged / staged", "changes.switch-view"),
+		hint("Stage / unstage file", "changes.stage-file"),
+		hint("Stage / unstage hunk", "changes.stage-hunk"),
+		hint("Stash all changes, including untracked", "changes.stash"),
+		hint("Discard hunk / file", "changes.discard"),
+		hint("Commit changes", "changes.commit"),
+		hint("Push / pull", "changes.push", "changes.pull"),
+		hint("Fetch remote changes", "fetch"),
+		hint("Refresh", "changes.refresh"),
 	}},
 	{"History", []string{"history"}, []shortcut{
-		{"H", "Open commit history"},
-		{"↵ / space", "Open selected commit"},
-		{"u", "Edit latest unpublished commit message"},
-		{"S", "Open stashes"},
-		{"b", "Open branches (tab switches to worktrees)"},
-		{"X", "Open hotspots for the last year"},
-		{"R", "Review from this commit to the working tree"},
-		{"V", "Select a commit range to review"},
-		{"m", "Collapse / expand merged commits"},
+		hint("Open commit history", "changes.history"),
+		hint("Open selected commit", "open", "history.open"),
+		hint("Edit latest unpublished commit message", "history.edit-message"),
+		hint("Open stashes", "history.stashes"),
+		hint("Open branches (tab switches to worktrees)", "history.branches"),
+		hint("Open hotspots for the last year", "history.hotspots"),
+		hint("Review from this commit to the working tree", "history.review-to-worktree"),
+		hint("Select a commit range to review", "history.select-range"),
+		hint("Collapse / expand merged commits", "history.collapse-merges"),
 	}},
 	{"Stashes", []string{"stashes"}, []shortcut{
-		{"↵ / space", "View stash"},
-		{"p / d", "Pop / drop selected stash"},
-		{"/", "Filter stashes"},
+		hint("View stash", "open", "stashes.open"),
+		hint("Pop / drop selected stash", "stashes.pop", "stashes.drop"),
+		hint("Filter stashes", "search"),
 	}},
 	{"Branches", []string{"branches"}, []shortcut{
-		{"↵", "Switch to the selected branch"},
-		{"n / w", "New branch from the selection / new worktree for it"},
-		{"d / D", "Delete branch / force delete"},
-		{"r", "Include remote branches"},
-		{"y", "Copy branch name"},
+		hint("Switch to the selected branch", "open"),
+		hint("New branch from the selection / new worktree for it", "branches.new-branch", "branches.new-worktree"),
+		hint("Delete branch / force delete", "branches.delete", "branches.force-delete"),
+		hint("Include remote branches", "branches.remotes"),
+		hint("Refresh", "branches.refresh"),
+		hint("Copy branch name", "copy"),
 	}},
 	{"Worktrees", []string{"worktrees"}, []shortcut{
-		{"↵", "Switch this pane to the worktree"},
-		{"n", "New worktree (path and branch)"},
-		{"d / D", "Remove worktree / force remove"},
-		{"p", "Prune stale worktrees"},
-		{"y", "Copy path"},
+		hint("Switch this pane to the worktree", "open"),
+		hint("New worktree (path and branch)", "worktrees.new-worktree"),
+		hint("Remove worktree / force remove", "worktrees.delete", "worktrees.force-delete"),
+		hint("Prune stale worktrees", "worktrees.prune"),
+		hint("Copy path", "copy"),
 	}},
 	{"Hotspots", []string{"hotspots"}, []shortcut{
-		{"tab", "Cycle tree, files, authors"},
-		{"h / l", "Fold a directory / expand the rest"},
-		{"↵", "Open file history, fold a directory, or filter by author"},
-		{"L", "Open history for the selected path"},
-		{"o", "Open the file in $EDITOR"},
-		{"V", "Review the selection as a commit range"},
-		{"w", "Cycle 3 months, 12 months, all time"},
-		{"a", "Show or hide generated and vendored files"},
-		{"/", "Filter hotspots"},
+		hint("Cycle tree, files, authors", "hotspots.switch-view"),
+		hint("Fold a directory / expand the rest", "fold", "unfold"),
+		hint("Open file history, fold a directory, or filter by author", "open"),
+		hint("Open history for the selected path", "file-history"),
+		hint("Open the file in $EDITOR", "editor"),
+		hint("Review the selection as a commit range", "hotspots.review-range"),
+		hint("Cycle 3 months, 12 months, all time", "hotspots.window"),
+		hint("Show or hide generated and vendored files", "hotspots.show-hidden"),
+		hint("Filter hotspots", "search"),
 	}},
 	{"Commit input", []string{"commit-input"}, []shortcut{
-		{"← / →, ctrl-b / ctrl-f, alt-b / alt-f", "Move by character or word"},
-		{"home / end, ctrl-a / ctrl-e", "Start / end of subject"},
-		{"ctrl-w / alt-backspace, ctrl-u / ctrl-k", "Delete previous word, to start, or to end"},
-		{"backspace / delete, ctrl-d", "Delete character"},
-		{"ctrl-g", "Write message in external editor"},
-		{"↵ / esc", "Commit / cancel"},
+		{keys: "← / →, ctrl-b / ctrl-f, alt-b / alt-f", action: "Move by character or word"},
+		{keys: "home / end, ctrl-a / ctrl-e", action: "Start / end of subject"},
+		{keys: "ctrl-w / alt-backspace, ctrl-u / ctrl-k", action: "Delete previous word, to start, or to end"},
+		{keys: "backspace / delete, ctrl-d", action: "Delete character"},
+		{keys: "ctrl-g", action: "Write message in external editor"},
+		{keys: "↵ / esc", action: "Commit / cancel"},
 	}},
 	{"Motion", nil, []shortcut{
-		{"j / k", "Down / up"},
-		{"gg / G", "First / last"},
-		{"ctrl-d / ctrl-u", "Half page down / up"},
-		{"ctrl-f / ctrl-b", "Page down / up"},
-		{"ctrl-e / ctrl-y", "Scroll the diff viewport"},
-		{"} / {", "Next / previous group"},
-		{"J / K", "Next / previous file"},
-		{") / (", "Next / previous commit in history or a range"},
-		{"]c / [c", "Next / previous change"},
-		{"gH / gM / gL", "Top / middle / bottom of screen"},
-		{"zt / zz / zb", "Align the active line"},
-		{"zh / zl", "Scroll horizontally"},
-		{"ctrl-o / gi", "Jump back / forward"},
-		{"count + motion", "Repeat a motion; with gg / G, jump to a source line"},
+		hint("Down / up", "down", "up"),
+		hint("First / last", "top", "bottom"),
+		hint("Half page down / up", "half-page-down", "half-page-up"),
+		hint("Page down / up", "page-down", "page-up"),
+		hint("Scroll the diff viewport", "scroll-down", "scroll-up"),
+		hint("Next / previous group", "next-group", "previous-group"),
+		hint("Next / previous file", "next-file", "previous-file"),
+		hint("Next / previous commit in history or a range", "next-commit", "previous-commit"),
+		hint("Next / previous change", "next-change", "previous-change"),
+		hint("Top / middle / bottom of screen", "screen-top", "screen-middle", "screen-bottom"),
+		hint("Align the active line", "align-top", "align-center", "align-bottom"),
+		hint("Scroll horizontally", "scroll-left", "scroll-right"),
+		hint("Jump back / forward", "jump-back", "jump-forward"),
+		{keys: "count + motion", action: "Repeat a motion; with gg / G, jump to a source line"},
 	}},
 	{"Finding", nil, []shortcut{
-		{"f", "File tree (h/l fold, v hides viewed files)"},
-		{"/ / g?", "Search the diff forward / backward, or filter a list"},
-		{"n / N", "Next / previous match"},
-		{"L", "Open history for the current file"},
-		{"gb", "Blame the current context or removed line"},
-		{"← / →, home / end", "Move within a query"},
-		{"alt-b / alt-f, ctrl-a / ctrl-e", "Move by word or to start / end"},
-		{"ctrl-w / alt-backspace", "Delete the previous word"},
-		{"backspace / delete", "Delete a character"},
-		{"esc", "Clear the filter first, then go back"},
+		hint("File tree (h/l fold, v hides viewed files)", "files"),
+		hint("Search the diff forward / backward, or filter a list", "search", "search-backward"),
+		hint("Next / previous match", "next-match", "previous-match"),
+		hint("Open history for the current file", "file-history"),
+		hint("Blame the current context or removed line", "blame"),
+		{keys: "← / →, home / end", action: "Move within a query"},
+		{keys: "alt-b / alt-f, ctrl-a / ctrl-e", action: "Move by word or to start / end"},
+		{keys: "ctrl-w / alt-backspace", action: "Delete the previous word"},
+		{keys: "backspace / delete", action: "Delete a character"},
+		hint("Clear the filter first, then go back", "back"),
 	}},
 	{"Acting", nil, []shortcut{
-		{"↵", "Open or activate the selection"},
-		{"y / Y", "Copy the name or path / a location or link"},
-		{"o", "Open the file in $EDITOR"},
-		{"v", "Mark the file viewed / unviewed"},
-		{"e", "Expand / collapse a deleted file"},
-		{"h / l", "Fold / unfold the cursor: a file, commit body, or context"},
+		hint("Open or activate the selection", "open"),
+		hint("Copy the name or path / a location or link", "copy", "copy-location"),
+		hint("Open the file in $EDITOR", "editor"),
+		hint("Mark the file viewed / unviewed", "viewed"),
+		hint("Expand / collapse a deleted file", "expand-deleted"),
+		hint("Fold / unfold the cursor: a file, commit body, or context", "fold", "unfold"),
 	}},
 	{"Toggles", nil, []shortcut{
-		{"w", "Toggle line wrapping"},
-		{"W", "Toggle ignoring whitespace"},
-		{"B", "Toggle short file paths"},
-		{"T", "Toggle light / dark colors"},
+		hint("Toggle line wrapping", "wrap"),
+		hint("Toggle ignoring whitespace", "whitespace"),
+		hint("Toggle short file paths", "short-paths"),
+		hint("Toggle light / dark colors", "theme"),
 	}},
 	{"General", nil, []shortcut{
-		{"?", "Show shortcuts"},
-		{"esc / q", "Go back one screen; q quits on the first screen"},
+		hint("Show shortcuts", "help"),
+		hint("Go back one screen; q quits on the first screen", "back", "quit"),
+		hint("Customize keys (in this dialog)", "help.edit-keys"),
 	}},
 }
 
@@ -165,7 +184,7 @@ func (m model) sectionApplies(section shortcutSection) bool {
 func (m model) helpLines() []string {
 	query := strings.ToLower(strings.TrimSpace(m.help.filter))
 	keep := func(s shortcut) bool {
-		return query == "" || strings.Contains(strings.ToLower(s.keys+" "+s.action), query)
+		return query == "" || strings.Contains(strings.ToLower(s.label()+" "+s.action), query)
 	}
 	innerWidth := max(1, min(helpBoxWidth, m.width-2)-4)
 	var lines []string
@@ -191,7 +210,7 @@ func (m model) helpLines() []string {
 		lines = append(lines, title)
 		keyWidth := 0
 		for _, s := range keys {
-			keyWidth = max(keyWidth, stringWidth(s.keys))
+			keyWidth = max(keyWidth, stringWidth(s.label()))
 		}
 		keyWidth += 2
 		for _, s := range keys {
@@ -237,7 +256,7 @@ func hasShortcuts(section shortcutSection, keep func(shortcut) bool) bool {
 func shortcutRows(accent string, s shortcut, keyWidth, innerWidth int, dim bool) []string {
 	if innerWidth < keyWidth+16 {
 		var rows []string
-		for j, part := range wrapLine(s.keys+"  "+s.action, innerWidth) {
+		for j, part := range wrapLine(s.label()+"  "+s.action, innerWidth) {
 			if j == 0 {
 				part = accent + part + styleReset
 			}
@@ -249,7 +268,7 @@ func shortcutRows(accent string, s shortcut, keyWidth, innerWidth int, dim bool)
 	for j, part := range wrapWords(s.action, innerWidth-keyWidth) {
 		key := ""
 		if j == 0 {
-			key = s.keys
+			key = s.label()
 		}
 		row := accent + key + styleReset + strings.Repeat(" ", keyWidth-stringWidth(key)) + part
 		if dim {

@@ -46,7 +46,7 @@ func TestListScreensShareMotionsAndFilters(t *testing.T) {
 				return m
 			},
 			send: func(m model, key tea.KeyMsg) model {
-				m.handlePickerKey(key.String(), listRunes(key))
+				m.handlePickerKey(key)
 				return m
 			},
 			list: func(m model) listState { return m.picker.list },

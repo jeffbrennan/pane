@@ -35,6 +35,10 @@ func wrapWords(s string, width int) []string {
 }
 
 func (m model) showHelpDialog(lines []string) {
+	if m.keyEditor.open {
+		m.showKeyEditor(lines)
+		return
+	}
 	if m.width < 8 || len(lines) < 6 {
 		return
 	}
@@ -54,7 +58,7 @@ func (m model) showHelpDialog(lines []string) {
 		title: "Keyboard shortcuts",
 		info:  info,
 		body:  entries[pos : pos+visible],
-		hint:  keyHints("j/k", "scroll", "/", "filter", "esc", "close"),
+		hint:  keyHints(activeKeys.pair("down", "up"), "scroll", activeKeys.label("search"), "filter", activeKeys.label("help.edit-keys"), "customize", activeKeys.label("back"), "close"),
 	}.render())
 }
 
@@ -307,9 +311,9 @@ func blockedByChanges(text string) bool {
 
 func (m model) errorHint() string {
 	if blockedByChanges(m.errorText) {
-		return keyHints("j/k", "scroll", "↵", "show changes", "esc", "dismiss")
+		return keyHints(activeKeys.pair("down", "up"), "scroll", activeKeys.label("open"), "show changes", activeKeys.label("back"), "dismiss")
 	}
-	return keyHints("j/k", "scroll", "↵/esc", "dismiss")
+	return keyHints(activeKeys.pair("down", "up"), "scroll", activeKeys.pair("open", "back"), "dismiss")
 }
 
 func (m model) showErrorDialog(lines []string) {

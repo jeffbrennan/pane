@@ -30,6 +30,11 @@ func Run(args []string) error {
 		return err
 	}
 	m.prefetch = prefetch
+	keys, keysErr := loadKeys(keysPath())
+	activeKeys = keys
+	if keysErr != nil {
+		m.flash = keysErr.Error()
+	}
 	theme, colorFGBG := strings.ToLower(strings.TrimSpace(os.Getenv("PANE_THEME"))), os.Getenv("COLORFGBG")
 	m.lightTheme = lightThemeFromEnv(theme, colorFGBG)
 	options := []tea.ProgramOption{tea.WithAltScreen(), tea.WithReportFocus()}

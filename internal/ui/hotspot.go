@@ -1563,9 +1563,9 @@ func (m model) hotFooter() string {
 	if hidden > 0 {
 		a = fmt.Sprintf("hidden %d", hidden)
 	}
-	actions := []shortcut{{"tab", view}, {"w", "window"}, {"a", a}, {"↵", "open"}}
+	actions := []shortcut{hint(view, "hotspots.switch-view"), hint("window", "hotspots.window"), hint(a, "hotspots.show-hidden"), hint("open", "open")}
 	if m.hotspots.mode == "authors" {
-		actions = []shortcut{{"tab", view}, {"w", "window"}, {"↵", "filter"}}
+		actions = []shortcut{hint(view, "hotspots.switch-view"), hint("window", "hotspots.window"), hint("filter", "open")}
 	}
 	return footer(true, actions...)
 }
@@ -1653,16 +1653,20 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.hotspots.mode == "authors" {
 		count = len(m.hotFilteredAuthors())
 	}
-	if m.handleListKey(&m.hotspots.list, key.String(), listRunes(key), count, m.hotRows(), nil) {
+	p := m.listPress(&m.hotspots.list, key, scopeHotspots)
+	if m.handleListKey(&m.hotspots.list, p, count, m.hotRows(), nil) {
 		return m, nil
+	}
+	if next, cmd, ok := m.handleSharedAction(p); ok {
+		return next, cmd
 	}
 	resetItems := func() {
 		if m.hotspots.items != nil {
 			m.hotspots.items.filled = false
 		}
 	}
-	switch key.String() {
-	case "esc", "q":
+	switch p.action {
+	case actBack, actQuit:
 		if m.hotspots.authorFilter != "" {
 			m.hotspots.authorFilter = ""
 			m.hotspots.list.reset()
@@ -1671,13 +1675,10 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.closeHotspotStream()
 		return m.openHistory()
-	case "ctrl+c":
+	case actInterrupt:
 		m.closeHotspotStream()
 		return m, tea.Quit
-	case "?":
-		m.modal = "help"
-		m.help.reset()
-	case "tab":
+	case actSwitchView:
 		switch m.hotspots.mode {
 		case "":
 			m.hotspots.mode = "files"
@@ -1688,7 +1689,7 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.hotspots.list.reset()
 		resetItems()
-	case "a":
+	case actShowHidden:
 		m.hotspots.hiddenShown = !m.hotspots.hiddenShown
 		m.hotspots.collapsedVersion++
 		resetItems()
@@ -1697,12 +1698,12 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.flash = "Hiding generated and vendored files"
 		}
-	case "w":
+	case actWindow:
 		m.hotspots.since = nextHotWindow(m.hotspots.since)
 		m.closeHotspotStream()
 		next, cmd := m.openHotspots(m.hotspots.since, m.hotspots.author)
 		return next, cmd
-	case "h", "l":
+	case actFold, actUnfold:
 		items := m.hotVisible()
 		if m.hotspots.list.selected < 0 || m.hotspots.list.selected >= len(items) {
 			break
@@ -1712,7 +1713,7 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.hotspots.showAll == nil {
 				m.hotspots.showAll = make(map[string]bool)
 			}
-			if key.String() == "l" {
+			if p.action == actUnfold {
 				m.hotspots.showAll[item.path] = true
 			}
 			m.hotspots.collapsedVersion++
@@ -1728,7 +1729,7 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.hotspots.opened == nil {
 			m.hotspots.opened = make(map[string]bool)
 		}
-		if key.String() == "h" {
+		if p.action == actFold {
 			m.hotspots.collapsed[item.path] = true
 			delete(m.hotspots.opened, item.path)
 		} else {
@@ -1737,7 +1738,7 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.hotspots.collapsedVersion++
 		resetItems()
-	case "V":
+	case actReviewRange:
 		if m.hotspots.mode != "authors" {
 			items := m.hotVisible()
 			if len(items) > 0 {
@@ -1745,7 +1746,7 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, m.hotspotSequence(items[min(m.hotspots.list.selected, len(items)-1)].path)
 			}
 		}
-	case "o":
+	case actEditor:
 		items := m.hotVisible()
 		if len(items) > 0 {
 			item := items[min(m.hotspots.list.selected, len(items)-1)]
@@ -1753,7 +1754,7 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m.openFilePath(item.path, 0)
 			}
 		}
-	case "L":
+	case actFileHistory:
 		items := m.hotVisible()
 		if len(items) > 0 {
 			item := items[min(m.hotspots.list.selected, len(items)-1)]
@@ -1761,7 +1762,7 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m.openPathHistory(item.path)
 			}
 		}
-	case "enter":
+	case actOpen:
 		if m.hotspots.mode == "authors" {
 			authors := m.hotFilteredAuthors()
 			if len(authors) > 0 {

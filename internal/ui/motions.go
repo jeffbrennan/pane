@@ -110,7 +110,7 @@ func (m *model) sourceLineJump(number int) {
 	}
 }
 
-func (m *model) screenJump(position string) {
+func (m *model) screenJump(position action) {
 	if len(m.rows) == 0 {
 		return
 	}
@@ -122,11 +122,11 @@ func (m *model) screenJump(position string) {
 	}
 	end := min(len(m.rows)-1, start+visible-1)
 	switch position {
-	case "H":
+	case actScreenTop:
 		m.pos = min(start, end)
-	case "M":
+	case actScreenMiddle:
 		m.pos = (start + end) / 2
-	case "L":
+	case actScreenBottom:
 		m.pos = end
 	}
 }

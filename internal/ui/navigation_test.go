@@ -19,7 +19,7 @@ func TestDiffVerticalMotions(t *testing.T) {
 		{"pgdown", 10}, {"pgup", 0},
 	}
 	for _, step := range steps {
-		if !m.handleDiffNavigation(step.key) || m.pos != step.want {
+		if !m.navigate(step.key) || m.pos != step.want {
 			t.Fatalf("%s: position %d, want %d", step.key, m.pos, step.want)
 		}
 	}
@@ -31,8 +31,8 @@ func TestViewportAlignmentSurvivesRefresh(t *testing.T) {
 	m := model{width: 40, height: 12, wrap: true, snapshot: s}
 	m.rebuild()
 	m.move(20)
-	m.handleDiffNavigation("z")
-	m.handleDiffNavigation("t")
+	m.navigate("z")
+	m.navigate("t")
 	updated, _ := m.Update(loaded{snapshot: s, generation: m.generation})
 	got := updated.(model)
 	if got.pos != 20 || got.viewportStart(10) != 20 {
@@ -49,24 +49,24 @@ func TestDiffViewportMotions(t *testing.T) {
 		{[]string{"z", "t"}, 20}, {[]string{"z", "z"}, 15}, {[]string{"z", "b"}, 11},
 	} {
 		for _, key := range test.keys {
-			m.handleDiffNavigation(key)
+			m.navigate(key)
 		}
 		if m.pos != 20 || m.viewportStart(10) != test.top {
 			t.Fatalf("%v: pos %d top %d", test.keys, m.pos, m.viewportStart(10))
 		}
 	}
-	m.handleDiffNavigation("z")
-	m.handleDiffNavigation("z")
-	m.handleDiffNavigation("ctrl+e")
+	m.navigate("z")
+	m.navigate("z")
+	m.navigate("ctrl+e")
 	if m.viewTop != 16 || m.pos != 20 {
 		t.Fatalf("scroll down: top %d pos %d", m.viewTop, m.pos)
 	}
-	m.handleDiffNavigation("ctrl+y")
+	m.navigate("ctrl+y")
 	if m.viewTop != 15 || m.pos != 20 {
 		t.Fatalf("scroll up: top %d pos %d", m.viewTop, m.pos)
 	}
 	for i := 0; i < 10; i++ {
-		m.handleDiffNavigation("ctrl+e")
+		m.navigate("ctrl+e")
 	}
 	if m.pos < m.viewTop || m.pos >= m.viewTop+10 {
 		t.Fatal("active line left viewport")
@@ -76,19 +76,19 @@ func TestDiffViewportMotions(t *testing.T) {
 func TestHorizontalVimMotions(t *testing.T) {
 	m := model{width: 40}
 	for _, key := range []string{"z", "l", "z", "L"} {
-		m.handleDiffNavigation(key)
+		m.navigate(key)
 	}
 	if m.horizontal != 24 {
 		t.Fatalf("horizontal offset: %d", m.horizontal)
 	}
 	for _, key := range []string{"z", "h", "ctrl+h"} {
-		m.handleDiffNavigation(key)
+		m.navigate(key)
 	}
 	if m.horizontal != 16 {
 		t.Fatalf("horizontal offset: %d", m.horizontal)
 	}
 	m.wrap = true
-	m.handleDiffNavigation("l")
+	m.navigate("l")
 	if m.horizontal != 16 {
 		t.Fatal("horizontal scrolling changed while wrapped")
 	}

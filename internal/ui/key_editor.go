@@ -1,0 +1,469 @@
+package ui
+
+import (
+	"fmt"
+	"maps"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jeffbrennan/pane/internal/syntax"
+)
+
+// keyEditorState is the key editor inside the shortcuts dialog. While
+// capturing, the next key pressed becomes the selected action's key; while
+// removing, a number picks which of its keys to drop.
+type keyEditorState struct {
+	open bool
+	list listState
+	// top is the first visible display row, counting scope headers, since
+	// list.offset counts only bindings.
+	top       int
+	capturing bool
+	adding    bool
+	removing  bool
+	// swap holds a captured key that is already bound in the same scope
+	// until the person confirms taking it.
+	swap    string
+	message string
+}
+
+func (m *model) openKeyEditor() {
+	m.keyEditor = keyEditorState{open: true}
+}
+
+// editorBindings returns the bindings matching the editor's filter.
+func (m model) editorBindings() []binding {
+	query := strings.ToLower(strings.TrimSpace(m.keyEditor.list.filter))
+	var matches []binding
+	for _, b := range defaultBindings {
+		text := strings.ToLower(b.id() + " " + b.description + " " + scopeTitles[b.scope] + " " + bindingKeys(b.id()))
+		if query == "" || strings.Contains(text, query) {
+			matches = append(matches, b)
+		}
+	}
+	return matches
+}
+
+// editorRows lays out matches under a header for each scope. A header row
+// is -1; any other row is an index into matches.
+func editorRows(matches []binding) []int {
+	var rows []int
+	for i, b := range matches {
+		if i == 0 || matches[i-1].scope != b.scope {
+			rows = append(rows, -1)
+		}
+		rows = append(rows, i)
+	}
+	return rows
+}
+
+// keyEditorPage is the number of display rows below the status line.
+func keyEditorPage(height int) int { return max(1, helpVisibleRows(height)-1) }
+
+// keyEditorShown is how many rows from top fit on a page: one fewer when
+// top is a binding, since its scope's header sticks above it.
+func keyEditorShown(rows []int, top, page int) int {
+	if top < len(rows) && rows[top] != -1 {
+		return max(1, page-1)
+	}
+	return page
+}
+
+// keyEditorTop returns the first visible row that keeps the selected binding
+// in view, moving the viewport only when the selection leaves it. Scrolling
+// up to the first binding of a scope shows its header in place.
+func keyEditorTop(rows []int, selected, top, page int) int {
+	row := slices.Index(rows, selected)
+	if row < 0 {
+		return 0
+	}
+	if row > 0 && rows[row-1] == -1 && row-1 < top {
+		top = row - 1
+	}
+	top = max(0, min(top, row))
+	for row >= top+keyEditorShown(rows, top, page) {
+		top++
+	}
+	for top > 0 && top-1+keyEditorShown(rows, top-1, page) >= len(rows) {
+		top--
+	}
+	return top
+}
+
+// keyTwins maps keys that terminals send in place of another to the key
+// they stand for: Backspace arrives as ctrl+h on some and backspace on others.
+var keyTwins = map[string]string{"ctrl+h": "backspace"}
+
+func canonicalKey(key string) string {
+	parts := strings.Split(key, " ")
+	for i, part := range parts {
+		if twin, ok := keyTwins[part]; ok {
+			parts[i] = twin
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// keyGroups gathers the keys bound to id that are the same physical key, so
+// the editor lists, and removes, each once.
+func keyGroups(id string) [][]string { return groupKeys(activeKeys.keys[id]) }
+
+func groupKeys(keys []string) [][]string {
+	var groups [][]string
+	at := make(map[string]int)
+	for _, key := range keys {
+		canonical := canonicalKey(key)
+		if i, ok := at[canonical]; ok {
+			groups[i] = append(groups[i], key)
+			continue
+		}
+		at[canonical] = len(groups)
+		groups = append(groups, []string{key})
+	}
+	return groups
+}
+
+func groupLabel(group []string) string {
+	if len(group) > 1 {
+		return keyLabel(canonicalKey(group[0]))
+	}
+	return keyLabel(group[0])
+}
+
+// bindingKeys lists every key bound to id, as the editor shows them.
+func bindingKeys(id string) string { return keysLabel(activeKeys.keys[id]) }
+
+func keysLabel(keys []string) string {
+	groups := groupKeys(keys)
+	labels := make([]string, len(groups))
+	for i, group := range groups {
+		labels[i] = groupLabel(group)
+	}
+	return strings.Join(labels, ", ")
+}
+
+func (m model) handleKeyEditorKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	editor := &m.keyEditor
+	matches := m.editorBindings()
+	selected := min(editor.list.selected, max(0, len(matches)-1))
+	if editor.capturing {
+		return m.captureKey(key, matches, selected)
+	}
+	if editor.removing {
+		editor.removing = false
+		name := keyName(key)
+		if len(name) == 1 && name[0] >= '1' && name[0] <= '9' && len(matches) > 0 {
+			if groups := keyGroups(matches[selected].id()); int(name[0]-'0') <= len(groups) {
+				m.removeKey(matches[selected], groups[name[0]-'1'])
+			}
+		}
+		return m, nil
+	}
+	groups := func(index int) int {
+		for index > 0 && matches[index-1].scope == matches[index].scope {
+			index--
+		}
+		return index
+	}
+	p := m.listPress(&editor.list, key, scopeKeys)
+	if m.handleListKey(&editor.list, p, len(matches), keyEditorPage(m.height), groups) {
+		editor.top = keyEditorTop(editorRows(m.editorBindings()), editor.list.selected, editor.top, keyEditorPage(m.height))
+		return m, nil
+	}
+	editor.message = ""
+	switch p.action {
+	case actOpen, actAddKey:
+		if len(matches) > 0 {
+			editor.capturing, editor.adding = true, p.action == actAddKey
+		}
+	case actRemoveKey:
+		if len(matches) > 0 {
+			b := matches[selected]
+			switch groups := keyGroups(b.id()); len(groups) {
+			case 0:
+				editor.message = b.description + " has no keys"
+			case 1:
+				m.removeKey(b, groups[0])
+			default:
+				editor.removing = true
+			}
+		}
+	case actResetKey:
+		if len(matches) > 0 {
+			b := matches[selected]
+			activeKeys.keys[b.id()] = b.keys
+			activeKeys.index()
+			editor.message = m.saveKeys("Reset " + b.description)
+		}
+	case actBack, actQuit, actHelp, actInterrupt:
+		m.keyEditor = keyEditorState{}
+	}
+	return m, nil
+}
+
+// removeKey unbinds group, the keys that are one physical key, from b.
+func (m *model) removeKey(b binding, group []string) {
+	activeKeys.keys[b.id()] = slices.DeleteFunc(slices.Clone(activeKeys.keys[b.id()]), func(key string) bool {
+		return slices.Contains(group, key)
+	})
+	activeKeys.index()
+	m.keyEditor.message = m.saveKeys(fmt.Sprintf("Removed %s from %s", groupLabel(group), b.description))
+}
+
+// captureKey binds the captured key, asking first when it would take the key
+// from another action in the same scope or would end sequences that start
+// with it.
+func (m model) captureKey(key tea.KeyMsg, matches []binding, selected int) (tea.Model, tea.Cmd) {
+	editor := &m.keyEditor
+	name := keyName(key)
+	cancel := name == "esc" || name == "ctrl+c" || len(matches) == 0 || (key.Type == tea.KeyRunes && len(key.Runes) != 1)
+	if editor.swap != "" {
+		cancel = name != "enter"
+		name = editor.swap
+	}
+	if cancel {
+		editor.capturing, editor.swap, editor.message = false, "", ""
+		return m, nil
+	}
+	b := matches[selected]
+	if same, _, prefixes := activeKeys.conflicts(b, name); editor.swap == "" && len(same)+len(prefixes) > 0 {
+		editor.swap = name
+		return m, nil
+	}
+	editor.capturing, editor.swap = false, ""
+	note := ""
+	if shadowed := activeKeys.assign(b, name, editor.adding); len(shadowed) > 0 {
+		note = " · also bound to " + describe(shadowed)
+	}
+	editor.message = m.saveKeys(fmt.Sprintf("%s: %s%s", b.description, bindingKeys(b.id()), note))
+	return m, nil
+}
+
+// assign binds key to b, first unbinding the sequences key starts, since
+// they could no longer be typed. It returns the bindings in overlapping
+// scopes that still share key.
+func (k *keymap) assign(b binding, key string, add bool) []binding {
+	_, shadowed, prefixes := k.conflicts(b, key)
+	for _, other := range prefixes {
+		k.keys[other.id()] = slices.DeleteFunc(slices.Clone(k.keys[other.id()]), func(existing string) bool {
+			return strings.HasPrefix(existing, key+" ")
+		})
+	}
+	k.rebind(b, key, add)
+	return shadowed
+}
+
+// keyChange is how binding key to another action would change one binding.
+type keyChange struct {
+	binding binding
+	removed []string
+	after   []string
+}
+
+// previewAssign lists the other bindings that assigning key to b would
+// change, without changing any.
+func previewAssign(b binding, key string, add bool) []keyChange {
+	trial := &keymap{keys: maps.Clone(activeKeys.keys)}
+	trial.assign(b, key, add)
+	var changes []keyChange
+	for _, other := range defaultBindings {
+		before, after := activeKeys.keys[other.id()], trial.keys[other.id()]
+		if other.id() == b.id() || slices.Equal(before, after) {
+			continue
+		}
+		removed := slices.DeleteFunc(slices.Clone(before), func(k string) bool { return slices.Contains(after, k) })
+		changes = append(changes, keyChange{other, removed, after})
+	}
+	return changes
+}
+
+// showKeyConflict draws the confirmation for a captured key in place of the
+// editor.
+func (m model) showKeyConflict(lines []string, b binding) {
+	key := m.keyEditor.swap
+	changes := previewAssign(b, key, m.keyEditor.adding)
+	keyWidth := 0
+	for _, c := range changes {
+		keyWidth = max(keyWidth, stringWidth(keysLabel(c.removed)))
+	}
+	body := []string{"", "This unbinds:"}
+	for _, c := range changes {
+		removed := keysLabel(c.removed)
+		result := "unbound"
+		if len(c.after) > 0 {
+			result = "keeps " + keysLabel(c.after)
+		}
+		body = append(body, "  "+m.accent()+removed+styleReset+strings.Repeat(" ", keyWidth-stringWidth(removed))+"  "+
+			describe([]binding{c.binding})+styleDim+" · "+result+styleReset)
+	}
+	body = append(body, "")
+	placeDialog(lines, m.width, dialog{
+		width: min(helpBoxWidth, m.width-2),
+		title: fmt.Sprintf("Bind %s to %s?", keyLabel(key), describe([]binding{b})),
+		body:  body,
+		hint:  keyHints("↵", "bind", "esc", "cancel"),
+	}.render())
+}
+
+// saveKeys persists the bindings and returns status for the editor.
+func (m model) saveKeys(status string) string {
+	if err := activeKeys.save(keysPath()); err != nil {
+		return "Could not save keys: " + err.Error()
+	}
+	return status
+}
+
+// describe names bindings for a status line.
+func describe(bindings []binding) string {
+	names := make([]string, len(bindings))
+	for i, b := range bindings {
+		names[i] = b.description
+		if b.scope != scopeShared {
+			names[i] += " (" + scopeTitles[b.scope] + ")"
+		}
+	}
+	return strings.Join(names, ", ")
+}
+
+// related reports whether two scopes are ever active together.
+func related(a, b string) bool { return a == b || a == scopeShared || b == scopeShared }
+
+// conflicts finds the bindings that key would collide with if bound to b:
+// those in the same scope with the same key, those in an overlapping scope
+// with the same key, which win or lose by scope, and sequences key would
+// start, which would leave key waiting for more.
+func (k *keymap) conflicts(b binding, key string) (same, shadowed, prefixes []binding) {
+	for _, other := range defaultBindings {
+		if other.id() == b.id() || !related(b.scope, other.scope) {
+			continue
+		}
+		for _, existing := range k.keys[other.id()] {
+			switch {
+			case existing == key && other.scope == b.scope:
+				same = append(same, other)
+			case existing == key:
+				shadowed = append(shadowed, other)
+			case strings.HasPrefix(existing, key+" "):
+				prefixes = append(prefixes, other)
+			default:
+				continue
+			}
+			break
+		}
+	}
+	return same, shadowed, prefixes
+}
+
+// rebind binds key to b, replacing its first key or adding key after the
+// first. Bindings in the same scope give key up; one left with no key takes
+// the key b gave up, so the two swap.
+func (k *keymap) rebind(b binding, key string, add bool) {
+	keys := slices.Clone(k.keys[b.id()])
+	keys = slices.DeleteFunc(keys, func(existing string) bool { return existing == key })
+	replaced := ""
+	switch {
+	case add:
+		keys = append(keys, key)
+	case len(keys) > 0 && slices.Contains(k.keys[b.id()], key):
+		keys = append([]string{key}, keys...)
+	case len(keys) > 0:
+		replaced = keys[0]
+		keys[0] = key
+	default:
+		keys = []string{key}
+	}
+	k.keys[b.id()] = keys
+	same, _, _ := k.conflicts(b, key)
+	for _, other := range same {
+		left := slices.DeleteFunc(slices.Clone(k.keys[other.id()]), func(existing string) bool { return existing == key })
+		if len(left) == 0 && replaced != "" {
+			left = []string{replaced}
+		}
+		k.keys[other.id()] = left
+	}
+	k.index()
+}
+
+// showKeyEditor draws the key editor in place of the shortcuts list.
+func (m model) showKeyEditor(lines []string) {
+	if m.width < 8 || len(lines) < 6 {
+		return
+	}
+	boxWidth := min(helpBoxWidth, m.width-2)
+	inner := max(1, boxWidth-4)
+	editor := m.keyEditor
+	matches := m.editorBindings()
+	visible := keyEditorPage(len(lines))
+	selected := min(editor.list.selected, max(0, len(matches)-1))
+	if editor.swap != "" && len(matches) > 0 {
+		m.showKeyConflict(lines, matches[selected])
+		return
+	}
+	rows := editorRows(matches)
+	top := keyEditorTop(rows, selected, editor.top, visible)
+	var body []string
+	switch {
+	case editor.list.filtering:
+		body = append(body, "/"+renderInput(editor.list.draft, editor.list.draftCursor, max(1, inner-1)))
+	case editor.removing:
+		var choices []string
+		for i, group := range keyGroups(matches[selected].id()) {
+			choices = append(choices, fmt.Sprintf("%s%d%s %s", m.accent(), i+1, styleReset, groupLabel(group)))
+		}
+		body = append(body, "Remove which key? "+strings.Join(choices, "  ")+styleDim+"  esc cancel"+styleReset)
+	case editor.capturing:
+		body = append(body, m.accent()+"Press a key for "+matches[selected].description+styleReset+styleDim+"  esc cancel"+styleReset)
+	case editor.message != "":
+		body = append(body, syntax.Clean(editor.message))
+	case editor.list.filter != "":
+		body = append(body, styleDim+"/"+syntax.Clean(editor.list.filter)+styleReset)
+	default:
+		path := keysPath()
+		if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(path, home+string(filepath.Separator)) {
+			path = "~" + path[len(home):]
+		}
+		body = append(body, styleDim+"Saved to "+path+styleReset)
+	}
+	header := func(scope string) string {
+		title := scopeTitles[scope]
+		return styleBold + m.accent() + title + styleReset + " " + m.accent() + strings.Repeat("─", max(0, inner-stringWidth(title)-1)) + styleReset
+	}
+	if top < len(rows) && rows[top] != -1 {
+		body = append(body, header(matches[rows[top]].scope))
+	}
+	for r := top; r < min(len(rows), top+keyEditorShown(rows, top, visible)); r++ {
+		i := rows[r]
+		if i < 0 {
+			body = append(body, header(matches[rows[r+1]].scope))
+			continue
+		}
+		b := matches[i]
+		keys := bindingKeys(b.id())
+		if keys == "" {
+			keys = "unbound"
+		}
+		if !slices.Equal(activeKeys.keys[b.id()], b.keys) {
+			keys += " *"
+		}
+		marker := "  "
+		if i == selected {
+			marker = m.accent() + "› " + styleReset
+		}
+		descWidth := max(1, inner-2-stringWidth(keys)-2)
+		description := sliceWidth(b.description, 0, descWidth)
+		row := marker + description + strings.Repeat(" ", max(0, descWidth-stringWidth(description))) + "  " + m.accent() + keys + styleReset
+		body = append(body, row)
+	}
+	info := fmt.Sprintf("%d/%d", min(selected+1, len(matches)), len(matches))
+	placeDialog(lines, m.width, dialog{
+		width: boxWidth,
+		title: "Customize keys",
+		info:  info,
+		body:  body,
+		hint: keyHints(activeKeys.label("open"), "change", activeKeys.label("keys.add-key"), "add",
+			activeKeys.label("keys.remove-key"), "remove", activeKeys.label("keys.reset-key"), "reset", activeKeys.label("search"), "filter", activeKeys.label("back"), "back"),
+	}.render())
+}

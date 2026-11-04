@@ -85,16 +85,20 @@ func (m model) filteredStashes() []git.StashEntry {
 func (m model) handleStashKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	entries := m.filteredStashes()
 	count := len(entries)
-	if m.handleListKey(&m.stash.list, key.String(), listRunes(key), count, max(1, m.height-2), nil) {
+	p := m.listPress(&m.stash.list, key, scopeStashes)
+	if m.handleListKey(&m.stash.list, p, count, max(1, m.height-2), nil) {
 		return m, nil
 	}
-	switch key.String() {
-	case "esc", "q":
+	if next, cmd, ok := m.handleSharedAction(p); ok {
+		return next, cmd
+	}
+	switch p.action {
+	case actBack, actQuit:
 		return m.openHistory()
-	case "ctrl+c":
+	case actInterrupt:
 		m.closeHistoryStreams()
 		return m, tea.Quit
-	case "enter", " ":
+	case actOpen:
 		if count == 0 || m.stash.loading {
 			return m, nil
 		}
@@ -123,18 +127,16 @@ func (m model) handleStashKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return stashDiffLoaded{changes: changes, meta: detail, request: request, err: err}
 		}
-	case "p", "d":
+	case actPop, actDrop:
 		if count == 0 || m.stash.loading || m.busy {
 			return m, nil
 		}
 		m.stash.operation = "pop"
-		if key.String() == "d" {
+		if p.action == actDrop {
 			m.stash.operation = "drop"
 		}
 		m.stash.target = entries[min(m.stash.list.selected, count-1)]
 		m.modal = "stash-confirm"
-	case "?":
-		m.modal = "help"
 	}
 	return m, nil
 }
@@ -164,7 +166,7 @@ func (m model) stashView() string {
 	} else if filter := m.stash.list.listStatus(m.width); filter != "" {
 		status = filter
 	}
-	lines = append(lines, m.statusBar(status, footer(true, shortcut{"↵", "view"}, shortcut{"p", "pop"}, shortcut{"d", "drop"})))
+	lines = append(lines, m.statusBar(status, footer(true, hint("view", "open"), hint("pop", "stashes.pop"), hint("drop", "stashes.drop"))))
 	if m.modal == "help" {
 		clearBody(lines)
 		m.showHelpDialog(lines)

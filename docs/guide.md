@@ -102,10 +102,10 @@ then the shared motion, finding, acting, and toggle grammar.
 | --- | --- |
 | `H` | Open commit history |
 | `↵ / space` | Open selected commit |
-| `u` | Edit latest unpublished commit message |
+| `A` | Edit latest unpublished commit message |
 | `S` | Open stashes |
 | `b` | Open branches (tab switches to worktrees) |
-| `X` | Open hotspots for the last year |
+| `%` | Open hotspots for the last year |
 | `R` | Review from this commit to the working tree |
 | `V` | Select a commit range to review |
 | `m` | Collapse / expand merged commits |
@@ -127,9 +127,10 @@ and a count such as `3)` jumps three commits.
 | Key | Action |
 | --- | --- |
 | `↵` | Switch to the selected branch |
-| `n / w` | New branch from the selection / new worktree for it |
+| `n / W` | New branch from the selection / new worktree for it |
 | `d / D` | Delete branch / force delete |
-| `r` | Include remote branches |
+| `R` | Include remote branches |
+| `r` | Refresh |
 | `y` | Copy branch name |
 
 ### Worktrees
@@ -218,7 +219,7 @@ and a count such as `3)` jumps three commits.
 | --- | --- |
 | `w` | Toggle line wrapping |
 | `W` | Toggle ignoring whitespace |
-| `B` | Toggle short file paths |
+| `~` | Toggle short file paths |
 | `T` | Toggle light / dark colors |
 
 ### General
@@ -227,6 +228,35 @@ and a count such as `3)` jumps three commits.
 | --- | --- |
 | `?` | Show shortcuts |
 | `esc / q` | Go back one screen; `q` quits on the first screen |
+| `e` | Customize keys (in this dialog) |
+
+### Customizing keys
+
+The tables above are the defaults. Press `?` then `e` to open the key editor:
+`↵` replaces an action's key with the next key you press, `a` adds another
+key, `d` removes one of its keys, `x` resets the action, and `/` filters. Arrow keys, home / end and page
+up / down work alongside the vim keys from the start.
+
+Changes are saved to `~/.config/pane/keys` (`$XDG_CONFIG_HOME/pane/keys` when
+set), which you can also edit by hand. It only lists the actions you changed:
+
+```
+# action = key, key; separate the keys of a sequence with spaces
+search = ctrl+f, /
+page-down = pgdown
+next-file = alt+down
+changes.push = ctrl+p
+```
+
+Shared actions such as `down` or `wrap` apply on every screen. Actions
+prefixed with a screen, such as `changes.push` or `branches.delete`, apply
+only there and take precedence over shared ones. Binding a key that another
+action in the same scope uses, or that starts a sequence such as `z` in `zt`,
+first shows what it would unbind and asks to confirm. The key editor lists every
+action ID. Keys use bubbletea names: `ctrl+x`, `alt+x`, `shift+tab`, `f3`,
+`pgdown`, `space`. `ctrl+c` always interrupts, and text inputs such as the
+commit message keep their editing keys. Terminals do not pass Cmd shortcuts
+through to pane.
 
 ## Diffs and review
 
@@ -258,7 +288,7 @@ same commit render dim, with a `moved from path:line` hint after the addition.
 
 Detected renames show the old and new paths on separate lines in staged
 changes and commit views, with removed path text highlighted in red and added
-text in green. Press `B` to shorten displayed paths to the parent directory and
+text in green. Press `~` to shorten displayed paths to the parent directory and
 filename; an ellipsis indicates omitted directories and is highlighted when
 they differ. The file picker displays the new path and can search either full
 name. Unstaged moves appear as a deletion and an untracked file, as in Git
@@ -293,7 +323,7 @@ Press `ctrl-g` in the commit dialog to edit the full message in `$VISUAL` or
 with `#` are ignored, and an empty message aborts. This also works when editing
 the latest commit's message from history, subject to the same remote checks.
 
-In history, `u` edits the latest commit's subject without changing its body,
+In history, `A` edits the latest commit's subject without changing its body,
 contents, or staged changes; use `ctrl-g` to edit the body as well. Before
 rewriting, pane checks the current branch and tag tips on every configured
 remote. It refuses if the commit is reachable from one, if a remote cannot be
@@ -389,8 +419,8 @@ resolve any pop conflicts outside pane.
 
 Press `b` in history to list branches with their upstream state, last commit,
 and subject; branches checked out in another worktree are marked `⌂`. Enter
-switches, `n` creates a branch from the selection, `w` creates a worktree for
-it, `d` deletes with confirmation, `r` includes remote branches, `y` copies the
+switches, `n` creates a branch from the selection, `W` creates a worktree for
+it, `d` deletes with confirmation, `R` includes remote branches, `y` copies the
 name, and `/` filters. Deleting the checked-out branch first switches to the
 default branch, and only when tracked files have no uncommitted changes. When
 `git branch -d` refuses an unmerged branch, as it does after a squash merge,

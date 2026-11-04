@@ -200,7 +200,7 @@ func TestPerf(t *testing.T) {
 	picker := view
 	picker.modal = "files"
 	picker.picker = pickerState{cache: &pickerCache{}}
-	measurePerf(t, scenario, "picker_key_ns", func() { picker.handlePickerKey("j", nil) })
+	measurePerf(t, scenario, "picker_key_ns", func() { picker.handlePickerKey(keyMsg("j")) })
 	measurePerf(t, scenario, "picker_render_ns", func() { _ = picker.View() })
 	measurePerf(t, scenario, "wrap_toggle_ns", func() { _, _ = view.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("w")}) })
 	measurePerf(t, scenario, "whitespace_toggle_ns", func() {

@@ -142,7 +142,7 @@ func (m model) View() string {
 	hints := m.viewHints
 	if hints == "" {
 		if m.viewTitle == "" {
-			hints = footer(false, shortcut{"space", "stage"}, shortcut{"s", "hunk"}, shortcut{"c", "commit"}, shortcut{"H", "history"})
+			hints = footer(false, hint("stage", "changes.stage-file"), hint("hunk", "changes.stage-hunk"), hint("commit", "changes.commit"), hint("history", "changes.history"))
 		} else {
 			hints = footer(true)
 		}

@@ -168,7 +168,7 @@ func TestPickerShowsAndHidesViewed(t *testing.T) {
 	if items := view.pickerItems(); len(items) != 2 {
 		t.Fatalf("picker items: %#v", items)
 	}
-	view.handlePickerKey("v", nil)
+	view.handlePickerKey(keyMsg("v"))
 	if items := view.pickerItems(); len(items) != 1 || items[0].path != "two.go" {
 		t.Fatalf("hide viewed: %#v", items)
 	}

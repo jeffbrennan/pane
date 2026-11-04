@@ -498,16 +498,19 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleCommitKey(key)
 	}
 	matches := m.filteredHistory()
-	keyString := key.String()
-	if m.history.list.filtering && keyString == "enter" && len(matches) == 0 {
+	if m.history.list.filtering && key.String() == "enter" && len(matches) == 0 {
 		// Keep the query editable when nothing matches.
 		return m, nil
 	}
-	if m.handleListKey(&m.history.list, key.String(), listRunes(key), len(matches), m.historyVisible(), nil) {
+	p := m.listPress(&m.history.list, key, scopeHistory)
+	if m.handleListKey(&m.history.list, p, len(matches), m.historyVisible(), nil) {
 		return m, nil
 	}
-	switch keyString {
-	case "esc", "q":
+	if next, cmd, ok := m.handleSharedAction(p); ok {
+		return next, cmd
+	}
+	switch p.action {
+	case actBack, actQuit:
 		if m.history.visualActive {
 			m.history.visualActive = false
 			return m, nil
@@ -517,29 +520,26 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.startsInHistory {
 			// History is the screen pane started on; never go below it.
-			if keyString == "q" {
+			if p.action == actQuit {
 				m.closeHistoryStreams()
 				return m, tea.Quit
 			}
-			m.flash = "q quits"
+			m.flash = activeKeys.label("quit") + " quits"
 			return m, nil
 		}
 		return m.showChanges()
-	case "ctrl+c":
+	case actInterrupt:
 		m.closeHistoryStreams()
 		return m, tea.Quit
-	case "?":
-		m.modal = "help"
-		m.help.reset()
-	case "p":
+	case actPush:
 		if !m.busy {
 			return m.startPush()
 		}
-	case "P":
+	case actPull:
 		if !m.busy {
 			return m.startPull()
 		}
-	case "S":
+	case actStashes:
 		if m.history.path != "" {
 			m.flash = "Return to history to open stashes"
 			break
@@ -547,35 +547,35 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.busy {
 			return m.openStashes()
 		}
-	case "r":
+	case actRefresh:
 		var refreshCmd, historyCmd tea.Cmd
 		m, refreshCmd = m.refresh()
 		m, historyCmd = m.reloadHistory()
 		return m, tea.Batch(refreshCmd, historyCmd)
-	case "R":
+	case actReviewBase:
 		if len(matches) == 0 || m.history.loading {
 			break
 		}
 		return m.openBaseFrom(matches[min(m.history.list.selected, len(matches)-1)].Hash)
-	case "b":
+	case actBranches:
 		if m.history.path != "" {
 			m.flash = "Return to history to browse branches"
 			break
 		}
 		return m.openBranches()
-	case "X":
+	case actHotspots:
 		return m.openHotspots(hotSinceDefault(), "")
-	case "n":
+	case actNewBranch:
 		if len(matches) == 0 || m.history.loading {
 			break
 		}
 		return m.promptNewBranch(matches[min(m.history.list.selected, len(matches)-1)].Hash)
-	case "y":
+	case actCopy:
 		if len(matches) > 0 {
 			hash := matches[min(m.history.list.selected, len(matches)-1)].Hash
 			return m, copyCmd(hash, shortHash(hash))
 		}
-	case "Y":
+	case actCopyLocation:
 		if len(matches) > 0 {
 			commit := matches[min(m.history.list.selected, len(matches)-1)]
 			if commit.FilePath != "" {
@@ -583,7 +583,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, copyCmd(commit.Hash, shortHash(commit.Hash))
 		}
-	case "u":
+	case actEditMessage:
 		if m.history.path != "" {
 			m.flash = "Return to history to edit the latest commit"
 			break
@@ -605,11 +605,11 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.recentCommits, m.recentCommitLoading, m.recentCommitError = nil, false, false
 		m.recentCommitRequest++
 		return m, nil
-	case "enter", " ":
+	case actOpen:
 		if len(matches) == 0 || m.history.loading {
 			break
 		}
-		if key.String() == "enter" && m.history.visualActive {
+		if m.history.visualActive {
 			lo, hi := m.history.visualAnchor, min(m.history.list.selected, len(matches)-1)
 			if lo > hi {
 				lo, hi = hi, lo
@@ -631,10 +631,10 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return next, next.Init()
 		}
 		return m.openCommit(matches[min(m.history.list.selected, len(matches)-1)])
-	case "V":
+	case actSelectRange:
 		m.history.visualActive = !m.history.visualActive
 		m.history.visualAnchor = m.history.list.selected
-	case "m":
+	case actCollapseMerges:
 		m.repo.FirstParent = !m.repo.FirstParent
 		m.flash = "Showing merged commits"
 		if m.repo.FirstParent {
@@ -714,30 +714,31 @@ func (m model) inDiff(f func(*model)) model {
 }
 
 func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
-	keyString := key.String()
-	pending := m.pending
-	followEnd := m.history.streamActive && m.pending == "" && m.count == 0 && (keyString == "G" || keyString == "end")
-	if m.history.streamActive && (keyString == "J" || (pending == "]" && keyString == "c")) {
-		followEnd = m.streamJumpBeyondEnd(keyString == "J", max(1, m.count))
+	p := m.press(key, scopeReview)
+	followEnd := m.history.streamActive && p.action == actBottom && !p.hadCount
+	if m.history.streamActive && (p.action == actNextFile || p.action == actNextChange) {
+		followEnd = m.streamJumpBeyondEnd(p.action == actNextFile, p.count)
 	}
-	if keyString != "]" && !(pending == "]" && keyString == "c") {
+	if !(p.action == actNone && m.pending != "") && p.action != actNextChange {
 		m.history.streamEndPending = false
 	}
-	if m.pending == "g" && key.String() == "b" {
-		m.pending = ""
+	if next, cmd, ok := m.handleSharedAction(p); ok {
+		return next, cmd
+	}
+	if p.action == actBlame {
 		return m.startBlame()
 	}
-	if m.pending == "" && (key.String() == "h" || key.String() == "l") && m.commitModel().onCommitHeader() {
-		m.history.toggleCommitHeader(key.String())
+	if (p.action == actFold || p.action == actUnfold) && m.commitModel().onCommitHeader() {
+		m.history.toggleCommitHeader(foldKey(p.action))
 		m.rebuildCommit()
 		return m, nil
 	}
-	if m.pending == "" && (key.String() == "h" || key.String() == "l") && m.commitModel().onDiffFile() {
-		return m.changeContext(key.String())
+	if (p.action == actFold || p.action == actUnfold) && m.commitModel().onDiffFile() {
+		return m.changeContext(foldKey(p.action))
 	}
 	handled := false
 	m = m.inDiff(func(view *model) {
-		handled = view.handleDiffNavigation(key.String()) || view.handleDiffTool(key.String())
+		handled = view.handleDiffNavigation(p) || view.handleDiffTool(p)
 	})
 	if handled {
 		if followEnd {
@@ -750,49 +751,40 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	view := m.commitModel()
-	switch key.String() {
-	case ")", "(":
+	switch p.action {
+	case actNextCommit, actPrevCommit:
 		direction := 1
-		if key.String() == "(" {
+		if p.action == actPrevCommit {
 			direction = -1
 		}
 		return m.stepCommit(direction)
-	case "v":
+	case actViewed:
 		return m.toggleViewedCommit()
-	case "o":
+	case actEditor:
 		opened, cmd := view.openEditor()
 		m.flash = opened.flash
 		return m, cmd
-	case "y":
+	case actCopy:
 		if m.screen == "base" {
 			return m, copyCmd(m.base.hash, shortHash(m.base.hash))
 		}
 		return m, copyCmd(m.history.current.Hash, shortHash(m.history.current.Hash))
-	case "Y":
+	case actCopyLocation:
 		hash := m.history.current.Hash
 		if m.screen == "base" || m.stash.viewing {
 			hash = ""
 		}
 		return m, view.copyDiffLocation(hash)
-	}
-	if key.String() == "esc" || key.String() == "q" {
+	case actBack, actQuit:
 		if m.pickerReturn {
 			m.restorePicker()
 			return m, nil
 		}
 		return m.returnToHistory()
-	}
-	if key.String() == "ctrl+c" {
+	case actInterrupt:
 		m.closeHistoryStreams()
 		return m, tea.Quit
-	}
-	if key.String() == "?" {
-		m.modal = "help"
-		m.help.reset()
-		return m, nil
-	}
-	switch key.String() {
-	case "w":
+	case actWrap:
 		view.wrap = !view.wrap
 		view.horizontal = 0
 		view.rebuild()
@@ -922,7 +914,7 @@ func (m model) commitModel() model {
 			view.searchProgress = "loading"
 		}
 	}
-	view.viewHints = keyHints("esc", "back", "?", "help")
+	view.viewHints = footer(true)
 	if m.history.viewedFiles > 0 {
 		view.viewBadge = stateBadges(position, fmt.Sprintf("%d/%d viewed", m.history.viewedFiles, m.history.totalFiles), m.whitespaceBadge())
 	}
@@ -1022,9 +1014,9 @@ func (m model) historyView() string {
 			lines = append(lines, "")
 		}
 	}
-	status, hints := "", footer(m.history.path != "", shortcut{"↵", "open"}, shortcut{"V", "range"}, shortcut{"b", "branches"})
+	status, hints := "", footer(m.history.path != "", hint("open", "open"), hint("range", "history.select-range"), hint("branches", "history.branches"))
 	if m.history.visualActive {
-		hints = footer(false, shortcut{"↵", "review"}, shortcut{"esc", "cancel"})
+		hints = footer(false, hint("review", "open"), hint("cancel", "back"))
 	}
 	if filter := m.history.list.listStatus(m.width); filter != "" {
 		status = filter

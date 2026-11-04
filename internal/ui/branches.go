@@ -132,7 +132,7 @@ func (m model) branchView() string {
 	if filter := m.branch.list.listStatus(m.width); filter != "" {
 		status = filter
 	}
-	hints := footer(true, shortcut{"↵", "switch"}, shortcut{"n", "new"}, shortcut{"d", "delete"}, shortcut{"r", "remotes"})
+	hints := footer(true, hint("switch", "open"), hint("new", "branches.new-branch"), hint("delete", "branches.delete"), hint("remotes", "branches.remotes"))
 	if m.flash != "" {
 		status = syntax.Clean(m.flash)
 	}
@@ -147,49 +147,51 @@ func (m model) branchView() string {
 }
 
 func (m model) handleBranchKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
-	keyString := key.String()
 	matches := m.filteredBranches()
-	if m.handleListKey(&m.branch.list, key.String(), listRunes(key), len(matches), max(1, m.height-2), nil) {
+	p := m.listPress(&m.branch.list, key, scopeBranches)
+	if m.handleListKey(&m.branch.list, p, len(matches), max(1, m.height-2), nil) {
 		return m, nil
 	}
-	switch keyString {
-	case "esc", "q":
+	if next, cmd, ok := m.handleSharedAction(p); ok {
+		return next, cmd
+	}
+	switch p.action {
+	case actBack, actQuit:
 		m.screen = "history"
 		return m, nil
-	case "ctrl+c":
+	case actInterrupt:
 		return m, tea.Quit
-	case "?":
-		m.modal = "help"
-		m.help.reset()
-	case "tab":
+	case actSwitchView:
 		return m.openWorktrees()
-	case "r":
-		m.branch.remote = !m.branch.remote
+	case actRemotes, actRefresh:
+		if p.action == actRemotes {
+			m.branch.remote = !m.branch.remote
+		}
 		m.branch.loading = true
 		m.branch.request++
 		return m, m.loadBranches()
-	case "y":
+	case actCopy:
 		if len(matches) > 0 {
 			name := matches[min(m.branch.list.selected, len(matches)-1)].Name
 			return m, copyCmd(name, name)
 		}
-	case "enter":
+	case actOpen:
 		if len(matches) > 0 {
 			return m.switchBranch(matches[min(m.branch.list.selected, len(matches)-1)])
 		}
-	case "n":
+	case actNewBranch:
 		if len(matches) > 0 {
 			entry := matches[min(m.branch.list.selected, len(matches)-1)]
 			return m.promptNewBranch(entry.Ref)
 		}
-	case "w":
+	case actNewWorktree:
 		if len(matches) > 0 {
 			entry := matches[min(m.branch.list.selected, len(matches)-1)]
 			return m.promptNewWorktree(entry.Name, entry.Ref, true)
 		}
-	case "d", "D":
+	case actDelete, actForceDelete:
 		if len(matches) > 0 {
-			return m.confirmDeleteBranch(matches[min(m.branch.list.selected, len(matches)-1)], keyString == "D")
+			return m.confirmDeleteBranch(matches[min(m.branch.list.selected, len(matches)-1)], p.action == actForceDelete)
 		}
 	}
 	return m, nil
