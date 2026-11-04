@@ -50,7 +50,7 @@ func (s *HistoryStream) start() error {
 		}
 		return CommandError(out, err)
 	}
-	args := []string{"log", "-z", "--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00"}
+	args := []string{"log", "-z", "--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00%P%x00"}
 	if s.repo.FirstParent {
 		args = append(args, "--first-parent")
 	}
@@ -129,7 +129,7 @@ func (s *HistoryStream) nextCommit() (CommitInfo, error) {
 			return CommitInfo{}, err
 		}
 	}
-	fields := make([]string, 5)
+	fields := make([]string, 6)
 	for i := range fields {
 		var err error
 		fields[i], err = s.field()
@@ -138,6 +138,9 @@ func (s *HistoryStream) nextCommit() (CommitInfo, error) {
 		}
 	}
 	c := CommitInfo{Hash: hash, Author: fields[0], Email: fields[1], Date: fields[2], Subject: fields[3], Message: fields[4], FilePath: s.path}
+	if parents := strings.Fields(fields[5]); len(parents) > 0 {
+		c.Parents = parents
+	}
 	c.Search = strings.ToLower(c.Hash + "\n" + c.Author + "\n" + c.Email + "\n" + c.Message + "\n" + c.Subject)
 	if s.path == "" {
 		return c, nil

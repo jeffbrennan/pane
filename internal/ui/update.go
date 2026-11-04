@@ -366,6 +366,19 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.cacheHistoryStats()
 		return m.loadHistoryStats()
+	case mergeCountsLoaded:
+		if msg.request != m.history.request || !m.history.mergeCountsFetching {
+			break
+		}
+		m.history.mergeCountsFetching = false
+		if m.history.mergeCounts == nil {
+			m.history.mergeCounts = make(map[string]int)
+		}
+		for _, hash := range msg.hashes {
+			// Missing counts are stored as zero so they are not retried.
+			m.history.mergeCounts[hash] = msg.counts[hash]
+		}
+		return m.loadMergeCounts()
 	case stashesLoaded:
 		if m.screen != "stashes" || msg.request != m.stash.request {
 			break

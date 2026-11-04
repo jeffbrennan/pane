@@ -189,4 +189,14 @@ func TestHistoryStreamFirstParentCollapsesMerges(t *testing.T) {
 	if got := strings.Join(subjects(r), ","); got != "merge feature,base" {
 		t.Fatalf("first-parent history = %s", got)
 	}
+	s := NewHistoryStream(r, "")
+	defer s.Close()
+	page, err := s.NextPage(1)
+	if err != nil || len(page) != 1 || len(page[0].Parents) != 2 {
+		t.Fatalf("merge parents: %#v %v", page, err)
+	}
+	counts, err := r.MergedCounts([]string{page[0].Hash})
+	if err != nil || counts[page[0].Hash] != 1 {
+		t.Fatalf("merged counts = %v, %v", counts, err)
+	}
 }

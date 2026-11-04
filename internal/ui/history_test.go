@@ -672,3 +672,24 @@ func TestHistoryToggleCollapsesMerges(t *testing.T) {
 		t.Fatalf("expanded header: %q", m.historyHeader())
 	}
 }
+
+func TestHistoryShowsCollapsedMergeCount(t *testing.T) {
+	m := model{repo: git.Repo{FirstParent: true}, width: 80, height: 12, screen: "history", history: historyState{
+		commits:     []git.CommitInfo{{Hash: "merge", Subject: "merge", Parents: []string{"a", "b"}}, {Hash: "single", Subject: "single", Parents: []string{"a"}}},
+		mergeCounts: map[string]int{"merge": 14},
+	}}
+	view := plain(m.View())
+	if strings.Count(view, "(14 commits)") != 1 {
+		t.Fatalf("collapsed view: %q", view)
+	}
+	m.repo.FirstParent = false
+	if view := plain(m.View()); strings.Contains(view, "commits)") {
+		t.Fatalf("expanded view: %q", view)
+	}
+	m.repo.FirstParent = true
+	m.history.mergeCounts = nil
+	m, cmd := m.loadMergeCounts()
+	if cmd == nil || !m.history.mergeCountsFetching {
+		t.Fatal("expected a merge count request")
+	}
+}
