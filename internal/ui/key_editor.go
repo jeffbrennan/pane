@@ -12,7 +12,8 @@ import (
 )
 
 // keyEditorState is the key editor inside the shortcuts dialog. While
-// capturing, the next key pressed becomes the selected action's key.
+// capturing, the next key pressed becomes the selected action's key; while
+// removing, a number picks which of its keys to drop.
 type keyEditorState struct {
 	open bool
 	list listState
@@ -21,6 +22,7 @@ type keyEditorState struct {
 	top       int
 	capturing bool
 	adding    bool
+	removing  bool
 	// swap holds a captured key that is already bound in the same scope
 	// until the person confirms taking it.
 	swap    string
@@ -60,9 +62,18 @@ func editorRows(matches []binding) []int {
 // keyEditorPage is the number of display rows below the status line.
 func keyEditorPage(height int) int { return max(1, helpVisibleRows(height)-1) }
 
+// keyEditorShown is how many rows from top fit on a page: one fewer when
+// top is a binding, since its scope's header sticks above it.
+func keyEditorShown(rows []int, top, page int) int {
+	if top < len(rows) && rows[top] != -1 {
+		return max(1, page-1)
+	}
+	return page
+}
+
 // keyEditorTop returns the first visible row that keeps the selected binding
-// in view, moving the viewport only when the selection leaves it. A binding
-// at the top of its scope brings its header into view with it.
+// in view, moving the viewport only when the selection leaves it. Scrolling
+// up to the first binding of a scope shows its header in place.
 func keyEditorTop(rows []int, selected, top, page int) int {
 	row := slices.Index(rows, selected)
 	if row < 0 {
@@ -71,19 +82,60 @@ func keyEditorTop(rows []int, selected, top, page int) int {
 	if row > 0 && rows[row-1] == -1 && row-1 < top {
 		top = row - 1
 	}
-	top = min(top, row)
-	if row >= top+page {
-		top = row - page + 1
+	top = max(0, min(top, row))
+	for row >= top+keyEditorShown(rows, top, page) {
+		top++
 	}
-	return max(0, min(top, len(rows)-page))
+	for top > 0 && top-1+keyEditorShown(rows, top-1, page) >= len(rows) {
+		top--
+	}
+	return top
+}
+
+// keyTwins maps keys that terminals send in place of another to the key
+// they stand for: Backspace arrives as ctrl+h on some and backspace on others.
+var keyTwins = map[string]string{"ctrl+h": "backspace"}
+
+func canonicalKey(key string) string {
+	parts := strings.Split(key, " ")
+	for i, part := range parts {
+		if twin, ok := keyTwins[part]; ok {
+			parts[i] = twin
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// keyGroups gathers the keys bound to id that are the same physical key, so
+// the editor lists, and removes, each once.
+func keyGroups(id string) [][]string {
+	var groups [][]string
+	at := make(map[string]int)
+	for _, key := range activeKeys.keys[id] {
+		canonical := canonicalKey(key)
+		if i, ok := at[canonical]; ok {
+			groups[i] = append(groups[i], key)
+			continue
+		}
+		at[canonical] = len(groups)
+		groups = append(groups, []string{key})
+	}
+	return groups
+}
+
+func groupLabel(group []string) string {
+	if len(group) > 1 {
+		return keyLabel(canonicalKey(group[0]))
+	}
+	return keyLabel(group[0])
 }
 
 // bindingKeys lists every key bound to id, as the editor shows them.
 func bindingKeys(id string) string {
-	keys := activeKeys.keys[id]
-	labels := make([]string, len(keys))
-	for i, key := range keys {
-		labels[i] = keyLabel(key)
+	groups := keyGroups(id)
+	labels := make([]string, len(groups))
+	for i, group := range groups {
+		labels[i] = groupLabel(group)
 	}
 	return strings.Join(labels, ", ")
 }
@@ -94,6 +146,16 @@ func (m model) handleKeyEditorKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	selected := min(editor.list.selected, max(0, len(matches)-1))
 	if editor.capturing {
 		return m.captureKey(key, matches, selected)
+	}
+	if editor.removing {
+		editor.removing = false
+		name := keyName(key)
+		if len(name) == 1 && name[0] >= '1' && name[0] <= '9' && len(matches) > 0 {
+			if groups := keyGroups(matches[selected].id()); int(name[0]-'0') <= len(groups) {
+				m.removeKey(matches[selected], groups[name[0]-'1'])
+			}
+		}
+		return m, nil
 	}
 	groups := func(index int) int {
 		for index > 0 && matches[index-1].scope == matches[index].scope {
@@ -112,6 +174,18 @@ func (m model) handleKeyEditorKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(matches) > 0 {
 			editor.capturing, editor.adding = true, p.action == actAddKey
 		}
+	case actRemoveKey:
+		if len(matches) > 0 {
+			b := matches[selected]
+			switch groups := keyGroups(b.id()); len(groups) {
+			case 0:
+				editor.message = b.description + " has no keys"
+			case 1:
+				m.removeKey(b, groups[0])
+			default:
+				editor.removing = true
+			}
+		}
 	case actResetKey:
 		if len(matches) > 0 {
 			b := matches[selected]
@@ -123,6 +197,15 @@ func (m model) handleKeyEditorKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.keyEditor = keyEditorState{}
 	}
 	return m, nil
+}
+
+// removeKey unbinds group, the keys that are one physical key, from b.
+func (m *model) removeKey(b binding, group []string) {
+	activeKeys.keys[b.id()] = slices.DeleteFunc(slices.Clone(activeKeys.keys[b.id()]), func(key string) bool {
+		return slices.Contains(group, key)
+	})
+	activeKeys.index()
+	m.keyEditor.message = m.saveKeys(fmt.Sprintf("Removed %s from %s", groupLabel(group), b.description))
 }
 
 // captureKey binds the captured key, asking first when it would take the key
@@ -262,6 +345,12 @@ func (m model) showKeyEditor(lines []string) {
 	switch {
 	case editor.list.filtering:
 		body = append(body, "/"+renderInput(editor.list.draft, editor.list.draftCursor, max(1, inner-1)))
+	case editor.removing:
+		var choices []string
+		for i, group := range keyGroups(matches[selected].id()) {
+			choices = append(choices, fmt.Sprintf("%s%d%s %s", m.accent(), i+1, styleReset, groupLabel(group)))
+		}
+		body = append(body, "Remove which key? "+strings.Join(choices, "  ")+styleDim+"  esc cancel"+styleReset)
 	case editor.capturing && editor.swap == "":
 		body = append(body, m.accent()+"Press a key for "+matches[selected].description+styleReset+styleDim+"  esc cancel"+styleReset)
 	case editor.message != "":
@@ -275,11 +364,17 @@ func (m model) showKeyEditor(lines []string) {
 		}
 		body = append(body, styleDim+"Saved to "+path+styleReset)
 	}
-	for r := top; r < min(len(rows), top+visible); r++ {
+	header := func(scope string) string {
+		title := scopeTitles[scope]
+		return styleBold + m.accent() + title + styleReset + " " + m.accent() + strings.Repeat("─", max(0, inner-stringWidth(title)-1)) + styleReset
+	}
+	if top < len(rows) && rows[top] != -1 {
+		body = append(body, header(matches[rows[top]].scope))
+	}
+	for r := top; r < min(len(rows), top+keyEditorShown(rows, top, visible)); r++ {
 		i := rows[r]
 		if i < 0 {
-			title := scopeTitles[matches[rows[r+1]].scope]
-			body = append(body, styleBold+m.accent()+title+styleReset)
+			body = append(body, header(matches[rows[r+1]].scope))
 			continue
 		}
 		b := matches[i]
@@ -306,6 +401,6 @@ func (m model) showKeyEditor(lines []string) {
 		info:  info,
 		body:  body,
 		hint: keyHints(activeKeys.label("open"), "change", activeKeys.label("keys.add-key"), "add",
-			activeKeys.label("keys.reset-key"), "reset", activeKeys.label("search"), "filter", activeKeys.label("back"), "back"),
+			activeKeys.label("keys.remove-key"), "remove", activeKeys.label("keys.reset-key"), "reset", activeKeys.label("search"), "filter", activeKeys.label("back"), "back"),
 	}.render())
 }

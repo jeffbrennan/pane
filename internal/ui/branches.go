@@ -163,8 +163,10 @@ func (m model) handleBranchKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case actSwitchView:
 		return m.openWorktrees()
-	case actRemotes:
-		m.branch.remote = !m.branch.remote
+	case actRemotes, actRefresh:
+		if p.action == actRemotes {
+			m.branch.remote = !m.branch.remote
+		}
 		m.branch.loading = true
 		m.branch.request++
 		return m, m.loadBranches()

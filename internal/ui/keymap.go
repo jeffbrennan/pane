@@ -107,6 +107,7 @@ const (
 	actEditKeys       action = "edit-keys"
 	actAddKey         action = "add-key"
 	actResetKey       action = "reset-key"
+	actRemoveKey      action = "remove-key"
 )
 
 // Key scopes. Shared bindings live in the unnamed scope and apply on every
@@ -205,7 +206,7 @@ var defaultBindings = []binding{
 	{scopeShared, actUnfold, []string{"l", "right"}, "Unfold the cursor"},
 	{scopeShared, actWrap, []string{"w"}, "Toggle line wrapping"},
 	{scopeShared, actWhitespace, []string{"W"}, "Toggle ignoring whitespace"},
-	{scopeShared, actShortPaths, []string{"B"}, "Toggle short file paths"},
+	{scopeShared, actShortPaths, []string{"~"}, "Toggle short file paths"},
 	{scopeShared, actTheme, []string{"T"}, "Toggle light / dark colors"},
 	{scopeShared, actFetch, []string{"F"}, "Fetch remote changes"},
 	{scopeShared, actHelp, []string{"?"}, "Show shortcuts"},
@@ -224,10 +225,10 @@ var defaultBindings = []binding{
 	{scopeChanges, actHistory, []string{"H"}, "Open commit history"},
 
 	{scopeHistory, actOpen, []string{"space"}, "Open selected commit"},
-	{scopeHistory, actEditMessage, []string{"u"}, "Edit latest unpublished commit message"},
+	{scopeHistory, actEditMessage, []string{"A"}, "Edit latest unpublished commit message"},
 	{scopeHistory, actStashes, []string{"S"}, "Open stashes"},
 	{scopeHistory, actBranches, []string{"b"}, "Open branches"},
-	{scopeHistory, actHotspots, []string{"X"}, "Open hotspots for the last year"},
+	{scopeHistory, actHotspots, []string{"%"}, "Open hotspots for the last year"},
 	{scopeHistory, actReviewBase, []string{"R"}, "Review from this commit to the working tree"},
 	{scopeHistory, actSelectRange, []string{"V"}, "Select a commit range to review"},
 	{scopeHistory, actCollapseMerges, []string{"m"}, "Collapse / expand merged commits"},
@@ -242,10 +243,11 @@ var defaultBindings = []binding{
 
 	{scopeBranches, actSwitchView, []string{"tab"}, "Switch to worktrees"},
 	{scopeBranches, actNewBranch, []string{"n"}, "New branch from the selection"},
-	{scopeBranches, actNewWorktree, []string{"w"}, "New worktree for the selection"},
+	{scopeBranches, actNewWorktree, []string{"W"}, "New worktree for the selection"},
 	{scopeBranches, actDelete, []string{"d"}, "Delete branch"},
 	{scopeBranches, actForceDelete, []string{"D"}, "Force delete branch"},
-	{scopeBranches, actRemotes, []string{"r"}, "Include remote branches"},
+	{scopeBranches, actRemotes, []string{"R"}, "Include remote branches"},
+	{scopeBranches, actRefresh, []string{"r"}, "Refresh"},
 
 	{scopeWorktrees, actSwitchView, []string{"tab"}, "Switch to branches"},
 	{scopeWorktrees, actNewWorktree, []string{"n"}, "New worktree (path and branch)"},
@@ -265,6 +267,7 @@ var defaultBindings = []binding{
 	{scopeHelp, actEditKeys, []string{"e"}, "Customize keys"},
 
 	{scopeKeys, actAddKey, []string{"a"}, "Add another key to the action"},
+	{scopeKeys, actRemoveKey, []string{"d"}, "Remove a key from the action"},
 	{scopeKeys, actResetKey, []string{"x"}, "Reset the action to its default keys"},
 }
 

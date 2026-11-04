@@ -242,3 +242,40 @@ func TestKeyEditorGroupsByScopeAndKeepsItsViewport(t *testing.T) {
 		t.Fatalf("top did not show the first header: %d", m.keyEditor.top)
 	}
 }
+
+func TestKeyEditorRemovesKeys(t *testing.T) {
+	path := useKeys(t, nil)
+	m := model{width: 100, height: 30, rows: []row{{text: "x"}}}
+	m = send(t, m, "?", "e", "/", "w", "r", "a", "p", "enter", "esc", "d")
+	if got := activeKeys.keys["wrap"]; len(got) != 0 {
+		t.Fatalf("single key not removed: %q", got)
+	}
+	if data, err := os.ReadFile(path); err != nil || !strings.Contains(string(data), "wrap = ") {
+		t.Fatalf("unbinding not saved: %q %v", data, err)
+	}
+	if loaded, _ := loadKeys(path); len(loaded.keys["wrap"]) != 0 {
+		t.Fatalf("unbinding did not survive a reload: %q", loaded.keys["wrap"])
+	}
+	m = send(t, m, "esc", "/", "S", "c", "r", "o", "l", "l", " ", "l", "e", "f", "t", "enter", "esc")
+	if got := bindingKeys("scroll-left"); got != "zh, z backspace, backspace" {
+		t.Fatalf("twins not merged: %q", got)
+	}
+	m = send(t, m, "d")
+	if !m.keyEditor.removing {
+		t.Fatal("several keys should ask which to remove")
+	}
+	m = send(t, m, "3")
+	if got := activeKeys.keys["scroll-left"]; !slices.Equal(got, []string{"z h", "z ctrl+h", "z backspace"}) {
+		t.Fatalf("backspace and its ctrl+h twin not both removed: %q", got)
+	}
+}
+
+func TestKeyEditorHeaderSticks(t *testing.T) {
+	useKeys(t, nil)
+	m := model{width: 100, height: 30, rows: []row{{text: "x"}}}
+	m = send(t, m, "?", "e", "ctrl+d", "ctrl+d")
+	view := plain(m.View())
+	if !strings.Contains(view, "Everywhere ─") || strings.Contains(view, "› Down ") {
+		t.Fatalf("header did not stick once scrolled:\n%s", view)
+	}
+}

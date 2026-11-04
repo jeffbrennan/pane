@@ -24,7 +24,7 @@ func TestEditLatestCommitMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := model{repo: r, width: 80, height: 20, screen: "history", history: historyState{commits: commits}}
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("A")})
 	m = updated.(model)
 	if m.modal != "commit" || m.input != ":q" || m.inputBody != "\n\nbody" || !strings.Contains(m.View(), "Edit commit message") {
 		t.Fatalf("edit dialog: %#v", m)

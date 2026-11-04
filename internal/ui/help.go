@@ -67,6 +67,7 @@ var shortcutSections = []shortcutSection{
 		hint("New branch from the selection / new worktree for it", "branches.new-branch", "branches.new-worktree"),
 		hint("Delete branch / force delete", "branches.delete", "branches.force-delete"),
 		hint("Include remote branches", "branches.remotes"),
+		hint("Refresh", "branches.refresh"),
 		hint("Copy branch name", "copy"),
 	}},
 	{"Worktrees", []string{"worktrees"}, []shortcut{
