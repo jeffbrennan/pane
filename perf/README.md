@@ -89,3 +89,28 @@ matched to paths; the patch bytes are ready much earlier.
 
 `resize_width_apply_ns` measures the debounced rebuild that follows
 `tea.WindowSizeMsg`, so it reflects the work a user waits for after resizing.
+
+`scroll_j_mid_ns`, `scroll_j_end_ns`, and `scroll_ctrl_d_mid_ns` time one frame
+of a scroll in the middle and at the end of the loaded diff, and
+`view_alloc_bytes` records what one `View()` allocates. Set
+`PANE_PERF_SCROLL_FRAMES` to repeat scrolling and rendering enough times for
+the CPU profile to show the render path.
+
+## Mega-commit scroll result
+
+Measured on bun `23427dbc12f` ("Rewrite Bun in Rust"): 2,188 files and
+1,017,161 rows.
+
+| Metric | Before | After |
+|---|---|---|
+| `scroll_j_mid_ns` | 2.42 ms | 36 µs |
+| `scroll_ctrl_d_mid_ns` | 2.26 ms | 34 µs |
+| `scroll_j_end_ns` | 2.46 ms | 39 µs |
+| `view_ns` | 150 µs | 156 µs |
+
+`commitModel` recomputed the viewed badge by scanning every row, and each key
+press built the commit model three times: twice while checking header keys and
+once more for the in-diff handler. The scan moved to the points where rows are
+built or appended, so a scroll frame now walks only the visible rows. `View()`
+itself was already proportional to the viewport; the remaining cost is inline
+diff spans for visible lines.

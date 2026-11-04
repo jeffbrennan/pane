@@ -27,6 +27,7 @@ func (m model) openBaseFrom(revision string) (tea.Model, tea.Cmd) {
 	m.base = baseState{revision: revision, hash: hash, initialized: true}
 	m.history.directCommit = true
 	m.history.changes, m.history.rows = nil, nil
+	m.history.viewedFiles, m.history.totalFiles = 0, 0
 	m.history.request++
 	m.base.request++
 	m.startCommitLoad()

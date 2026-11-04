@@ -15,8 +15,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/jeffbrennan/pane/internal/git"
 	"github.com/jeffbrennan/pane/internal/syntax"
 )
@@ -350,8 +352,12 @@ func (d *hotDirStat) record(hash, author string, weight float64, when time.Time,
 		d.class = hotVendored
 	}
 	d.commits[hash] = true
-	d.authors[author] = true
+	// Bots stay in owners so a bot-only area can still name someone; hotOwners
+	// drops them when a human is available.
 	d.owners[author] += weight
+	if !isBotAuthor(author) {
+		d.authors[author] = true
+	}
 	if when.After(d.last) {
 		d.last = when
 	}
@@ -527,7 +533,8 @@ func topDir(path string) string {
 	return "."
 }
 
-const hotCacheVersion = 2
+// 5: bots are recognised by convention instead of a name list.
+const hotCacheVersion = 5
 
 type hotCache struct {
 	Version  int                  `json:"version"`
@@ -554,6 +561,8 @@ type hotCacheAuthor struct {
 	Commits int            `json:"commits"`
 	Churn   int            `json:"churn"`
 	Dirs    map[string]int `json:"dirs"`
+	First   int64          `json:"first"`
+	Last    int64          `json:"last"`
 }
 
 type hotSummary struct {
@@ -652,7 +661,7 @@ func readHotSummary(path, head, since, author string) ([]hotFile, map[string]*ho
 	}
 	authors := make(map[string]*hotAuthor, len(summary.Authors))
 	for _, author := range summary.Authors {
-		authors[author.Name] = &hotAuthor{name: author.Name, commits: author.Commits, churn: author.Churn, dirs: author.Dirs}
+		authors[author.Name] = &hotAuthor{name: author.Name, commits: author.Commits, churn: author.Churn, dirs: author.Dirs, first: unixOrZero(author.First), last: unixOrZero(author.Last)}
 	}
 	items := make([]hotItem, len(summary.Items))
 	for i, item := range summary.Items {
@@ -681,6 +690,13 @@ func readHotSummary(path, head, since, author string) ([]hotFile, map[string]*ho
 	return files, authors, items, dirs, hotHidden{generated: summary.HiddenGenerated, vendored: summary.HiddenVendored}, summary.CachedAt, true
 }
 
+func unixOrZero(seconds int64) time.Time {
+	if seconds <= 0 {
+		return time.Time{}
+	}
+	return time.Unix(seconds, 0)
+}
+
 func writeHotSummary(path, head, since, author string, cutoff, cachedAt int64, files []hotFile, authors map[string]*hotAuthor, items []hotItem, dirs map[string]*hotDirStat, hidden hotHidden) {
 	if path == "" {
 		return
@@ -696,7 +712,7 @@ func writeHotSummary(path, head, since, author string, cutoff, cachedAt int64, f
 		summary.Files = append(summary.Files, hotCacheFile{Path: file.path, Added: file.added, Deleted: file.deleted, Commits: file.commits, Score: file.score, Last: file.last.Unix(), Authors: file.authors})
 	}
 	for _, item := range authors {
-		summary.Authors = append(summary.Authors, hotCacheAuthor{Name: item.name, Commits: item.commits, Churn: item.churn, Dirs: item.dirs})
+		summary.Authors = append(summary.Authors, hotCacheAuthor{Name: item.name, Commits: item.commits, Churn: item.churn, Dirs: item.dirs, First: item.first.Unix(), Last: item.last.Unix()})
 	}
 	for _, item := range items {
 		cached := hotCacheItem{
@@ -881,15 +897,25 @@ func hotOwners(owners map[string]float64) []hotOwnerShare {
 	if len(owners) == 0 {
 		return nil
 	}
-	var total float64
-	names := make([]string, 0, len(owners))
+	humans := make(map[string]float64, len(owners))
 	for name, share := range owners {
+		if !isBotAuthor(name) {
+			humans[name] = share
+		}
+	}
+	if len(humans) == 0 {
+		// A bot-only area has no one else to name, so the bot stays.
+		humans = owners
+	}
+	var total float64
+	names := make([]string, 0, len(humans))
+	for name, share := range humans {
 		total += share
 		names = append(names, name)
 	}
 	sort.Slice(names, func(i, j int) bool {
-		if owners[names[i]] != owners[names[j]] {
-			return owners[names[i]] > owners[names[j]]
+		if humans[names[i]] != humans[names[j]] {
+			return humans[names[i]] > humans[names[j]]
 		}
 		return names[i] < names[j]
 	})
@@ -898,9 +924,21 @@ func hotOwners(owners map[string]float64) []hotOwnerShare {
 	}
 	var result []hotOwnerShare
 	for _, name := range names[:min(2, len(names))] {
-		result = append(result, hotOwnerShare{name: name, share: int(math.Round(owners[name] / total * 100))})
+		result = append(result, hotOwnerShare{name: name, share: int(math.Round(humans[name] / total * 100))})
 	}
 	return result
+}
+
+// Bots stay in the author maps so the author filter still reaches their
+// commits, but they are not people to ask about an area.
+func hotHumanCount[T any](authors map[string]T) int {
+	count := 0
+	for name := range authors {
+		if !isBotAuthor(name) {
+			count++
+		}
+	}
+	return count
 }
 
 func buildHotItems(files []hotFile, dirs map[string]*hotDirStat, sortPath bool, state hotTreeState, authorFilter string) []hotItem {
@@ -980,7 +1018,7 @@ func buildHotItems(files []hotFile, dirs map[string]*hotDirStat, sortPath bool, 
 				node.owner = node.owners[0].name
 			}
 			node.score, node.commits, node.churn, node.last = node.file.score, node.file.commits, node.file.added+node.file.deleted, node.file.last
-			node.people, node.class = len(node.file.authors), node.file.class
+			node.people, node.class = hotHumanCount(node.file.authors), node.file.class
 			return node.score, node.commits, node.churn, node.last, node.owner, node.class, node.people, node.owners
 		}
 		node.class = hotVendored
@@ -1144,8 +1182,7 @@ func hotBar(score, maxScore float64, width int) string {
 }
 
 const (
-	hotColumnsWidth = 46
-	hotBarWidth     = 6
+	hotBarWidth = 8
 )
 
 // hotRows is the number of list rows that fit between the title, header,
@@ -1159,6 +1196,13 @@ func hotPeople(n int) string {
 	return fmt.Sprintf("%d people", n)
 }
 
+func hotCommits(n int) string {
+	if n == 1 {
+		return "1 commit"
+	}
+	return formatCount(n) + " commits"
+}
+
 func hotAge(when time.Time, now time.Time) string {
 	if when.IsZero() {
 		return ""
@@ -1168,10 +1212,21 @@ func hotAge(when time.Time, now time.Time) string {
 }
 
 func formatCount(n int) string {
-	if n < 1000 {
-		return fmt.Sprintf("%d", n)
+	if n < 0 {
+		return "-" + formatCount(-n)
 	}
-	return fmt.Sprintf("%d,%03d", n/1000, n%1000)
+	digits := strconv.Itoa(n)
+	if len(digits) <= 3 {
+		return digits
+	}
+	var grouped strings.Builder
+	for i, digit := range digits {
+		if i > 0 && (len(digits)-i)%3 == 0 {
+			grouped.WriteByte(',')
+		}
+		grouped.WriteRune(digit)
+	}
+	return grouped.String()
 }
 
 func hotOwnersText(owners []hotOwnerShare) string {
@@ -1196,6 +1251,19 @@ func hotColumnMax(items []hotItem) map[string]float64 {
 	return maximum
 }
 
+// hotColumns formats the fixed columns that follow a tree or file name. The
+// owners text comes last and is the first thing cut on a narrow screen.
+func hotColumns(activity, commits, people, last, owners string) string {
+	text := fmt.Sprintf("%-8s  %7s  %6s  %5s", activity, commits, people, last)
+	if owners != "" {
+		text += "  " + owners
+	}
+	return text
+}
+
+// hotFixedWidth is the width of hotColumns without the owners text.
+var hotFixedWidth = len(hotColumns("", "", "", "", ""))
+
 func (m model) hotItemColumns(item hotItem, maximum map[string]float64, now time.Time) string {
 	prefix := item.branch
 	if i := strings.LastIndex(prefix, "─ "); i >= 0 {
@@ -1210,22 +1278,46 @@ func (m model) hotItemColumns(item hotItem, maximum map[string]float64, now time
 	}
 	owners := ""
 	if m.showHotOwners() {
-		owners = "  " + hotOwnersText(item.owners)
+		owners = hotOwnersText(item.owners)
 	}
-	return fmt.Sprintf("%s %6s %6s %5s%s",
-		hotBar(item.score, maximum[prefix], hotBarWidth),
-		formatCount(item.commits), people, hotAge(item.last, now), owners)
+	return hotColumns(hotBar(item.score, maximum[prefix], hotBarWidth), formatCount(item.commits), people, hotAge(item.last, now), owners)
 }
 
 func (m model) showHotOwners() bool { return len(m.hotspots.authors) > 1 }
 
-func (m model) hotHeaderRow() string {
-	left := "   " + m.accent() + "area" + styleReset
-	right := fmt.Sprintf("%s %6s %6s %5s", "activity ", "commits", "people", "last")
-	if m.showHotOwners() {
-		right += "  owners"
+// hotAuthorColumns formats the columns that follow an author's name.
+func hotAuthorColumns(commits, active, areas string) string {
+	text := fmt.Sprintf("%7s  %-13s", commits, active)
+	if areas != "" {
+		text += "  " + areas
 	}
-	return bar(m.width, left, styleDim+right+styleReset)
+	return text
+}
+
+var hotAuthorFixedWidth = len(hotAuthorColumns("", "", ""))
+
+func hotActive(author *hotAuthor, now time.Time) string {
+	first, last := hotAge(author.first, now), hotAge(author.last, now)
+	switch {
+	case first == "" && last == "":
+		return ""
+	case first == last || first == "":
+		return last
+	}
+	return first + " – " + last
+}
+
+// hotHeaderRow labels the columns at the same offsets listTableRow uses.
+func (m model) hotHeaderRow(count, nameWidth int) string {
+	name, columns := "area", hotColumns("activity", "commits", "people", "last", "")
+	if m.showHotOwners() {
+		columns += "  owners"
+	}
+	if m.hotspots.mode == "authors" {
+		name, columns = "author", hotAuthorColumns("commits", "active", "areas")
+	}
+	indent := strings.Repeat(" ", listPrefixWidth(count))
+	return styleDim + ansi.Truncate(indent+padCell(name, nameWidth)+"  "+columns, m.width, "") + styleReset
 }
 
 func (m model) hotWindowLabel() string {
@@ -1263,7 +1355,7 @@ func (m model) hotFileItems() []hotItem {
 		}
 		items = append(items, hotItem{
 			path: file.path, name: file.path, file: &file, class: file.class, score: file.score,
-			commits: file.commits, people: len(file.authors), churn: file.added + file.deleted,
+			commits: file.commits, people: hotHumanCount(file.authors), churn: file.added + file.deleted,
 			last: file.last, owners: hotOwners(owners),
 		})
 	}
@@ -1271,9 +1363,34 @@ func (m model) hotFileItems() []hotItem {
 	return items
 }
 
+// botWords are the words automation accounts use where a person's name would
+// go. They match as whole tokens, so "Robot Human" and "Henry Talbot" stay
+// human.
+var botWords = map[string]bool{
+	"bot": true, "automation": true, "actions": true, "ci": true, "cd": true,
+	"build": true, "builder": true, "release": true, "deploy": true,
+	"pipeline": true, "scheduler": true, "cron": true,
+}
+
+// isBotAuthor reports whether an author is automation rather than a person.
+// GitHub Apps carry a [bot] suffix, and CI services use a token such as ci or
+// automation. Anything else is a person as far as Git can say.
 func isBotAuthor(name string) bool {
-	lower := strings.ToLower(name)
-	return strings.HasSuffix(lower, "[bot]") || strings.HasSuffix(lower, "bot") || strings.Contains(lower, "github-actions")
+	lower := strings.ToLower(strings.TrimSpace(name))
+	if lower == "" {
+		return false
+	}
+	if strings.Contains(lower, "[bot]") {
+		return true
+	}
+	for _, word := range strings.FieldsFunc(lower, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		if botWords[word] {
+			return true
+		}
+	}
+	return false
 }
 
 func (m model) hotFilteredItems() []hotItem {
@@ -1311,7 +1428,13 @@ func (m model) hotView() string {
 	if commits == 0 {
 		commits = len(m.hotspots.commits)
 	}
-	title := fmt.Sprintf(" hotspots · %s · %s commits · %s", m.hotWindowLabel(), formatCount(commits), hotPeople(len(m.hotspots.authors)))
+	if commits == 0 {
+		// A cached summary keeps no commits; each one has a single author.
+		for _, author := range m.hotspots.authors {
+			commits += author.commits
+		}
+	}
+	title := fmt.Sprintf(" hotspots · %s · %s commits · %s", m.hotWindowLabel(), formatCount(commits), hotPeople(hotHumanCount(m.hotspots.authors)))
 	if m.hotspots.authorFilter != "" {
 		title = fmt.Sprintf(" hotspots · %s · %s commits · by %s", m.hotWindowLabel(), formatCount(commits), m.hotspots.authorFilter)
 	}
@@ -1324,39 +1447,51 @@ func (m model) hotView() string {
 	}
 	title += " · " + view
 	lines := []string{m.titleBar(" "+m.accent()+syntax.Clean(title)+styleReset, stateBadges(m.filterBadge(m.hotspots.list.filter)))}
-	lines = append(lines, m.hotHeaderRow())
 	now := time.Now()
 	rows := m.hotRows()
 	var items []hotItem
 	selected := m.hotspots.list.selected
+	var body []string
+	var header string
 	switch m.hotspots.mode {
 	case "authors":
 		authors := m.hotFilteredAuthors()
 		selected = min(selected, max(0, len(authors)-1))
 		offset, visible := listViewport(m.hotspots.list, len(authors), rows)
-		for i := offset; i < min(len(authors), offset+visible); i++ {
-			author := authors[i]
-			meta := fmt.Sprintf("%s commits  %s – %s  %s", formatCount(author.commits),
-				hotAge(author.first, now), hotAge(author.last, now), topAuthorDirs(author, 3))
-			lines = append(lines, m.listRow(i, selected, len(authors), author.name, meta))
+		end := min(len(authors), offset+visible)
+		names := make([]string, 0, end-offset)
+		for _, author := range authors[offset:end] {
+			names = append(names, author.name)
 		}
-	case "files":
-		items = m.hotFileItems()
-		selected = min(selected, max(0, len(items)-1))
-		offset, visible := listViewport(m.hotspots.list, len(items), rows)
-		maximum := hotColumnMax(items)
-		for i := offset; i < min(len(items), offset+visible); i++ {
-			lines = append(lines, m.listRow(i, selected, len(items), items[i].name, m.hotItemColumns(items[i], maximum, now)))
+		nameWidth := m.listNameWidth(len(authors), append(names, "author"), hotAuthorFixedWidth)
+		header = m.hotHeaderRow(len(authors), nameWidth)
+		for i := offset; i < end; i++ {
+			author := authors[i]
+			columns := hotAuthorColumns(formatCount(author.commits), hotActive(author, now), topAuthorDirs(author, 3))
+			body = append(body, m.listTableRow(i, selected, len(authors), author.name, nameWidth, columns))
 		}
 	default:
-		items = m.hotFilteredItems()
+		if m.hotspots.mode == "files" {
+			items = m.hotFileItems()
+		} else {
+			items = m.hotFilteredItems()
+		}
 		selected = min(selected, max(0, len(items)-1))
 		offset, visible := listViewport(m.hotspots.list, len(items), rows)
+		end := min(len(items), offset+visible)
 		maximum := hotColumnMax(items)
-		for i := offset; i < min(len(items), offset+visible); i++ {
-			lines = append(lines, m.listRow(i, selected, len(items), items[i].branch+items[i].name, m.hotItemColumns(items[i], maximum, now)))
+		names := make([]string, 0, end-offset)
+		for _, item := range items[offset:end] {
+			names = append(names, item.branch+item.name)
+		}
+		nameWidth := m.listNameWidth(len(items), append(names, "area"), hotFixedWidth)
+		header = m.hotHeaderRow(len(items), nameWidth)
+		for i := offset; i < end; i++ {
+			body = append(body, m.listTableRow(i, selected, len(items), items[i].branch+items[i].name, nameWidth, m.hotItemColumns(items[i], maximum, now)))
 		}
 	}
+	lines = append(lines, header)
+	lines = append(lines, body...)
 	if len(items) == 0 && m.hotspots.mode != "authors" {
 		text := " No changes in the window"
 		if m.hotspots.loading {
@@ -1370,7 +1505,7 @@ func (m model) hotView() string {
 	if detail == "" {
 		detail = " "
 	}
-	lines = append(lines, styleDim+fit(detail, m.width)+styleReset)
+	lines = append(lines, styleDim+truncateCell(detail, m.width)+styleReset)
 	status := ""
 	if filter := m.hotspots.list.listStatus(m.width); filter != "" {
 		status = filter
@@ -1379,7 +1514,7 @@ func (m model) hotView() string {
 	if m.flash != "" {
 		status = syntax.Clean(m.flash)
 	}
-	lines = append(lines, m.statusBar(status, hints))
+	lines = append(lines, m.statusBar(status, truncateCell(hints, max(1, m.width-ansi.StringWidth(status)-2))))
 	if m.modal == "help" {
 		clearBody(lines)
 		m.showHelpDialog(lines)
@@ -1402,7 +1537,7 @@ func (m model) hotDetail(selected int, items []hotItem, now time.Time) string {
 	if item.directory {
 		parts[0] = item.path + "/"
 	}
-	parts = append(parts, fmt.Sprintf("%s commits", formatCount(item.commits)))
+	parts = append(parts, hotCommits(item.commits))
 	if item.people > 0 {
 		parts = append(parts, hotPeople(item.people))
 	}
@@ -1435,6 +1570,15 @@ func (m model) hotFooter() string {
 	return footer(true, actions...)
 }
 
+// dirLabel shows the repository root as a name instead of the "." key the
+// per-directory counts use.
+func dirLabel(dir string) string {
+	if dir == "." {
+		return "(root)"
+	}
+	return dir
+}
+
 func topAuthorDirs(author *hotAuthor, limit int) string {
 	type share struct {
 		dir   string
@@ -1454,7 +1598,7 @@ func topAuthorDirs(author *hotAuthor, limit int) string {
 	})
 	var parts []string
 	for _, s := range shares[:min(limit, len(shares))] {
-		parts = append(parts, fmt.Sprintf("%s %d%%", s.dir, s.count*100/max(1, total)))
+		parts = append(parts, fmt.Sprintf("%s %d%%", dirLabel(s.dir), s.count*100/max(1, total)))
 	}
 	return strings.Join(parts, " · ")
 }
@@ -1469,7 +1613,7 @@ func topAuthorDir(author *hotAuthor) string {
 	if top == "" {
 		return ""
 	}
-	return top
+	return dirLabel(top)
 }
 
 func (m model) hotAuthorList() []*hotAuthor {

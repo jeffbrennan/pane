@@ -108,6 +108,7 @@ func (m *model) reflowWidth(oldContentWidth int) {
 		view.reflowRows(oldContentWidth)
 		m.history.rows, m.history.pos, m.history.viewTop = view.rows, view.pos, view.viewTop
 		m.history.gutterWidth = view.gutterWidth
+		m.history.viewedFiles, m.history.totalFiles = viewedCountRows(view.rows)
 		return
 	}
 	m.reflowRows(oldContentWidth)
@@ -175,6 +176,7 @@ func (m *model) reflowRows(oldContentWidth int) {
 	if len(rows) > 0 && rows[0].kind == 's' {
 		rows = rows[1:]
 	}
+	m.applyViewed(rows, changes)
 	rows = m.localContextRows(rows, changes)
 	rows = m.foldContextFiles(rows)
 	indexRowHeaders(rows)

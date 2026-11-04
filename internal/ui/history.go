@@ -28,6 +28,7 @@ type historyState struct {
 	statsCache                        map[string]git.CommitInfo
 	changes                           []git.Change
 	rows                              []row
+	viewedFiles, totalFiles           int
 	gutterWidth                       int
 	list                              listState
 	pos, horizontal, viewTop, request int
@@ -41,7 +42,7 @@ type historyState struct {
 	current                           git.CommitInfo
 	meta                              git.CommitInfo
 	moved                             *movedIndex
-	headerCollapsed                   bool
+	headerCollapsed, bodyExpanded     bool
 	positions                         map[string]commitPosition
 	pendingPosition                   *commitPosition
 	pendingStep                       int
@@ -154,6 +155,9 @@ func (m *model) appendCommitChanges(changes []git.Change, done bool) {
 					part[i].setHeaderRow(header)
 				}
 			}
+			viewed, total := viewedCountRows(part)
+			m.history.viewedFiles += viewed
+			m.history.totalFiles += total
 			rows = append(rows, part...)
 		}
 		m.history.rows = rows
@@ -181,6 +185,9 @@ func (m *model) appendCommitChanges(changes []git.Change, done bool) {
 			part[i].setHeaderRow(header + offset)
 		}
 	}
+	viewed, total := viewedCountRows(part)
+	m.history.viewedFiles += viewed
+	m.history.totalFiles += total
 	m.history.rows = append(rows, part...)
 }
 
@@ -478,7 +485,7 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.help.reset()
 	case "p":
 		if !m.busy {
-			return m.runAction("push")
+			return m.startPush()
 		}
 	case "P":
 		if !m.busy {
@@ -599,11 +606,13 @@ func (m model) openCommit(commit git.CommitInfo) (tea.Model, tea.Cmd) {
 	m.history.fetching = false
 	m.history.statsFetching = false
 	m.history.changes, m.history.rows = nil, nil
+	m.history.viewedFiles, m.history.totalFiles = 0, 0
 	m.history.streamActive = true
 	m.history.streamPaths, m.history.streamLoaded, m.history.streamGutter = nil, 0, 0
 	m.history.streamError = ""
 	m.history.streamEndPending = false
 	m.history.meta = git.CommitInfo{}
+	m.history.bodyExpanded = false
 	m.history.moved = nil
 	if position, ok := m.history.positions[commit.Hash]; ok && commit.FilePath == "" {
 		m.history.pendingPosition = &position
@@ -654,7 +663,7 @@ func (m model) handleCommitKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startBlame()
 	}
 	if m.pending == "" && (key.String() == "h" || key.String() == "l") && m.commitModel().onCommitHeader() {
-		m.history.headerCollapsed = key.String() == "h"
+		m.history.toggleCommitHeader(key.String())
 		m.rebuildCommit()
 		return m, nil
 	}
@@ -849,8 +858,8 @@ func (m model) commitModel() model {
 		}
 	}
 	view.viewHints = keyHints("esc", "back", "?", "help")
-	if viewed, total := viewedCountRows(m.history.rows); viewed > 0 {
-		view.viewBadge = stateBadges(position, fmt.Sprintf("%d/%d viewed", viewed, total), m.whitespaceBadge())
+	if m.history.viewedFiles > 0 {
+		view.viewBadge = stateBadges(position, fmt.Sprintf("%d/%d viewed", m.history.viewedFiles, m.history.totalFiles), m.whitespaceBadge())
 	}
 	view.message = ""
 	if m.history.loading && m.history.commitLoadingVisible {
@@ -876,6 +885,7 @@ func (m *model) rebuildCommit() {
 	view := m.commitModel()
 	view.rebuild()
 	m.history.rows, m.history.pos, m.history.viewTop = view.rows, view.pos, view.viewTop
+	m.history.viewedFiles, m.history.totalFiles = viewedCountRows(view.rows)
 	m.history.gutterWidth = view.gutterWidth
 	m.collapsedFiles, m.generatedHandled = view.collapsedFiles, view.generatedHandled
 }
@@ -954,7 +964,7 @@ func (m model) historyView() string {
 		status = syntax.Clean(m.flash)
 	}
 	if m.modal == "branch-new" {
-		status, hints = "New branch from "+shortHash(m.branch.newFrom)+": "+renderInput(m.input, m.inputCursor, max(1, m.width-32)), keyHints("↵", "create", "esc", "cancel")
+		status, hints = m.newBranchStatus()
 	}
 	if m.history.fetching && m.historyQuery() != "" {
 		status += styleDim + "  searching older commits…" + styleReset

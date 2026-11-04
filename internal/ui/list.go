@@ -192,6 +192,49 @@ func listGroupJump(selected, n, count int, groups func(int) int, direction int) 
 	return max(0, min(index, max(0, n-1)))
 }
 
+// listPrefixWidth is the width of the relative number and selection marker
+// in front of every list entry.
+func listPrefixWidth(count int) int {
+	return len(fmt.Sprintf("%d", max(1, count-1))) + 3
+}
+
+// listNameWidth sizes the name column of a table list to its longest visible
+// name or header, shrinking it only as far as the fixed columns need. A
+// trailing free-text column gets what is left and is cut first.
+func (m model) listNameWidth(count int, names []string, fixed int) int {
+	longest := 0
+	for _, name := range names {
+		longest = max(longest, ansi.StringWidth(syntax.Clean(name)))
+	}
+	room := m.width - listPrefixWidth(count) - 2 - fixed
+	return max(1, min(longest, max(12, room)))
+}
+
+// truncateCell cuts s to width cells, marking the cut with an ellipsis.
+func truncateCell(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if ansi.StringWidth(s) <= width {
+		return s
+	}
+	return ansi.Truncate(s, width-1, "") + "…"
+}
+
+// padCell truncates or pads s to exactly width cells.
+func padCell(s string, width int) string {
+	if ansi.StringWidth(s) > width {
+		s = ansi.Truncate(s, max(0, width-1), "") + "…"
+	}
+	return s + strings.Repeat(" ", max(0, width-ansi.StringWidth(s)))
+}
+
+// listTableRow renders a list entry whose columns follow the name at a shared
+// width, so values sit beside what they describe instead of at the far edge.
+func (m model) listTableRow(index, selected, count int, name string, nameWidth int, columns string) string {
+	return m.listRow(index, selected, count, padCell(syntax.Clean(name), nameWidth)+"  "+columns, "")
+}
+
 // listRow renders one list entry the same way on every screen: relative
 // distance, selection marker, the entry text, then right-aligned columns.
 func (m model) listRow(index, selected, count int, text, right string) string {

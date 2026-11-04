@@ -30,6 +30,8 @@ type sequenceState struct {
 	streamContext   context.Context
 	streamTotal     []int
 	streamLoaded    []int
+	jumpPending     bool
+	jumpCommit      int
 }
 
 type sequenceLoadState uint8
@@ -224,7 +226,7 @@ func (m *model) rebuildSequence() {
 			if len(files) == 0 {
 				files = append(files, row{kind: '@', text: "  No file changes"})
 			}
-			block := commitHeaderBlock(m.sequence.commits[i], width, m.history.headerCollapsed, now)
+			block := commitHeaderBlock(m.sequence.commits[i], width, m.history.headerCollapsed, m.history.bodyExpanded, now)
 			if len(block) > 0 && m.sequence.commits[i].Author != "" {
 				files = append(block, files...)
 			}
@@ -303,6 +305,12 @@ func (m *model) rebuildSequence() {
 		m.sequence.endPending = false
 		m.viewTop = max(0, m.pos-max(1, m.height-2)+1)
 	}
+	if m.sequence.jumpPending && (len(m.sequence.states) == 0 || m.sequence.states[m.sequence.jumpCommit] >= sequenceReady) {
+		if i := m.commitRow(m.sequence.jumpCommit); i >= 0 {
+			m.pos, m.viewTop = i, i
+		}
+		m.sequence.jumpPending = false
+	}
 	m.clamp()
 	m.viewTop = m.viewportStart(max(1, m.height-2))
 }
@@ -349,8 +357,15 @@ func (m model) handleSequenceKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	} else if key.String() != "G" {
 		m.sequence.endPending = false
 	}
+	if m.pending == "" && (key.String() == ")" || key.String() == "(") {
+		direction := 1
+		if key.String() == "(" {
+			direction = -1
+		}
+		return m.stepSequenceCommit(direction)
+	}
 	if m.pending == "" && (key.String() == "h" || key.String() == "l") && m.onCommitHeader() {
-		m.history.headerCollapsed = key.String() == "h"
+		m.history.toggleCommitHeader(key.String())
 		m.sequence.rowCache = nil
 		m.rebuildSequence()
 		return m, nil
@@ -423,6 +438,47 @@ func (m model) handleSequenceKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	return m, nil
+}
+
+// commitRow returns the first row of a commit, or -1 when the commit has no
+// rows yet.
+func (m model) commitRow(commit int) int {
+	for i, r := range m.rows {
+		if int(r.commitIndex) == commit {
+			return i
+		}
+	}
+	return -1
+}
+
+// stepSequenceCommit moves between commits in a range review the same way
+// ( and ) move between commits in a single-commit view. A count jumps that
+// many commits, and a commit that is still loading lands once it arrives.
+func (m model) stepSequenceCommit(direction int) (tea.Model, tea.Cmd) {
+	if len(m.rows) == 0 || len(m.sequence.commits) == 0 || m.pos < 0 || m.pos >= len(m.rows) {
+		return m, nil
+	}
+	last := len(m.sequence.commits) - 1
+	current := int(m.rows[m.pos].commitIndex)
+	target := max(0, min(last, current+direction*max(1, m.count)))
+	m.count = 0
+	if target == current {
+		if direction > 0 {
+			m.flash = "last commit in range"
+		} else {
+			m.flash = "first commit in range"
+		}
+		return m, nil
+	}
+	if len(m.sequence.states) == 0 || m.sequence.states[target] >= sequenceReady {
+		if i := m.commitRow(target); i >= 0 {
+			m.pos, m.viewTop = i, i
+			return m, nil
+		}
+	}
+	m.sequence.jumpCommit, m.sequence.jumpPending = target, true
+	cmd := m.nextSequenceLoad()
+	return m, cmd
 }
 
 func (m model) leaveSequence() (tea.Model, tea.Cmd) {

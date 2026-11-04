@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/jeffbrennan/pane/internal/git"
 	"github.com/jeffbrennan/pane/internal/syntax"
 )
@@ -124,7 +125,7 @@ func (m model) branchView() string {
 		status = syntax.Clean(m.flash)
 	}
 	if m.modal == "branch-new" {
-		status, hints = "New branch from "+shortHash(m.branch.newFrom)+": "+renderInput(m.input, m.inputCursor, max(1, m.width-32)), keyHints("↵", "create", "esc", "cancel")
+		status, hints = m.newBranchStatus()
 	}
 	lines = append(lines, m.statusBar(status, hints))
 	for len(lines) < m.height {
@@ -180,6 +181,25 @@ func (m model) handleBranchKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// refLabel names a ref the way a person would: branches drop their refs/
+// prefix, while a bare commit hash keeps its short form.
+func refLabel(ref string) string {
+	label := strings.TrimPrefix(strings.TrimPrefix(ref, "refs/remotes/"), "refs/heads/")
+	if (len(label) == 40 || len(label) == 64) && strings.Trim(label, "0123456789abcdef") == "" {
+		return shortHash(label)
+	}
+	return label
+}
+
+// newBranchStatus renders the create-branch prompt with the input sized to
+// the room the real label leaves on the status bar.
+func (m model) newBranchStatus() (string, string) {
+	prefix := "New branch from " + refLabel(m.branch.newFrom) + ": "
+	hints := keyHints("↵", "create", "esc", "cancel")
+	width := max(1, m.width-ansi.StringWidth(prefix)-ansi.StringWidth(hints)-2)
+	return prefix + renderInput(m.input, m.inputCursor, width), hints
 }
 
 func (m model) promptNewBranch(from string) (tea.Model, tea.Cmd) {

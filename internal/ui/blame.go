@@ -1,8 +1,11 @@
 package ui
 
 import (
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jeffbrennan/pane/internal/git"
+	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
 type blameLoaded struct {
@@ -26,7 +29,20 @@ func (m model) startBlame() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	r := view.rows[view.pos]
-	if r.path == "" || (r.kind != ' ' && r.kind != '-') {
+	if r.path == "" {
+		m.flash = "Blame needs a context or removed line"
+		return m, nil
+	}
+	if r.kind == '+' {
+		// The parent has no such line to blame, but the answer is this commit.
+		added := "Added by " + syntax.Clean(m.history.current.Author)
+		if age := git.RelativeCommitTime(m.history.current.Date, time.Now()); age != "" {
+			added += " · " + age
+		}
+		m.flash = added
+		return m, nil
+	}
+	if r.kind != ' ' && r.kind != '-' {
 		m.flash = "Blame needs a context or removed line"
 		return m, nil
 	}

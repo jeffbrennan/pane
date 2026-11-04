@@ -136,3 +136,41 @@ func TestBlameUsesOldPathForRenames(t *testing.T) {
 		t.Fatalf("blame path %q", msg.path)
 	}
 }
+
+func TestBlameOnAnAddedLineNamesTheCommitAuthor(t *testing.T) {
+	r := testRepo(t)
+	writeFile(t, r, "file.txt", "alpha\n")
+	if _, err := r.Commit("first"); err != nil {
+		t.Fatal(err)
+	}
+	first, err := r.ResolveCommit("HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	changes, err := r.CommitChanges(first.Hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := model{width: 100, height: 30, wrap: true, screen: "commit", repo: r, viewed: newViewedStore(r.Root),
+		history: historyState{current: first, meta: first, changes: changes, request: 1, streamActive: true}}
+	m.history.loading = false
+	m.rebuildCommit()
+	pos := -1
+	for i, row := range m.history.rows {
+		if row.path == "file.txt" && row.kind == '+' {
+			pos = i
+		}
+	}
+	if pos < 0 {
+		t.Fatal("fixture has no added line")
+	}
+	m.history.pos = pos
+	updated, cmd := m.startBlame()
+	m = updated.(model)
+	if cmd != nil {
+		t.Fatal("an added line exists only in this commit, so blame must not run Git")
+	}
+	if !strings.Contains(m.flash, "Added by Test") || !strings.Contains(m.flash, "ago") {
+		t.Fatalf("flash = %q, want the commit author and age", m.flash)
+	}
+}

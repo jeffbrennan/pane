@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -67,5 +69,22 @@ func TestHelpFiltersRowsAndKeepsOtherScreensLast(t *testing.T) {
 	}
 	if other := strings.Index(lines, "Other screens"); other < 0 || other < strings.Index(lines, "Open stashes") {
 		t.Fatalf("other screens should come after the current one: %q", lines)
+	}
+}
+
+// TestGuideContainsEveryShortcut keeps the guide's key tables from drifting
+// away from the in-app help.
+func TestGuideContainsEveryShortcut(t *testing.T) {
+	path := filepath.Join("..", "..", "docs", "guide.md")
+	guide, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	for _, section := range shortcutSections {
+		for _, shortcut := range section.keys {
+			if !strings.Contains(string(guide), shortcut.keys) {
+				t.Errorf("%s: %q is missing from the guide", section.title, shortcut.keys)
+			}
+		}
 	}
 }

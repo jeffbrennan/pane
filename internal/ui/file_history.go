@@ -70,6 +70,7 @@ func (m model) leaveFileHistory() (tea.Model, tea.Cmd) {
 				previous.picker.pendingPath = previous.history.rows[previous.history.pos].path
 			}
 			previous.history.changes, previous.history.rows = nil, nil
+			previous.history.viewedFiles, previous.history.totalFiles = 0, 0
 			return previous, startCommitStream(repo, hash, request, previous.height)
 		}
 		previous.startCommitLoad()

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/jeffbrennan/pane/internal/git"
 )
 
@@ -329,5 +330,34 @@ func TestPruneHintOnlyWhenPrunable(t *testing.T) {
 	m.worktrees.entries = append(m.worktrees.entries, git.WorktreeEntry{Path: "/tmp/gone", Prunable: true})
 	if view := m.worktreeView(); !strings.Contains(view, "prune") {
 		t.Fatalf("prune hint missing: %q", view)
+	}
+}
+
+func TestRefLabelNamesBranchesNotRefs(t *testing.T) {
+	for _, tc := range []struct{ ref, want string }{
+		{"refs/heads/main", "main"},
+		{"refs/remotes/origin/x", "origin/x"},
+		{"refs/heads/feature/nested-name", "feature/nested-name"},
+		{"0123456789abcdef0123456789abcdef01234567", "01234567"},
+		{"abc1234", "abc1234"},
+	} {
+		if got := refLabel(tc.ref); got != tc.want {
+			t.Fatalf("refLabel(%q) = %q, want %q", tc.ref, got, tc.want)
+		}
+	}
+}
+
+func TestNewBranchPromptUsesTheBranchName(t *testing.T) {
+	m := model{width: 80, height: 20, modal: "branch-new", branch: branchState{newFrom: "refs/heads/main"}}
+	got := plain(m.historyView())
+	if !strings.Contains(got, "New branch from main:") || strings.Contains(got, "refs/hea") {
+		t.Fatalf("status line: %q", got)
+	}
+	for _, width := range []int{40, 68, 200} {
+		m.width = width
+		status, hints := m.newBranchStatus()
+		if bar := m.statusBar(status, hints); ansi.StringWidth(bar) > width {
+			t.Fatalf("width %d: status bar is %d cells: %q", width, ansi.StringWidth(bar), bar)
+		}
 	}
 }

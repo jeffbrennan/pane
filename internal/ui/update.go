@@ -192,6 +192,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.changed {
 			m.base.hash, m.base.initialized = msg.hash, true
 			m.history.changes, m.history.rows = nil, nil
+			m.history.viewedFiles, m.history.totalFiles = 0, 0
 			m.contextFiles = nil
 			m.history.streamPaths, m.history.streamLoaded, m.history.streamGutter = nil, 0, 0
 			m.history.streamError, m.history.streamEndPending = "", false
@@ -201,6 +202,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			repo := m.startCommitLoad()
 			return m, startBaseStream(repo, msg.hash, m.base.request, m.height)
 		}
+	case pushProbed:
+		return m.finishPushProbe(msg)
 	case completed:
 		m.busy = false
 		m.activeAction = ""
@@ -225,6 +228,9 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if msg.action == "push" {
 			m.message = ""
 			m.modal = ""
+			if msg.message != "" {
+				m.flash = msg.message
+			}
 			var refreshCmd tea.Cmd
 			m, refreshCmd = m.refresh()
 			if m.screen == "history" {

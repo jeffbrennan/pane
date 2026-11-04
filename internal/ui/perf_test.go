@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"runtime/pprof"
 	"sort"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -137,6 +138,37 @@ func TestPerf(t *testing.T) {
 	recordPerf(t, scenario, "rebuild_alloc_bytes", int64(memory.TotalAlloc-beforeAlloc))
 	view := m.commitModel()
 	measurePerf(t, scenario, "view_ns", func() { _ = view.View() })
+	runtime.ReadMemStats(&memory)
+	beforeAlloc = memory.TotalAlloc
+	_ = view.View()
+	runtime.ReadMemStats(&memory)
+	recordPerf(t, scenario, "view_alloc_bytes", int64(memory.TotalAlloc-beforeAlloc))
+	if len(view.rows) > 0 {
+		scroll := view
+		scroll.screen = "commit"
+		scroll.history.pos, scroll.history.viewTop = len(scroll.rows)/2, len(scroll.rows)/2
+		measurePerf(t, scenario, "scroll_j_mid_ns", func() {
+			_, _ = scroll.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+		})
+		measurePerf(t, scenario, "scroll_ctrl_d_mid_ns", func() {
+			_, _ = scroll.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+		})
+		scroll.history.pos = max(0, len(scroll.rows)-1)
+		scroll.history.viewTop = max(0, scroll.history.pos-max(1, scroll.height-2)+1)
+		measurePerf(t, scenario, "scroll_j_end_ns", func() {
+			_, _ = scroll.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+		})
+		if frames, err := strconv.Atoi(os.Getenv("PANE_PERF_SCROLL_FRAMES")); err == nil && frames > 0 {
+			// A longer scroll loop gives the CPU profile enough samples to
+			// show the render path rather than one-off loading work.
+			for i := 0; i < frames; i++ {
+				_, _ = scroll.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+				_ = scroll.View()
+				_, _ = scroll.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+				_ = scroll.View()
+			}
+		}
+	}
 	if len(view.rows) > 0 {
 		query := view.rows[0].path
 		measurePerf(t, scenario, "search_first_hit_ns", func() { _, _ = view.findMatch(query, -1, 1) })
