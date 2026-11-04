@@ -241,14 +241,10 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.modal = ""
 		}
 		return m, nil
-	case "pull-gone":
-		switch key.String() {
-		case "enter", "y":
-			return m.confirmSwitchToDefault()
-		case "esc", "q", "n", "ctrl+c":
-			m.modal = ""
-		}
-		return m, nil
+	case "pull-issue":
+		return m.handlePullIssueKey(key.String())
+	case "push-rejected":
+		return m.handlePushRejectedKey(key.String())
 	case "push-upstream":
 		switch key.String() {
 		case "enter":

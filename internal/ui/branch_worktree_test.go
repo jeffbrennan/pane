@@ -133,10 +133,15 @@ func TestDeleteUnmergedRequiresForce(t *testing.T) {
 	}
 	entries, _ := r.Branches(false)
 	entry := *branchByName(entries, "unmerged")
-	m := model{screen: "branches", repo: r}
+	m := model{screen: "branches", repo: r, width: 100, height: 30}
 	_, cmd := m.deleteBranch(entry, false)
-	if msg := cmd().(branchActionDone); msg.err == nil {
-		t.Fatal("unmerged branch deleted without force")
+	msg := cmd().(branchActionDone)
+	if msg.unmerged == nil || msg.unmerged.count != 1 || msg.unmerged.head != "main" {
+		t.Fatalf("unmerged branch was not offered a forced delete: %#v", msg)
+	}
+	updated, _ := m.Update(msg)
+	if m := updated.(model); m.modal != "branch-delete" || !m.branch.confirmForce || !strings.Contains(plain(m.View()), "1 commit on unmerged is not in main.") {
+		t.Fatalf("force dialog: modal=%q force=%v %q", m.modal, m.branch.confirmForce, plain(m.View()))
 	}
 	_, cmd = m.deleteBranch(entry, true)
 	if msg := cmd().(branchActionDone); msg.err != nil {

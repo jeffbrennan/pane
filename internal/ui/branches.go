@@ -26,6 +26,14 @@ type branchState struct {
 	// leaveTo is the branch pane switches to before deleting the checked-out
 	// branch; empty for any other branch.
 	leaveTo string
+	// unmerged is set when git branch -d refused and pane offers -D.
+	unmerged *unmergedBranch
+}
+
+type unmergedBranch struct {
+	entry git.BranchEntry
+	count int
+	head  string
 }
 
 type branchesLoaded struct {
@@ -35,9 +43,10 @@ type branchesLoaded struct {
 }
 
 type branchActionDone struct {
-	message string
-	err     error
-	stay    bool
+	message  string
+	err      error
+	stay     bool
+	unmerged *unmergedBranch
 }
 
 func (m model) openBranches() (tea.Model, tea.Cmd) {
@@ -217,7 +226,7 @@ func (m model) confirmDeleteBranch(entry git.BranchEntry, force bool) (tea.Model
 		m.flash = "Remote branches cannot be deleted here"
 		return m, nil
 	}
-	m.branch.leaveTo = ""
+	m.branch.leaveTo, m.branch.unmerged = "", nil
 	if entry.Current {
 		if m.hasTrackedChanges() {
 			m.flash = "Commit or stash changes before deleting the checked out branch"
@@ -296,18 +305,40 @@ func (m model) hasTrackedChanges() bool {
 }
 
 func (m model) deleteBranch(entry git.BranchEntry, force bool) (tea.Model, tea.Cmd) {
-	if target := m.branch.leaveTo; target != "" {
-		return m.runBranchAction("Switched to "+target+" and deleted "+entry.Name, false, func(r git.Repo) (string, error) {
-			return r.LeaveAndDeleteBranch(entry.Name, target, force)
-		})
+	target := m.branch.leaveTo
+	message := "Deleted branch " + entry.Name
+	if target != "" {
+		message = "Switched to " + target + " and deleted " + entry.Name
 	}
-	flag := "-d"
-	if force {
-		flag = "-D"
+	repo := m.repo
+	return m, func() tea.Msg {
+		var err error
+		if target != "" {
+			_, err = repo.LeaveAndDeleteBranch(entry.Name, target, force)
+		} else {
+			_, err = repo.DeleteBranch(entry.Name, force)
+		}
+		if count, head, ok := repo.UnmergedDelete(entry.Name, err); ok && !force {
+			return branchActionDone{unmerged: &unmergedBranch{entry: entry, count: count, head: head}}
+		}
+		if err != nil {
+			return branchActionDone{err: err, stay: target == ""}
+		}
+		return branchActionDone{message: message, stay: target == ""}
 	}
-	return m.runBranchAction("Deleted branch "+entry.Name, true, func(r git.Repo) (string, error) {
-		return r.Action("branch", flag, entry.Name)
-	})
+}
+
+// offerForceDelete reopens the delete dialog as a forced delete after git
+// branch -d refused, saying how many commits the branch would take with it.
+// Leaving the current branch may already have switched, so pane refreshes.
+func (m model) offerForceDelete(unmerged *unmergedBranch) (tea.Model, tea.Cmd) {
+	m.branch.confirm, m.branch.confirmForce = unmerged.entry, true
+	m.branch.leaveTo = ""
+	m.branch.unmerged = unmerged
+	m.modal = "branch-delete"
+	m, branchCmd := m.reloadBranches()
+	m, refreshCmd := m.refresh()
+	return m, tea.Batch(branchCmd, refreshCmd)
 }
 
 func (m model) reloadBranches() (model, tea.Cmd) {

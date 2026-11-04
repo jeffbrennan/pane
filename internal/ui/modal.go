@@ -179,6 +179,18 @@ func (m model) showBranchDelete(lines []string) {
 		boxWidth = min(max(boxWidth, ansi.StringWidth(command)+4), m.width-2)
 	}
 	body := []string{""}
+	if u := m.branch.unmerged; u != nil && m.branch.confirmForce {
+		verb := "are"
+		if u.count == 1 {
+			verb = "is"
+		}
+		note := fmt.Sprintf("%s on %s %s not in %s.", commitCount(u.count), u.entry.Name, verb, u.head)
+		boxWidth = min(max(boxWidth, ansi.StringWidth(note)+4), m.width-2)
+		for _, line := range wrapWords(syntax.Clean(note), boxWidth-4) {
+			body = append(body, line)
+		}
+		body = append(body, "")
+	}
 	for _, line := range wrapWords(command, boxWidth-4) {
 		body = append(body, styleDim+line+styleReset)
 	}
@@ -219,28 +231,32 @@ func (m model) showPushUpstream(lines []string) {
 	}.render())
 }
 
-// showPullGone offers the default branch when the current branch's upstream
-// was deleted, instead of failing with Git's merge-ref error.
-func (m model) showPullGone(lines []string) {
-	title := "Switch to " + syntax.Clean(m.pull.Target) + "?"
-	boxWidth := min(max(56, ansi.StringWidth(m.pull.Upstream)+30), m.width-2)
+// showRecovery renders a dialog offering to resolve a failed pull or push:
+// what happened, any commits involved, and the commands pane would run.
+func (m model) showRecovery(lines []string, r recovery) {
+	boxWidth := min(max(60, ansi.StringWidth(r.title)+6), m.width-2)
 	body := []string{""}
-	explain := syntax.Clean(m.pull.Upstream) + " was deleted on the remote."
-	if m.pull.Merged {
-		explain = syntax.Clean(m.pull.Branch) + " was merged into " + syntax.Clean(m.pull.Target) + " and " + syntax.Clean(m.pull.Upstream) + " was deleted."
-	}
-	for _, line := range wrapWords(explain, boxWidth-4) {
+	for _, line := range wrapWords(syntax.Clean(r.explain), boxWidth-4) {
 		body = append(body, line)
 	}
-	body = append(body, "")
-	command := "Pane runs git switch " + m.pull.Target + " and git pull. " + m.pull.Branch + " is kept."
-	for _, line := range wrapWords(command, boxWidth-4) {
-		body = append(body, styleDim+syntax.Clean(line)+styleReset)
+	const shown = 5
+	for i, commit := range r.commits {
+		if i == shown {
+			body = append(body, styleDim+fmt.Sprintf("  … and %d more", len(r.commits)-shown)+styleReset)
+			break
+		}
+		body = append(body, fit("  "+syntax.Clean(commit), boxWidth-4))
 	}
 	body = append(body, "")
-	placeDialog(lines, m.width, dialog{
-		width: boxWidth, title: title, body: body, hint: keyHints("↵", "switch", "esc", "cancel"),
-	}.render())
+	for _, line := range wrapWords(syntax.Clean(r.command), boxWidth-4) {
+		body = append(body, styleDim+line+styleReset)
+	}
+	body = append(body, "")
+	box := dialog{width: boxWidth, title: syntax.Clean(r.title), body: body, hint: keyHints(r.hints...)}
+	if r.danger {
+		box.titleStyle = m.danger()
+	}
+	placeDialog(lines, m.width, box.render())
 }
 
 func (m model) showWorktreeDelete(lines []string) {

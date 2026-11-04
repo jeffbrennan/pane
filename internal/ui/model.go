@@ -111,7 +111,8 @@ type model struct {
 	stash                 stashState
 	branch                branchState
 	push                  pushState
-	pull                  git.GoneUpstream
+	pull                  git.PullIssue
+	pushIssue             git.PushIssue
 	worktrees             worktreeState
 	hotspots              hotspotState
 	base                  baseState

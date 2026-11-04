@@ -206,6 +206,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.finishPushProbe(msg)
 	case pullFailed:
 		return m.finishPullFailure(msg)
+	case pushRejected:
+		return m.finishPushRejected(msg)
 	case completed:
 		m.busy = false
 		m.activeAction = ""
@@ -240,9 +242,9 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			historyModel, historyCmd := m.openHistory()
 			return historyModel, tea.Batch(refreshCmd, historyCmd)
-		} else if msg.action == "pull" || msg.action == "switch-pull" {
+		} else if msg.action == "pull" || msg.action == "pull-resolved" {
 			m.message = ""
-			if msg.action == "switch-pull" {
+			if msg.action == "pull-resolved" {
 				m.flash = msg.message
 			}
 			var refreshCmd tea.Cmd
@@ -495,6 +497,9 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.branch.entries = msg.entries
 		m.branch.list.selected = min(m.branch.list.selected, max(0, len(msg.entries)-1))
 	case branchActionDone:
+		if msg.unmerged != nil {
+			return m.offerForceDelete(msg.unmerged)
+		}
 		if msg.err != nil {
 			m.errorText = msg.err.Error()
 			m.errorPos = 0

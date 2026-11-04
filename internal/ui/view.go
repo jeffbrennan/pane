@@ -53,7 +53,7 @@ func (m model) View() string {
 	if m.width <= 0 || m.height <= 0 {
 		return ""
 	}
-	if m.modal == "error" || m.modal == "discard" || m.modal == "stash-confirm" || m.modal == "branch-delete" || m.modal == "worktree-delete" || m.modal == "push-upstream" || m.modal == "pull-gone" {
+	if m.modal == "error" || m.modal == "discard" || m.modal == "stash-confirm" || m.modal == "branch-delete" || m.modal == "worktree-delete" || m.modal == "push-upstream" || m.modal == "pull-issue" || m.modal == "push-rejected" {
 		return m.confirmationView()
 	}
 	if m.screen == "history" {
@@ -216,8 +216,9 @@ func (m model) confirmationView() string {
 		}
 		return strings.Join([]string{fit(title, m.width), fit(hint, m.width)}, "\n")
 	}
-	if m.modal == "pull-gone" && small {
-		return strings.Join([]string{fit(" "+goneSummary(m.pull)+" Switch to "+m.pull.Target+" and pull?", m.width), fit(" enter switch  esc cancel", m.width)}, "\n")
+	if (m.modal == "pull-issue" || m.modal == "push-rejected") && small {
+		r := m.recovery()
+		return strings.Join([]string{fit(" "+r.short, m.width), fit(" "+r.plainHints(), m.width)}, "\n")
 	}
 	if m.modal == "error" && small {
 		content := m.errorLines(m.width)
@@ -249,8 +250,8 @@ func (m model) confirmationView() string {
 		m.showWorktreeDelete(lines)
 	} else if m.modal == "push-upstream" {
 		m.showPushUpstream(lines)
-	} else if m.modal == "pull-gone" {
-		m.showPullGone(lines)
+	} else if m.modal == "pull-issue" || m.modal == "push-rejected" {
+		m.showRecovery(lines, m.recovery())
 	} else {
 		m.showDiscardDialog(lines)
 	}

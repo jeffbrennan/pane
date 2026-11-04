@@ -37,7 +37,7 @@ func TestPullWithDeletedUpstreamOffersDefaultBranch(t *testing.T) {
 	}
 	updated, _ = m.Update(msg)
 	m = updated.(model)
-	if m.modal != "pull-gone" || m.pull.Target != main || m.pull.Upstream != "origin/feat/x" || m.busy {
+	if m.modal != "pull-issue" || m.pull.Target != main || m.pull.Upstream != "origin/feat/x" || m.busy {
 		t.Fatalf("pull dialog: modal=%q %#v busy=%v", m.modal, m.pull, m.busy)
 	}
 	if view := plain(m.View()); !strings.Contains(view, "Switch to "+main+"?") || !strings.Contains(view, "feat/x was merged into "+main) {
