@@ -53,7 +53,7 @@ func (m model) View() string {
 	if m.width <= 0 || m.height <= 0 {
 		return ""
 	}
-	if m.modal == "error" || m.modal == "discard" || m.modal == "stash-confirm" || m.modal == "branch-delete" || m.modal == "worktree-delete" || m.modal == "push-upstream" {
+	if m.modal == "error" || m.modal == "discard" || m.modal == "stash-confirm" || m.modal == "branch-delete" || m.modal == "worktree-delete" || m.modal == "push-upstream" || m.modal == "pull-issue" || m.modal == "push-rejected" {
 		return m.confirmationView()
 	}
 	if m.screen == "history" {
@@ -216,6 +216,10 @@ func (m model) confirmationView() string {
 		}
 		return strings.Join([]string{fit(title, m.width), fit(hint, m.width)}, "\n")
 	}
+	if (m.modal == "pull-issue" || m.modal == "push-rejected") && small {
+		r := m.recovery()
+		return strings.Join([]string{fit(" "+r.short, m.width), fit(" "+r.plainHints(), m.width)}, "\n")
+	}
 	if m.modal == "error" && small {
 		content := m.errorLines(m.width)
 		start := min(m.errorPos, max(0, len(content)-1))
@@ -227,7 +231,11 @@ func (m model) confirmationView() string {
 				lines = append(lines, "")
 			}
 		}
-		lines = append(lines, fit("j/k scroll  enter/esc dismiss", m.width))
+		hint := "j/k scroll  enter/esc dismiss"
+		if blockedByChanges(m.errorText) {
+			hint = "j/k scroll  enter show changes  esc dismiss"
+		}
+		lines = append(lines, fit(hint, m.width))
 		return strings.Join(lines, "\n")
 	}
 	clearBody(lines)
@@ -242,6 +250,8 @@ func (m model) confirmationView() string {
 		m.showWorktreeDelete(lines)
 	} else if m.modal == "push-upstream" {
 		m.showPushUpstream(lines)
+	} else if m.modal == "pull-issue" || m.modal == "push-rejected" {
+		m.showRecovery(lines, m.recovery())
 	} else {
 		m.showDiscardDialog(lines)
 	}

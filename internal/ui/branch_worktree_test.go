@@ -133,10 +133,15 @@ func TestDeleteUnmergedRequiresForce(t *testing.T) {
 	}
 	entries, _ := r.Branches(false)
 	entry := *branchByName(entries, "unmerged")
-	m := model{screen: "branches", repo: r}
+	m := model{screen: "branches", repo: r, width: 100, height: 30}
 	_, cmd := m.deleteBranch(entry, false)
-	if msg := cmd().(branchActionDone); msg.err == nil {
-		t.Fatal("unmerged branch deleted without force")
+	msg := cmd().(branchActionDone)
+	if msg.unmerged == nil || msg.unmerged.count != 1 || msg.unmerged.head != "main" {
+		t.Fatalf("unmerged branch was not offered a forced delete: %#v", msg)
+	}
+	updated, _ := m.Update(msg)
+	if m := updated.(model); m.modal != "branch-delete" || !m.branch.confirmForce || !strings.Contains(plain(m.View()), "1 commit on unmerged is not in main.") {
+		t.Fatalf("force dialog: modal=%q force=%v %q", m.modal, m.branch.confirmForce, plain(m.View()))
 	}
 	_, cmd = m.deleteBranch(entry, true)
 	if msg := cmd().(branchActionDone); msg.err != nil {
@@ -359,5 +364,122 @@ func TestNewBranchPromptUsesTheBranchName(t *testing.T) {
 		if bar := m.statusBar(status, hints); ansi.StringWidth(bar) > width {
 			t.Fatalf("width %d: status bar is %d cells: %q", width, ansi.StringWidth(bar), bar)
 		}
+	}
+}
+
+func TestDeleteCurrentBranchSwitchesToDefaultFirst(t *testing.T) {
+	r := testRepo(t)
+	writeFile(t, r, "file.txt", "one\n")
+	if _, err := r.Commit("initial"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Command("switch", "-c", "feature/x"); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, r, "untracked.txt", "kept\n")
+	snapshot, err := r.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := model{screen: "branches", repo: r, width: 100, height: 30, snapshot: snapshot}
+	updated, _ := m.confirmDeleteBranch(git.BranchEntry{Name: "feature/x", Current: true}, false)
+	m = updated.(model)
+	if m.modal != "branch-delete" || m.branch.leaveTo != "main" {
+		t.Fatalf("clean current branch: modal=%q leaveTo=%q flash=%q", m.modal, m.branch.leaveTo, m.flash)
+	}
+	if view := plain(m.View()); !strings.Contains(view, "switches to main, then runs git branch -d") {
+		t.Fatalf("dialog does not mention the switch: %q", view)
+	}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	if cmd == nil {
+		t.Fatal("y did not delete")
+	}
+	if msg := cmd().(branchActionDone); msg.err != nil {
+		t.Fatalf("leave and delete: %v", msg.err)
+	}
+	if out, _ := r.Command("symbolic-ref", "--short", "HEAD"); strings.TrimSpace(string(out)) != "main" {
+		t.Fatalf("HEAD is %q, want main", out)
+	}
+	if out, _ := r.Command("rev-parse", "--verify", "--quiet", "refs/heads/feature/x"); len(out) != 0 {
+		t.Fatal("branch still exists")
+	}
+	_ = updated
+}
+
+func TestDeleteCurrentBranchWithChangesRefuses(t *testing.T) {
+	r := testRepo(t)
+	writeFile(t, r, "file.txt", "one\n")
+	if _, err := r.Commit("initial"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Command("switch", "-c", "feature/x"); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, r, "file.txt", "changed\n")
+	snapshot, err := r.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := model{screen: "branches", repo: r, snapshot: snapshot}
+	updated, cmd := m.confirmDeleteBranch(git.BranchEntry{Name: "feature/x", Current: true}, false)
+	m = updated.(model)
+	if cmd != nil || m.modal != "" || !strings.Contains(m.flash, "Commit or stash") {
+		t.Fatalf("dirty current branch: %q %q", m.flash, m.modal)
+	}
+	// The snapshot can be stale, so the Git side checks again.
+	if _, err := r.LeaveAndDeleteBranch("feature/x", "main", false); err == nil || !strings.Contains(err.Error(), "commit or stash") {
+		t.Fatalf("dirty tree was not refused: %v", err)
+	}
+	if out, _ := r.Command("symbolic-ref", "--short", "HEAD"); strings.TrimSpace(string(out)) != "feature/x" {
+		t.Fatalf("refusal still switched to %q", out)
+	}
+}
+
+func TestSwitchBlockedByChangesOffersChangesView(t *testing.T) {
+	r := testRepo(t)
+	writeFile(t, r, "file.txt", "one\n")
+	if _, err := r.Commit("initial"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Command("switch", "-c", "side"); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, r, "file.txt", "side\n")
+	if _, err := r.Commit("side"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Command("switch", "main"); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, r, "file.txt", "local\n")
+	snapshot, err := r.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := model{screen: "branches", repo: r, width: 100, height: 30, snapshot: snapshot, startsInHistory: true}
+	_, cmd := m.switchBranch(git.BranchEntry{Name: "side"})
+	updated, _ := m.Update(cmd())
+	m = updated.(model)
+	if m.modal != "error" {
+		t.Fatalf("switch over local changes did not fail: modal=%q", m.modal)
+	}
+	if view := plain(m.View()); !strings.Contains(view, "show changes") {
+		t.Fatalf("error does not offer the changes view: %q", view)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(model)
+	if m.modal != "" || m.screen != "" || m.startsInHistory {
+		t.Fatalf("enter did not open changes: modal=%q screen=%q", m.modal, m.screen)
+	}
+}
+
+func TestOtherErrorsOnlyDismiss(t *testing.T) {
+	m := model{screen: "branches", width: 100, height: 30, modal: "error", errorText: "fatal: something else"}
+	if view := plain(m.View()); strings.Contains(view, "show changes") {
+		t.Fatalf("unrelated error offers the changes view: %q", view)
+	}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m = updated.(model); m.modal != "" || m.screen != "branches" {
+		t.Fatalf("enter should only dismiss: modal=%q screen=%q", m.modal, m.screen)
 	}
 }

@@ -310,6 +310,29 @@ configured choice, the dialog lists them by number. Press `a` to also set
 `push.autoSetupRemote` in your global Git configuration; pane never changes
 that setting unless you ask.
 
+When a push is rejected because the remote moved, pane fetches the remote
+branch and checks the local branch's reflog for its tip. If the branch once had
+that commit, the rejection comes from rewriting history, as an amend or rebase
+does, and pane lists the remote commits a force push would replace. Press `f`
+to run `git push --force-with-lease`, pinned to the remote tip you were shown,
+so it stops if anyone pushed since. Otherwise someone else pushed: pane lists
+their commits and Enter pulls, then pushes.
+
+`P` pulls the current branch. Pane offers a fix for these failures instead of
+only showing Git's error:
+
+- The upstream was deleted on the remote, as after a merged pull request: switch
+  to the default branch (the remote's `HEAD`, then `main`, then `master`) and
+  pull it. The old branch is kept.
+- The branch has no upstream but the remote has a branch with the same name:
+  track it and pull.
+- The branch and its upstream have diverged and `pull.rebase` is not set: `m`
+  merges and `r` rebases. `M` or `R` also sets `pull.rebase` in your global Git
+  configuration; pane never changes that setting unless you ask.
+
+When Git refuses a switch, pull, or merge because of uncommitted changes, Enter
+on the error opens the changes view so you can stash or commit them.
+
 ## Commits, details, and blame
 
 A commit and each commit in a multi-commit review start with a details block:
@@ -368,7 +391,10 @@ Press `b` in history to list branches with their upstream state, last commit,
 and subject; branches checked out in another worktree are marked `⌂`. Enter
 switches, `n` creates a branch from the selection, `w` creates a worktree for
 it, `d` deletes with confirmation, `r` includes remote branches, `y` copies the
-name, and `/` filters.
+name, and `/` filters. Deleting the checked-out branch first switches to the
+default branch, and only when tracked files have no uncommitted changes. When
+`git branch -d` refuses an unmerged branch, as it does after a squash merge,
+pane says how many commits are not in the checked-out branch and offers `-D`.
 
 Press `tab` for worktrees, which show dirty counts and last activity, sorted
 most recent first; Enter moves this pane into a worktree, `n` creates one using

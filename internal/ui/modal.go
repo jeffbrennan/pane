@@ -173,7 +173,28 @@ func (m model) showBranchDelete(lines []string) {
 	if m.branch.confirmForce {
 		flag = "-D"
 	}
-	body := []string{"", styleDim + "Pane runs git branch " + flag + "." + styleReset, ""}
+	command := "Pane runs git branch " + flag + "."
+	if m.branch.leaveTo != "" {
+		command = "Pane switches to " + syntax.Clean(m.branch.leaveTo) + ", then runs git branch " + flag + "."
+		boxWidth = min(max(boxWidth, ansi.StringWidth(command)+4), m.width-2)
+	}
+	body := []string{""}
+	if u := m.branch.unmerged; u != nil && m.branch.confirmForce {
+		verb := "are"
+		if u.count == 1 {
+			verb = "is"
+		}
+		note := fmt.Sprintf("%s on %s %s not in %s.", commitCount(u.count), u.entry.Name, verb, u.head)
+		boxWidth = min(max(boxWidth, ansi.StringWidth(note)+4), m.width-2)
+		for _, line := range wrapWords(syntax.Clean(note), boxWidth-4) {
+			body = append(body, line)
+		}
+		body = append(body, "")
+	}
+	for _, line := range wrapWords(command, boxWidth-4) {
+		body = append(body, styleDim+line+styleReset)
+	}
+	body = append(body, "")
 	placeDialog(lines, m.width, dialog{
 		width: boxWidth, title: title, titleStyle: m.danger(), body: body,
 		hint: keyHints("y", "delete", "n/esc", "cancel"),
@@ -208,6 +229,34 @@ func (m model) showPushUpstream(lines []string) {
 	placeDialog(lines, m.width, dialog{
 		width: boxWidth, title: title, body: body, hint: hint,
 	}.render())
+}
+
+// showRecovery renders a dialog offering to resolve a failed pull or push:
+// what happened, any commits involved, and the commands pane would run.
+func (m model) showRecovery(lines []string, r recovery) {
+	boxWidth := min(max(60, ansi.StringWidth(r.title)+6), m.width-2)
+	body := []string{""}
+	for _, line := range wrapWords(syntax.Clean(r.explain), boxWidth-4) {
+		body = append(body, line)
+	}
+	const shown = 5
+	for i, commit := range r.commits {
+		if i == shown {
+			body = append(body, styleDim+fmt.Sprintf("  … and %d more", len(r.commits)-shown)+styleReset)
+			break
+		}
+		body = append(body, fit("  "+syntax.Clean(commit), boxWidth-4))
+	}
+	body = append(body, "")
+	for _, line := range wrapWords(syntax.Clean(r.command), boxWidth-4) {
+		body = append(body, styleDim+line+styleReset)
+	}
+	body = append(body, "")
+	box := dialog{width: boxWidth, title: syntax.Clean(r.title), body: body, hint: keyHints(r.hints...)}
+	if r.danger {
+		box.titleStyle = m.danger()
+	}
+	placeDialog(lines, m.width, box.render())
 }
 
 func (m model) showWorktreeDelete(lines []string) {
@@ -249,6 +298,20 @@ func (m model) errorMaxPos() int {
 	return max(0, len(m.errorLines(min(100, m.width-2)-4))-max(1, m.height-6))
 }
 
+// blockedByChanges recognizes Git refusing a switch, pull, or merge because of
+// uncommitted changes, which the changes view can stash or commit.
+func blockedByChanges(text string) bool {
+	text = strings.ToLower(text)
+	return strings.Contains(text, "commit your changes or stash them") || strings.Contains(text, "commit or stash changes")
+}
+
+func (m model) errorHint() string {
+	if blockedByChanges(m.errorText) {
+		return keyHints("j/k", "scroll", "↵", "show changes", "esc", "dismiss")
+	}
+	return keyHints("j/k", "scroll", "↵/esc", "dismiss")
+}
+
 func (m model) showErrorDialog(lines []string) {
 	boxWidth := min(100, m.width-2)
 	content := m.errorLines(boxWidth - 4)
@@ -267,6 +330,6 @@ func (m model) showErrorDialog(lines []string) {
 		titleStyle: m.danger(),
 		info:       info,
 		body:       content[start : start+visible],
-		hint:       keyHints("j/k", "scroll", "↵/esc", "dismiss"),
+		hint:       m.errorHint(),
 	}.render())
 }

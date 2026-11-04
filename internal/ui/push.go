@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jeffbrennan/pane/internal/git"
 )
@@ -42,7 +44,7 @@ func (m model) finishPushProbe(msg pushProbed) (tea.Model, tea.Cmd) {
 	}
 	if msg.probe.Branch == "" || msg.probe.Upstream != "" {
 		// Detached HEAD keeps Git's own error; an upstream push works as before.
-		return m.runAction("push")
+		return m.runPush("", func(r git.Repo) (string, *git.PushIssue, error) { return r.Push() })
 	}
 	m.busy = false
 	m.push = pushState{branch: msg.probe.Branch, remote: msg.probe.Remote, remotes: msg.probe.Remotes}
@@ -87,5 +89,90 @@ func (m model) confirmPush(always bool) (tea.Model, tea.Cmd) {
 			message = "push.autoSetupRemote enabled globally"
 		}
 		return completed{action: "push", message: message, err: err}
+	}
+}
+
+type pushRejected struct {
+	issue git.PushIssue
+}
+
+// runPush runs push, opening the rejected-push dialog when the remote moved.
+// A non-empty message replaces Git's output in the flash.
+func (m model) runPush(message string, push func(git.Repo) (string, *git.PushIssue, error)) (tea.Model, tea.Cmd) {
+	m.modal = ""
+	m.busy = true
+	m.activeAction = "push"
+	m.generation++
+	repo := m.repo
+	return m, func() tea.Msg {
+		_, issue, err := push(repo)
+		if issue != nil {
+			return pushRejected{issue: *issue}
+		}
+		return completed{message: message, action: "push", err: err}
+	}
+}
+
+func (m model) finishPushRejected(msg pushRejected) (tea.Model, tea.Cmd) {
+	m.busy = false
+	m.activeAction = ""
+	m.pushIssue = msg.issue
+	m.modal = "push-rejected"
+	return m, nil
+}
+
+func (m model) handlePushRejectedKey(key string) (tea.Model, tea.Cmd) {
+	issue := m.pushIssue
+	switch {
+	case key == "esc" || key == "q" || key == "n" || key == "ctrl+c":
+		m.modal = ""
+	case issue.Kind == git.PushRewritten && key == "f":
+		return m.runPush("Force pushed "+issue.Branch, func(r git.Repo) (string, *git.PushIssue, error) {
+			return r.ForcePush(issue)
+		})
+	case issue.Kind == git.PushBehind && (key == "enter" || key == "y"):
+		return m.pullThenPush()
+	}
+	return m, nil
+}
+
+// pullThenPush brings in the remote's new commits before pushing again. A pull
+// that needs a decision stops at its dialog; push again after resolving it.
+func (m model) pullThenPush() (tea.Model, tea.Cmd) {
+	m.modal = ""
+	m.busy = true
+	m.activeAction = "pull"
+	m.generation++
+	repo := m.repo
+	return m, func() tea.Msg {
+		if _, issue, err := repo.Pull(); issue != nil {
+			return pullFailed{issue: *issue}
+		} else if err != nil {
+			return completed{action: "pull", err: err}
+		}
+		_, issue, err := repo.Push()
+		if issue != nil {
+			return pushRejected{issue: *issue}
+		}
+		return completed{message: "Pulled and pushed", action: "push", err: err}
+	}
+}
+
+func pushRecovery(issue git.PushIssue) recovery {
+	upstream := issue.Upstream()
+	if issue.Kind == git.PushRewritten {
+		title := "Force push " + issue.Branch + "?"
+		return recovery{
+			title: title, short: title, commits: issue.Replaced, danger: true,
+			explain: fmt.Sprintf("%s has %s that %s no longer has, likely from an amend or rebase. A force push replaces:", upstream, commitCount(len(issue.Replaced)), issue.Branch),
+			command: "Pane runs git push --force-with-lease, which stops if " + upstream + " changed since.",
+			hints:   []string{"f", "force push", "esc", "cancel"},
+		}
+	}
+	return recovery{
+		title: "Pull before pushing?", short: upstream + " has new commits. Pull, then push?", commits: issue.Replaced,
+		explain: fmt.Sprintf("%s has %s that %s does not:", upstream, commitCount(len(issue.Replaced)), issue.Branch),
+		command: "Pane runs git pull, then git push.",
+		hints:   []string{"↵", "pull and push", "esc", "cancel"},
 	}
 }
