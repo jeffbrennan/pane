@@ -361,3 +361,71 @@ func TestNewBranchPromptUsesTheBranchName(t *testing.T) {
 		}
 	}
 }
+
+func TestDeleteCurrentBranchSwitchesToDefaultFirst(t *testing.T) {
+	r := testRepo(t)
+	writeFile(t, r, "file.txt", "one\n")
+	if _, err := r.Commit("initial"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Command("switch", "-c", "feature/x"); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, r, "untracked.txt", "kept\n")
+	snapshot, err := r.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := model{screen: "branches", repo: r, width: 100, height: 30, snapshot: snapshot}
+	updated, _ := m.confirmDeleteBranch(git.BranchEntry{Name: "feature/x", Current: true}, false)
+	m = updated.(model)
+	if m.modal != "branch-delete" || m.branch.leaveTo != "main" {
+		t.Fatalf("clean current branch: modal=%q leaveTo=%q flash=%q", m.modal, m.branch.leaveTo, m.flash)
+	}
+	if view := plain(m.View()); !strings.Contains(view, "switches to main, then runs git branch -d") {
+		t.Fatalf("dialog does not mention the switch: %q", view)
+	}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	if cmd == nil {
+		t.Fatal("y did not delete")
+	}
+	if msg := cmd().(branchActionDone); msg.err != nil {
+		t.Fatalf("leave and delete: %v", msg.err)
+	}
+	if out, _ := r.Command("symbolic-ref", "--short", "HEAD"); strings.TrimSpace(string(out)) != "main" {
+		t.Fatalf("HEAD is %q, want main", out)
+	}
+	if out, _ := r.Command("rev-parse", "--verify", "--quiet", "refs/heads/feature/x"); len(out) != 0 {
+		t.Fatal("branch still exists")
+	}
+	_ = updated
+}
+
+func TestDeleteCurrentBranchWithChangesRefuses(t *testing.T) {
+	r := testRepo(t)
+	writeFile(t, r, "file.txt", "one\n")
+	if _, err := r.Commit("initial"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Command("switch", "-c", "feature/x"); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, r, "file.txt", "changed\n")
+	snapshot, err := r.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := model{screen: "branches", repo: r, snapshot: snapshot}
+	updated, cmd := m.confirmDeleteBranch(git.BranchEntry{Name: "feature/x", Current: true}, false)
+	m = updated.(model)
+	if cmd != nil || m.modal != "" || !strings.Contains(m.flash, "Commit or stash") {
+		t.Fatalf("dirty current branch: %q %q", m.flash, m.modal)
+	}
+	// The snapshot can be stale, so the Git side checks again.
+	if _, err := r.LeaveAndDeleteBranch("feature/x", "main", false); err == nil || !strings.Contains(err.Error(), "commit or stash") {
+		t.Fatalf("dirty tree was not refused: %v", err)
+	}
+	if out, _ := r.Command("symbolic-ref", "--short", "HEAD"); strings.TrimSpace(string(out)) != "feature/x" {
+		t.Fatalf("refusal still switched to %q", out)
+	}
+}

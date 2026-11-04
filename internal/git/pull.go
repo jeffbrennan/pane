@@ -1,6 +1,7 @@
 package git
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -78,17 +79,66 @@ func (r Repo) defaultBranch(remote string) string {
 // SwitchAndPull leaves a branch whose upstream is gone for the default branch
 // and brings it up to date.
 func (r Repo) SwitchAndPull(gone GoneUpstream) (string, error) {
-	args := []string{"switch", gone.Target}
-	if !r.refExists("refs/heads/" + gone.Target) {
-		args = []string{"switch", "--track", gone.Remote + "/" + gone.Target}
-	}
-	if _, err := r.Action(args...); err != nil {
+	if err := r.switchTo(gone.Target, gone.Remote); err != nil {
 		return "", err
 	}
 	if _, err := r.Action("pull"); err != nil {
 		return "", err
 	}
 	return "Switched to " + gone.Target + " and pulled", nil
+}
+
+// switchTo checks out a local branch, creating it to track remote when only
+// the remote-tracking branch exists.
+func (r Repo) switchTo(target, remote string) error {
+	args := []string{"switch", target}
+	if !r.refExists("refs/heads/"+target) && remote != "" {
+		args = []string{"switch", "--track", remote + "/" + target}
+	}
+	_, err := r.Action(args...)
+	return err
+}
+
+// branchRemote is the remote a branch tracks, or origin when it tracks none.
+func (r Repo) branchRemote(branch string) string {
+	if remote := r.config("branch." + branch + ".remote"); remote != "" && remote != "." {
+		return remote
+	}
+	return "origin"
+}
+
+// DefaultBranchFor names the branch pane leaves for when deleting branch
+// while it is checked out. It is empty when there is nowhere to go.
+func (r Repo) DefaultBranchFor(branch string) string {
+	target := r.defaultBranch(r.branchRemote(branch))
+	if target == branch {
+		return ""
+	}
+	return target
+}
+
+// LeaveAndDeleteBranch switches from the checked-out branch to target, then
+// deletes branch. Staged or unstaged changes to tracked files stop it before
+// anything changes, so they are never carried onto target.
+func (r Repo) LeaveAndDeleteBranch(branch, target string, force bool) (string, error) {
+	out, err := r.CommandStdout("status", "--porcelain", "--untracked-files=no")
+	if err != nil {
+		return "", err
+	}
+	if len(strings.TrimSpace(string(out))) > 0 {
+		return "", fmt.Errorf("commit or stash changes before deleting the checked out branch")
+	}
+	if err := r.switchTo(target, r.branchRemote(branch)); err != nil {
+		return "", err
+	}
+	flag := "-d"
+	if force {
+		flag = "-D"
+	}
+	if _, err := r.Action("branch", flag, branch); err != nil {
+		return "", fmt.Errorf("switched to %s, but %w", target, err)
+	}
+	return "Switched to " + target + " and deleted " + branch, nil
 }
 
 func (r Repo) config(key string) string {

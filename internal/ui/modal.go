@@ -173,7 +173,16 @@ func (m model) showBranchDelete(lines []string) {
 	if m.branch.confirmForce {
 		flag = "-D"
 	}
-	body := []string{"", styleDim + "Pane runs git branch " + flag + "." + styleReset, ""}
+	command := "Pane runs git branch " + flag + "."
+	if m.branch.leaveTo != "" {
+		command = "Pane switches to " + syntax.Clean(m.branch.leaveTo) + ", then runs git branch " + flag + "."
+		boxWidth = min(max(boxWidth, ansi.StringWidth(command)+4), m.width-2)
+	}
+	body := []string{""}
+	for _, line := range wrapWords(command, boxWidth-4) {
+		body = append(body, styleDim+line+styleReset)
+	}
+	body = append(body, "")
 	placeDialog(lines, m.width, dialog{
 		width: boxWidth, title: title, titleStyle: m.danger(), body: body,
 		hint: keyHints("y", "delete", "n/esc", "cancel"),

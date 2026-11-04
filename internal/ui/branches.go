@@ -23,6 +23,9 @@ type branchState struct {
 	newFrom      string
 	confirm      git.BranchEntry
 	confirmForce bool
+	// leaveTo is the branch pane switches to before deleting the checked-out
+	// branch; empty for any other branch.
+	leaveTo string
 }
 
 type branchesLoaded struct {
@@ -214,9 +217,16 @@ func (m model) confirmDeleteBranch(entry git.BranchEntry, force bool) (tea.Model
 		m.flash = "Remote branches cannot be deleted here"
 		return m, nil
 	}
+	m.branch.leaveTo = ""
 	if entry.Current {
-		m.flash = "Cannot delete the checked out branch"
-		return m, nil
+		if m.hasTrackedChanges() {
+			m.flash = "Commit or stash changes before deleting the checked out branch"
+			return m, nil
+		}
+		if m.branch.leaveTo = m.repo.DefaultBranchFor(entry.Name); m.branch.leaveTo == "" {
+			m.flash = "Cannot delete the checked out branch"
+			return m, nil
+		}
 	}
 	if entry.Worktree != "" {
 		m.flash = "Checked out in " + entry.Worktree
@@ -273,7 +283,24 @@ func (m model) createBranch(name, from string) (tea.Model, tea.Cmd) {
 	})
 }
 
+// hasTrackedChanges ignores untracked files, which survive a branch switch.
+func (m model) hasTrackedChanges() bool {
+	for _, changes := range [][]git.Change{m.snapshot.Staged, m.snapshot.Unstaged} {
+		for _, c := range changes {
+			if !c.Untracked {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (m model) deleteBranch(entry git.BranchEntry, force bool) (tea.Model, tea.Cmd) {
+	if target := m.branch.leaveTo; target != "" {
+		return m.runBranchAction("Switched to "+target+" and deleted "+entry.Name, false, func(r git.Repo) (string, error) {
+			return r.LeaveAndDeleteBranch(entry.Name, target, force)
+		})
+	}
 	flag := "-d"
 	if force {
 		flag = "-D"

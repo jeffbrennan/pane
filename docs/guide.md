@@ -373,7 +373,8 @@ Press `b` in history to list branches with their upstream state, last commit,
 and subject; branches checked out in another worktree are marked `⌂`. Enter
 switches, `n` creates a branch from the selection, `w` creates a worktree for
 it, `d` deletes with confirmation, `r` includes remote branches, `y` copies the
-name, and `/` filters.
+name, and `/` filters. Deleting the checked-out branch first switches to the
+default branch, and only when tracked files have no uncommitted changes.
 
 Press `tab` for worktrees, which show dirty counts and last activity, sorted
 most recent first; Enter moves this pane into a worktree, `n` creates one using
