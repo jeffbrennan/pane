@@ -65,9 +65,11 @@ by its size and by how many files it touched, with a 90-day half-life, so a
 fixture dump does not outrank a file people keep editing. The tree opens one
 level deep and merges single-child directories. Rows show the activity bar,
 distinct commits, people, last change, and the top two owners, with a detail
-line for the selection. The hotspot keys below cycle the window and reveal
-generated and vendored files. Tests and docs rank below
-source, and paths deleted inside the window are dropped.
+line for the selection. Bots are not people to ask: they stay listed and dimmed
+in the authors view, but they are left out of the people counts and out of the
+owners column unless an area has no human author at all. The hotspot keys below
+cycle the window and reveal generated and vendored files. Tests and docs rank
+below source, and paths deleted inside the window are dropped.
 
 Results are cached in `~/Library/Caches/pane` as per-commit numstat, so
 reopening is instant and after HEAD moves only the new commits are read.
@@ -315,7 +317,8 @@ ten body rows so long squash-merge descriptions do not push the diff away.
 
 In a commit, `gb` on a context or removed line blames it against the first
 parent and opens the commit that last touched it, selecting the file and line.
-`ctrl-o` returns to where you were.
+`ctrl-o` returns to where you were. On an added line there is nothing to blame
+in the parent, so `gb` instead names the author and age of the commit on screen.
 
 `Y` copies the new-side `path:line` in working-tree and base diffs; on a deleted
 line it uses the nearest new-side line. In commit and multi-commit diffs, it

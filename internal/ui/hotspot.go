@@ -351,8 +351,12 @@ func (d *hotDirStat) record(hash, author string, weight float64, when time.Time,
 		d.class = hotVendored
 	}
 	d.commits[hash] = true
-	d.authors[author] = true
+	// Bots stay in owners so a bot-only area can still name someone; hotOwners
+	// drops them when a human is available.
 	d.owners[author] += weight
+	if !isBotAuthor(author) {
+		d.authors[author] = true
+	}
 	if when.After(d.last) {
 		d.last = when
 	}
@@ -528,7 +532,8 @@ func topDir(path string) string {
 	return "."
 }
 
-const hotCacheVersion = 3
+// 4: bots no longer count as people or owners in the cached summary.
+const hotCacheVersion = 4
 
 type hotCache struct {
 	Version  int                  `json:"version"`
@@ -891,15 +896,25 @@ func hotOwners(owners map[string]float64) []hotOwnerShare {
 	if len(owners) == 0 {
 		return nil
 	}
-	var total float64
-	names := make([]string, 0, len(owners))
+	humans := make(map[string]float64, len(owners))
 	for name, share := range owners {
+		if !isBotAuthor(name) {
+			humans[name] = share
+		}
+	}
+	if len(humans) == 0 {
+		// A bot-only area has no one else to name, so the bot stays.
+		humans = owners
+	}
+	var total float64
+	names := make([]string, 0, len(humans))
+	for name, share := range humans {
 		total += share
 		names = append(names, name)
 	}
 	sort.Slice(names, func(i, j int) bool {
-		if owners[names[i]] != owners[names[j]] {
-			return owners[names[i]] > owners[names[j]]
+		if humans[names[i]] != humans[names[j]] {
+			return humans[names[i]] > humans[names[j]]
 		}
 		return names[i] < names[j]
 	})
@@ -908,9 +923,21 @@ func hotOwners(owners map[string]float64) []hotOwnerShare {
 	}
 	var result []hotOwnerShare
 	for _, name := range names[:min(2, len(names))] {
-		result = append(result, hotOwnerShare{name: name, share: int(math.Round(owners[name] / total * 100))})
+		result = append(result, hotOwnerShare{name: name, share: int(math.Round(humans[name] / total * 100))})
 	}
 	return result
+}
+
+// Bots stay in the author maps so the author filter still reaches their
+// commits, but they are not people to ask about an area.
+func hotHumanCount[T any](authors map[string]T) int {
+	count := 0
+	for name := range authors {
+		if !isBotAuthor(name) {
+			count++
+		}
+	}
+	return count
 }
 
 func buildHotItems(files []hotFile, dirs map[string]*hotDirStat, sortPath bool, state hotTreeState, authorFilter string) []hotItem {
@@ -990,7 +1017,7 @@ func buildHotItems(files []hotFile, dirs map[string]*hotDirStat, sortPath bool, 
 				node.owner = node.owners[0].name
 			}
 			node.score, node.commits, node.churn, node.last = node.file.score, node.file.commits, node.file.added+node.file.deleted, node.file.last
-			node.people, node.class = len(node.file.authors), node.file.class
+			node.people, node.class = hotHumanCount(node.file.authors), node.file.class
 			return node.score, node.commits, node.churn, node.last, node.owner, node.class, node.people, node.owners
 		}
 		node.class = hotVendored
@@ -1184,10 +1211,21 @@ func hotAge(when time.Time, now time.Time) string {
 }
 
 func formatCount(n int) string {
-	if n < 1000 {
-		return fmt.Sprintf("%d", n)
+	if n < 0 {
+		return "-" + formatCount(-n)
 	}
-	return fmt.Sprintf("%d,%03d", n/1000, n%1000)
+	digits := strconv.Itoa(n)
+	if len(digits) <= 3 {
+		return digits
+	}
+	var grouped strings.Builder
+	for i, digit := range digits {
+		if i > 0 && (len(digits)-i)%3 == 0 {
+			grouped.WriteByte(',')
+		}
+		grouped.WriteRune(digit)
+	}
+	return grouped.String()
 }
 
 func hotOwnersText(owners []hotOwnerShare) string {
@@ -1316,7 +1354,7 @@ func (m model) hotFileItems() []hotItem {
 		}
 		items = append(items, hotItem{
 			path: file.path, name: file.path, file: &file, class: file.class, score: file.score,
-			commits: file.commits, people: len(file.authors), churn: file.added + file.deleted,
+			commits: file.commits, people: hotHumanCount(file.authors), churn: file.added + file.deleted,
 			last: file.last, owners: hotOwners(owners),
 		})
 	}
@@ -1381,7 +1419,7 @@ func (m model) hotView() string {
 			commits += author.commits
 		}
 	}
-	title := fmt.Sprintf(" hotspots · %s · %s commits · %s", m.hotWindowLabel(), formatCount(commits), hotPeople(len(m.hotspots.authors)))
+	title := fmt.Sprintf(" hotspots · %s · %s commits · %s", m.hotWindowLabel(), formatCount(commits), hotPeople(hotHumanCount(m.hotspots.authors)))
 	if m.hotspots.authorFilter != "" {
 		title = fmt.Sprintf(" hotspots · %s · %s commits · by %s", m.hotWindowLabel(), formatCount(commits), m.hotspots.authorFilter)
 	}

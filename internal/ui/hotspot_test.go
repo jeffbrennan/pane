@@ -744,3 +744,63 @@ func TestHotspotNarrowFooterAndDetailUseEllipsis(t *testing.T) {
 		t.Fatalf("truncateCell: %q", got)
 	}
 }
+
+func TestFormatCountGroupsEveryThreeDigits(t *testing.T) {
+	cases := map[int]string{
+		0:        "0",
+		7:        "7",
+		999:      "999",
+		1000:     "1,000",
+		1234:     "1,234",
+		12345:    "12,345",
+		3893830:  "3,893,830",
+		-3893830: "-3,893,830",
+	}
+	for n, want := range cases {
+		if got := formatCount(n); got != want {
+			t.Fatalf("formatCount(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
+func TestHotspotBotsAreNotPeopleOrOwners(t *testing.T) {
+	now := time.Now()
+	when := now.Unix()
+	commits := []git.HotCacheCommit{
+		git.NewHotCacheCommit("a", when, "robobun", []git.HotCacheChange{{Path: "src/huge.rs", Added: 9000}}),
+		git.NewHotCacheCommit("b", when, "Dylan Conway", []git.HotCacheChange{{Path: "src/huge.rs", Added: 20}}),
+	}
+	files, _, dirs, _ := aggregateHotspots(commits, git.PathMarks{}, 0, now)
+	if len(files) != 1 {
+		t.Fatalf("files: %#v", files)
+	}
+	if got := len(files[0].authors); got != 2 {
+		t.Fatalf("the bot must stay in the author map so the filter reaches it, got %d", got)
+	}
+	if got := hotHumanCount(files[0].authors); got != 1 {
+		t.Fatalf("file people = %d, want 1", got)
+	}
+	stat := dirs["src"]
+	if stat == nil {
+		t.Fatal("no src directory")
+	}
+	if got := len(stat.authors); got != 1 {
+		t.Fatalf("directory people = %d, want 1", got)
+	}
+	owners := hotOwners(stat.owners)
+	if len(owners) != 1 || owners[0].name != "Dylan Conway" || owners[0].share != 100 {
+		t.Fatalf("owners = %#v, want Dylan Conway alone at 100%%", owners)
+	}
+}
+
+func TestHotspotBotOnlyAreaStillNamesTheBot(t *testing.T) {
+	now := time.Now()
+	commits := []git.HotCacheCommit{
+		git.NewHotCacheCommit("a", now.Unix(), "robobun", []git.HotCacheChange{{Path: "tools/x.rs", Added: 10}}),
+	}
+	_, _, dirs, _ := aggregateHotspots(commits, git.PathMarks{}, 0, now)
+	owners := hotOwners(dirs["tools"].owners)
+	if len(owners) != 1 || owners[0].name != "robobun" {
+		t.Fatalf("owners = %#v, want the bot when there is nobody else", owners)
+	}
+}
