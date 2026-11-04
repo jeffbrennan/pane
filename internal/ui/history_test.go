@@ -654,19 +654,57 @@ func TestHistoryIsTheRootWhenPaneStartsThere(t *testing.T) {
 
 func TestHistoryToggleCollapsesMerges(t *testing.T) {
 	r := testRepo(t)
-	m := model{repo: r, width: 80, height: 12, screen: "history", history: historyState{commits: []git.CommitInfo{{Hash: "a"}, {Hash: "b"}}, list: listState{selected: 1}}}
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
-	m = updated.(model)
-	if !m.repo.FirstParent || !m.history.loading || m.history.commits != nil || m.history.list.selected != 0 || cmd == nil {
-		t.Fatalf("collapse: firstParent=%v loading=%v commits=%d selected=%d", m.repo.FirstParent, m.history.loading, len(m.history.commits), m.history.list.selected)
+	run := func(args ...string) {
+		t.Helper()
+		if out, err := r.Command(args...); err != nil {
+			t.Fatalf("git %v: %s: %v", args, out, err)
+		}
 	}
-	if strings.Contains(plain(strings.Join(m.historyHeader(), "\n")), "merges expanded") {
-		t.Fatalf("collapsed header: %q", m.historyHeader())
+	commit := func(path, message, date string) {
+		t.Helper()
+		writeFile(t, r, path, message+"\n")
+		run("add", path)
+		run("-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", message, "--date", date)
 	}
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
-	m = updated.(model)
-	if m.repo.FirstParent {
-		t.Fatal("second toggle should expand merges")
+	t.Setenv("GIT_COMMITTER_DATE", "2024-01-01T00:00:00")
+	commit("a", "base", "2024-01-01T00:00:00")
+	run("checkout", "-q", "-b", "feature")
+	t.Setenv("GIT_COMMITTER_DATE", "2024-01-02T00:00:00")
+	commit("b", "feature one", "2024-01-02T00:00:00")
+	t.Setenv("GIT_COMMITTER_DATE", "2024-01-03T00:00:00")
+	commit("c", "feature two", "2024-01-03T00:00:00")
+	run("checkout", "-q", "-")
+	t.Setenv("GIT_COMMITTER_DATE", "2024-01-04T00:00:00")
+	run("merge", "-q", "--no-ff", "-m", "merge feature", "feature")
+	t.Setenv("GIT_COMMITTER_DATE", "2024-01-05T00:00:00")
+	commit("d", "latest", "2024-01-05T00:00:00")
+
+	m := model{repo: r, width: 80, height: 20}
+	updated, cmd := m.openHistory()
+	m = drainBase(t, updated.(model), cmd)
+	toggle := func() {
+		t.Helper()
+		updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+		m = drainBase(t, updated.(model), cmd)
+	}
+	subjects := func() []string {
+		var out []string
+		for _, c := range m.history.commits {
+			out = append(out, c.Subject)
+		}
+		return out
+	}
+	if got := strings.Join(subjects(), ","); got != "latest,merge feature,feature two,feature one,base" {
+		t.Fatalf("expanded: %s", got)
+	}
+	m.history.list.selected = 3 // feature one
+	toggle()
+	if !m.repo.FirstParent || strings.Join(subjects(), ",") != "latest,merge feature,base" || m.history.list.selected != 1 {
+		t.Fatalf("collapsed: %v selected=%d", subjects(), m.history.list.selected)
+	}
+	toggle()
+	if m.repo.FirstParent || m.history.commits[m.history.list.selected].Subject != "merge feature" {
+		t.Fatalf("expanded again: selected %d of %v", m.history.list.selected, subjects())
 	}
 	if !strings.Contains(plain(strings.Join(m.historyHeader(), "\n")), "merges expanded") {
 		t.Fatalf("expanded header: %q", m.historyHeader())

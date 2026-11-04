@@ -17,17 +17,21 @@ import (
 )
 
 type historyState struct {
-	commitContext                     context.Context
-	commitCancel                      context.CancelFunc
-	streamPaths                       []string
-	streamError                       string
-	streamLoaded, streamGutter        int
-	streamActive, streamEndPending    bool
-	stream                            *git.HistoryStream
-	commits                           []git.CommitInfo
-	statsCache                        map[string]git.CommitInfo
-	mergeCounts                       map[string]int
-	mergeCountsFetching               bool
+	commitContext                  context.Context
+	commitCancel                   context.CancelFunc
+	streamPaths                    []string
+	streamError                    string
+	streamLoaded, streamGutter     int
+	streamActive, streamEndPending bool
+	stream                         *git.HistoryStream
+	commits                        []git.CommitInfo
+	statsCache                     map[string]git.CommitInfo
+	mergeCounts                    map[string]int
+	mergeCountsFetching            bool
+	// reselect lists the selected commit and those above it, newest last, so
+	// a reload can land on the same commit or the nearest one still shown.
+	reselect                          []string
+	reselectRow                       int
 	changes                           []git.Change
 	rows                              []row
 	viewedFiles, totalFiles           int
@@ -272,6 +276,7 @@ func (m model) openHistory() (tea.Model, tea.Cmd) {
 	m.pickerReturn, m.pickerBackToHistory = false, false
 	m.history.commits = nil
 	m.history.list = listState{}
+	m.history.reselect = nil
 	m.pending = ""
 	m, cmd := m.reloadHistory()
 	return m, tea.Batch(cmd, m.loadWorktreeHeads())
@@ -450,6 +455,24 @@ func (m model) loadMoreHistory() (model, tea.Cmd) {
 	return m, m.fetchHistory(len(m.history.commits), limit)
 }
 
+// restoreSelection moves the cursor to the first reselect commit present in
+// the list. It reports false when none is loaded yet.
+func (m *model) restoreSelection() bool {
+	index := make(map[string]int)
+	for i, c := range m.filteredHistory() {
+		index[c.Hash] = i
+	}
+	for _, hash := range m.history.reselect {
+		if i, ok := index[hash]; ok {
+			m.history.list.selected = i
+			m.history.list.offset = max(0, i-m.history.reselectRow)
+			m.history.reselect = nil
+			return true
+		}
+	}
+	return false
+}
+
 func (m model) historyQuery() string { return m.history.list.filter }
 
 func (m model) filteredHistory() []git.CommitInfo {
@@ -622,8 +645,14 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.flash = "Merges collapsed"
 		}
 		m.history.visualActive = false
-		m.history.commits = nil
-		m.history.list.reset()
+		m.history.reselect, m.history.reselectRow = nil, 0
+		if len(matches) > 0 {
+			selected := min(m.history.list.selected, len(matches)-1)
+			for i := selected; i >= 0; i-- {
+				m.history.reselect = append(m.history.reselect, matches[i].Hash)
+			}
+			m.history.reselectRow = selected - min(m.history.list.offset, selected)
+		}
 		return m.reloadHistory()
 
 	}
