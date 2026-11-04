@@ -108,6 +108,7 @@ then the shared motion, finding, acting, and toggle grammar.
 | `X` | Open hotspots for the last year |
 | `R` | Review from this commit to the working tree |
 | `V` | Select a commit range to review |
+| `m` | Collapse / expand merged commits |
 
 In a commit, `)` and `(` open the next and previous commit without leaving the
 view. In a range review they move to the next and previous commit's header,

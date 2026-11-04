@@ -38,6 +38,7 @@ var shortcutSections = []shortcutSection{
 		{"X", "Open hotspots for the last year"},
 		{"R", "Review from this commit to the working tree"},
 		{"V", "Select a commit range to review"},
+		{"m", "Collapse / expand merged commits"},
 	}},
 	{"Stashes", []string{"stashes"}, []shortcut{
 		{"↵ / space", "View stash"},

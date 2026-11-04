@@ -78,6 +78,13 @@ func stateBadges(parts ...string) string {
 	return strings.Join(out, styleDim+" · "+styleReset)
 }
 
+func (m model) mergesBadge() string {
+	if !m.repo.FirstParent {
+		return "merges expanded"
+	}
+	return ""
+}
+
 func (m model) whitespaceBadge() string {
 	if m.repo.IgnoreSpace {
 		return "ignoring whitespace"

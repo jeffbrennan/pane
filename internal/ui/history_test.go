@@ -651,3 +651,24 @@ func TestHistoryIsTheRootWhenPaneStartsThere(t *testing.T) {
 		t.Fatalf("escape did not return to the changes view: screen=%q", updated.(model).screen)
 	}
 }
+
+func TestHistoryToggleCollapsesMerges(t *testing.T) {
+	r := testRepo(t)
+	m := model{repo: r, width: 80, height: 12, screen: "history", history: historyState{commits: []git.CommitInfo{{Hash: "a"}, {Hash: "b"}}, list: listState{selected: 1}}}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m = updated.(model)
+	if !m.repo.FirstParent || !m.history.loading || m.history.commits != nil || m.history.list.selected != 0 || cmd == nil {
+		t.Fatalf("collapse: firstParent=%v loading=%v commits=%d selected=%d", m.repo.FirstParent, m.history.loading, len(m.history.commits), m.history.list.selected)
+	}
+	if strings.Contains(plain(strings.Join(m.historyHeader(), "\n")), "merges expanded") {
+		t.Fatalf("collapsed header: %q", m.historyHeader())
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m = updated.(model)
+	if m.repo.FirstParent {
+		t.Fatal("second toggle should expand merges")
+	}
+	if !strings.Contains(plain(strings.Join(m.historyHeader(), "\n")), "merges expanded") {
+		t.Fatalf("expanded header: %q", m.historyHeader())
+	}
+}

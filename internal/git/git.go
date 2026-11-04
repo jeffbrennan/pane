@@ -46,6 +46,8 @@ type Repo struct {
 	CommandHook func([]string)
 	Context     context.Context
 	IgnoreSpace bool
+	// FirstParent collapses merged branches in history to their merge commit.
+	FirstParent bool
 	Stats       *StatsStore
 	// UntrackedCache turns on Git's untracked cache for status, which
 	// otherwise walks every directory for untracked files. It is set only
@@ -90,6 +92,7 @@ func OpenRepository() (Repo, error) {
 	// Commit counts are the same in every worktree, so share the cache by the
 	// repository's common directory instead of the worktree root.
 	r.Root, r.Stats = root, newStatsStore(commonDir)
+	r.FirstParent = true
 	return r, nil
 }
 

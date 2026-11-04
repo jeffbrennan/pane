@@ -586,6 +586,16 @@ func (m model) handleHistoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "V":
 		m.history.visualActive = !m.history.visualActive
 		m.history.visualAnchor = m.history.list.selected
+	case "m":
+		m.repo.FirstParent = !m.repo.FirstParent
+		m.flash = "Showing merged commits"
+		if m.repo.FirstParent {
+			m.flash = "Merges collapsed"
+		}
+		m.history.visualActive = false
+		m.history.commits = nil
+		m.history.list.reset()
+		return m.reloadHistory()
 
 	}
 	return m, nil
