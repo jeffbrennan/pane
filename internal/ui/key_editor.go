@@ -14,8 +14,11 @@ import (
 // keyEditorState is the key editor inside the shortcuts dialog. While
 // capturing, the next key pressed becomes the selected action's key.
 type keyEditorState struct {
-	open      bool
-	list      listState
+	open bool
+	list listState
+	// top is the first visible display row, counting scope headers, since
+	// list.offset counts only bindings.
+	top       int
 	capturing bool
 	adding    bool
 	// swap holds a captured key that is already bound in the same scope
@@ -39,6 +42,40 @@ func (m model) editorBindings() []binding {
 		}
 	}
 	return matches
+}
+
+// editorRows lays out matches under a header for each scope. A header row
+// is -1; any other row is an index into matches.
+func editorRows(matches []binding) []int {
+	var rows []int
+	for i, b := range matches {
+		if i == 0 || matches[i-1].scope != b.scope {
+			rows = append(rows, -1)
+		}
+		rows = append(rows, i)
+	}
+	return rows
+}
+
+// keyEditorPage is the number of display rows below the status line.
+func keyEditorPage(height int) int { return max(1, helpVisibleRows(height)-1) }
+
+// keyEditorTop returns the first visible row that keeps the selected binding
+// in view, moving the viewport only when the selection leaves it. A binding
+// at the top of its scope brings its header into view with it.
+func keyEditorTop(rows []int, selected, top, page int) int {
+	row := slices.Index(rows, selected)
+	if row < 0 {
+		return 0
+	}
+	if row > 0 && rows[row-1] == -1 && row-1 < top {
+		top = row - 1
+	}
+	top = min(top, row)
+	if row >= top+page {
+		top = row - page + 1
+	}
+	return max(0, min(top, len(rows)-page))
 }
 
 // bindingKeys lists every key bound to id, as the editor shows them.
@@ -65,7 +102,8 @@ func (m model) handleKeyEditorKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return index
 	}
 	p := m.listPress(&editor.list, key, scopeKeys)
-	if m.handleListKey(&editor.list, p, len(matches), helpVisibleRows(m.height)-1, groups) {
+	if m.handleListKey(&editor.list, p, len(matches), keyEditorPage(m.height), groups) {
+		editor.top = keyEditorTop(editorRows(m.editorBindings()), editor.list.selected, editor.top, keyEditorPage(m.height))
 		return m, nil
 	}
 	editor.message = ""
@@ -216,13 +254,10 @@ func (m model) showKeyEditor(lines []string) {
 	inner := max(1, boxWidth-4)
 	editor := m.keyEditor
 	matches := m.editorBindings()
-	visible := max(1, helpVisibleRows(len(lines))-1)
+	visible := keyEditorPage(len(lines))
 	selected := min(editor.list.selected, max(0, len(matches)-1))
-	offset, _ := listViewport(editor.list, len(matches), visible)
-	scopeWidth := 0
-	for _, title := range scopeTitles {
-		scopeWidth = max(scopeWidth, stringWidth(title))
-	}
+	rows := editorRows(matches)
+	top := keyEditorTop(rows, selected, editor.top, visible)
 	var body []string
 	switch {
 	case editor.list.filtering:
@@ -240,7 +275,13 @@ func (m model) showKeyEditor(lines []string) {
 		}
 		body = append(body, styleDim+"Saved to "+path+styleReset)
 	}
-	for i := offset; i < min(len(matches), offset+visible); i++ {
+	for r := top; r < min(len(rows), top+visible); r++ {
+		i := rows[r]
+		if i < 0 {
+			title := scopeTitles[matches[rows[r+1]].scope]
+			body = append(body, styleBold+m.accent()+title+styleReset)
+			continue
+		}
 		b := matches[i]
 		keys := bindingKeys(b.id())
 		if keys == "" {
@@ -249,15 +290,13 @@ func (m model) showKeyEditor(lines []string) {
 		if !slices.Equal(activeKeys.keys[b.id()], b.keys) {
 			keys += " *"
 		}
-		scope := scopeTitles[b.scope]
 		marker := "  "
 		if i == selected {
 			marker = m.accent() + "› " + styleReset
 		}
-		descWidth := max(1, inner-2-scopeWidth-2-stringWidth(keys)-2)
+		descWidth := max(1, inner-2-stringWidth(keys)-2)
 		description := sliceWidth(b.description, 0, descWidth)
-		row := marker + styleDim + scope + strings.Repeat(" ", scopeWidth-stringWidth(scope)) + styleReset + "  " +
-			description + strings.Repeat(" ", max(0, descWidth-stringWidth(description))) + "  " + m.accent() + keys + styleReset
+		row := marker + description + strings.Repeat(" ", max(0, descWidth-stringWidth(description))) + "  " + m.accent() + keys + styleReset
 		body = append(body, row)
 	}
 	info := fmt.Sprintf("%d/%d", min(selected+1, len(matches)), len(matches))

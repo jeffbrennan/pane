@@ -219,3 +219,26 @@ func TestKeyEditorRefusesSequenceStarts(t *testing.T) {
 		t.Fatalf("g was bound: %q %q", activeKeys.keys["wrap"], m.keyEditor.message)
 	}
 }
+
+func TestKeyEditorGroupsByScopeAndKeepsItsViewport(t *testing.T) {
+	useKeys(t, nil)
+	m := model{width: 100, height: 30, rows: []row{{text: "x"}}}
+	m = send(t, m, "?", "e")
+	view := plain(m.View())
+	if strings.Count(view, "Everywhere") != 1 {
+		t.Fatalf("scope should be a single header:\n%s", view)
+	}
+	m = send(t, m, "G")
+	if !strings.Contains(plain(m.View()), "Key editor") {
+		t.Fatal("last scope's header is not shown")
+	}
+	top := m.keyEditor.top
+	m = send(t, m, "k", "k", "k")
+	if m.keyEditor.top != top {
+		t.Fatalf("viewport moved from %d to %d while the cursor stayed in view", top, m.keyEditor.top)
+	}
+	m = send(t, m, "g", "g")
+	if m.keyEditor.top != 0 {
+		t.Fatalf("top did not show the first header: %d", m.keyEditor.top)
+	}
+}

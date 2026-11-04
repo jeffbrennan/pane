@@ -80,8 +80,10 @@ func (m *model) handleListKey(l *listState, p keyPress, n, page int, groups func
 			return false
 		case "down", "ctrl+n":
 			l.selected = min(l.selected+1, last)
+			l.offset, _ = listViewport(*l, n, page)
 		case "up", "ctrl+p":
 			l.selected = max(0, l.selected-1)
+			l.offset, _ = listViewport(*l, n, page)
 		default:
 			before := l.draft
 			l.draft, l.draftCursor, _ = editLine(l.draft, l.draftCursor, keyString, listRunes(p.key))
@@ -147,6 +149,9 @@ func (m *model) handleListKey(l *listState, p keyPress, n, page int, groups func
 		return false
 	}
 	l.selected = min(max(0, l.selected), last)
+	// Keep the viewport where it is so the cursor moves within it, scrolling
+	// only once the cursor reaches an edge.
+	l.offset, _ = listViewport(*l, n, page)
 	return true
 }
 
