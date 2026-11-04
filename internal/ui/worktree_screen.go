@@ -141,9 +141,9 @@ func (m model) worktreeView() string {
 		path := git.WorktreeDisplayPath(m.worktrees.entries, entry.Path)
 		lines = append(lines, m.listRow(i, selected, len(entries), here+" "+path+"  "+strings.Join(parts, "  "), ""))
 	}
-	actions := []shortcut{{"↵", "switch"}, {"n", "new"}, {"d", "remove"}}
+	actions := []shortcut{hint("switch", "open"), hint("new", "worktrees.new-worktree"), hint("remove", "worktrees.delete")}
 	if m.anyPrunable() {
-		actions = append(actions, shortcut{"p", "prune"})
+		actions = append(actions, hint("prune", "worktrees.prune"))
 	}
 	status := ""
 	if filter := m.worktrees.list.listStatus(m.width); filter != "" {
@@ -164,42 +164,42 @@ func (m model) worktreeView() string {
 }
 
 func (m model) handleWorktreeKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
-	keyString := key.String()
 	entries := m.sortedWorktrees()
-	if m.handleListKey(&m.worktrees.list, key.String(), listRunes(key), len(entries), max(1, m.height-2), nil) {
+	p := m.listPress(&m.worktrees.list, key, scopeWorktrees)
+	if m.handleListKey(&m.worktrees.list, p, len(entries), max(1, m.height-2), nil) {
 		return m, nil
 	}
-	switch keyString {
-	case "esc", "q":
+	if next, cmd, ok := m.handleSharedAction(p); ok {
+		return next, cmd
+	}
+	switch p.action {
+	case actBack, actQuit:
 		m.screen = "history"
 		return m, nil
-	case "ctrl+c":
+	case actInterrupt:
 		return m, tea.Quit
-	case "?":
-		m.modal = "help"
-		m.help.reset()
-	case "tab":
+	case actSwitchView:
 		return m.openBranches()
-	case "r":
+	case actRefresh:
 		m.worktrees.loading = true
 		m.worktrees.request++
 		return m, m.loadWorktrees()
-	case "y":
+	case actCopy:
 		if len(entries) > 0 {
 			path := entries[min(m.worktrees.list.selected, len(entries)-1)].Path
 			return m, copyCmd(path, path)
 		}
-	case "enter":
+	case actOpen:
 		if len(entries) > 0 {
 			return m.switchWorktree(entries[min(m.worktrees.list.selected, len(entries)-1)].Path)
 		}
-	case "n":
+	case actNewWorktree:
 		return m.promptNewWorktree("", "", false)
-	case "d", "D":
+	case actDelete, actForceDelete:
 		if len(entries) > 0 {
-			return m.confirmRemoveWorktree(entries[min(m.worktrees.list.selected, len(entries)-1)], keyString == "D")
+			return m.confirmRemoveWorktree(entries[min(m.worktrees.list.selected, len(entries)-1)], p.action == actForceDelete)
 		}
-	case "p":
+	case actPrune:
 		if m.anyPrunable() {
 			return m.runWorktreeAction("Pruned worktrees", func(r git.Repo) (string, error) {
 				return r.Action("worktree", "prune")

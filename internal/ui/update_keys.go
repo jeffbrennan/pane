@@ -12,19 +12,55 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.modal != "" {
 		return m.handleModal(msg)
 	}
-	if msg.String() == "L" && m.pending == "" && (m.screen == "" || m.screen == "commit" || m.screen == "base" || m.screen == "sequence") {
-		return m.openFileHistory()
+	switch m.screen {
+	case "":
+		return m.handleChangesKey(msg)
+	case "stashes":
+		return m.handleStashKey(msg)
+	case "branches":
+		return m.handleBranchKey(msg)
+	case "worktrees":
+		return m.handleWorktreeKey(msg)
+	case "hotspots":
+		return m.handleHotspotKey(msg)
+	case "sequence":
+		return m.handleSequenceKey(msg)
 	}
-	if msg.String() == "F" && m.pending == "" && !(m.screen == "history" && m.history.list.filtering) {
+	updated, cmd := m.handleHistoryKey(msg)
+	next := updated.(model)
+	next.revealHistorySelection()
+	next, more := next.loadHistoryBackground()
+	if more == nil {
+		return next, cmd
+	}
+	if cmd == nil {
+		return next, more
+	}
+	return next, tea.Batch(cmd, more)
+}
+
+// diffScreen reports whether the current screen shows a diff.
+func (m model) diffScreen() bool {
+	return m.screen == "" || m.screen == "commit" || m.screen == "base" || m.screen == "sequence"
+}
+
+// handleSharedAction handles the toggles and actions that work the same way
+// on every screen. It reports whether it handled p.
+func (m model) handleSharedAction(p keyPress) (tea.Model, tea.Cmd, bool) {
+	switch {
+	case p.action == actFileHistory && m.diffScreen():
+		next, cmd := m.openFileHistory()
+		return next, cmd, true
+	case p.action == actFetch:
 		if !m.busy {
-			return m.startFetch()
+			next, cmd := m.startFetch()
+			return next, cmd, true
 		}
-		return m, nil
-	}
-	if msg.String() == "W" && m.pending == "" && (m.screen == "" || m.screen == "commit" || m.screen == "sequence" || m.screen == "base") {
-		return m.toggleWhitespace()
-	}
-	if msg.String() == "B" && m.pending == "" && (m.screen == "" || m.screen == "commit" || m.screen == "sequence" || m.screen == "base") {
+		return m, nil, true
+	case p.action == actWhitespace && m.diffScreen():
+		next, cmd := m.toggleWhitespace()
+		return next, cmd, true
+	case p.action == actShortPaths && m.diffScreen():
 		m.shortPaths = !m.shortPaths
 		m.flash = "Full paths"
 		if m.shortPaths {
@@ -35,72 +71,63 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.rebuild()
 		}
-		return m, nil
-	}
-	if msg.String() == "T" && m.pending == "" && !(m.screen == "history" && m.history.list.filtering) {
+		return m, nil, true
+	case p.action == actTheme:
 		m.lightTheme = !m.lightTheme
 		m.themeAuto = false
 		m.flash = "Dark colors"
 		if m.lightTheme {
 			m.flash = "Light colors"
 		}
+		return m, nil, true
+	case p.action == actHelp:
+		m.modal = "help"
+		m.help.reset()
+		return m, nil, true
+	}
+	return m, nil, false
+}
+
+// foldKey names the fold direction the context and header toggles take.
+func foldKey(a action) string {
+	if a == actFold {
+		return "h"
+	}
+	return "l"
+}
+
+func (m model) handleChangesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	p := m.press(msg, scopeChanges)
+	if next, cmd, ok := m.handleSharedAction(p); ok {
+		return next, cmd
+	}
+	if (p.action == actFold || p.action == actUnfold) && m.onDiffFile() {
+		return m.changeContext(foldKey(p.action))
+	}
+	if m.handleDiffNavigation(p) || m.handleDiffTool(p) {
 		return m, nil
 	}
-	if m.screen != "" {
-		if m.screen == "stashes" {
-			return m.handleStashKey(msg)
-		}
-		if m.screen == "branches" {
-			return m.handleBranchKey(msg)
-		}
-		if m.screen == "worktrees" {
-			return m.handleWorktreeKey(msg)
-		}
-		if m.screen == "hotspots" {
-			return m.handleHotspotKey(msg)
-		}
-		if m.screen == "sequence" {
-			return m.handleSequenceKey(msg)
-		}
-		updated, cmd := m.handleHistoryKey(msg)
-		next := updated.(model)
-		next.revealHistorySelection()
-		next, more := next.loadHistoryBackground()
-		if more == nil {
-			return next, cmd
-		}
-		if cmd == nil {
-			return next, more
-		}
-		return next, tea.Batch(cmd, more)
-	}
-	if m.pending == "" && (msg.String() == "h" || msg.String() == "l") && m.onDiffFile() {
-		return m.changeContext(msg.String())
-	}
-	if m.handleDiffNavigation(msg.String()) || m.handleDiffTool(msg.String()) {
-		return m, nil
-	}
-	switch msg.String() {
-	case "o":
+	switch p.action {
+	case actEditor:
 		return m.openEditor()
-	case "y":
+	case actCopy:
 		if len(m.rows) > 0 {
 			path := m.rows[m.pos].path
 			return m, copyCmd(path, path)
 		}
-	case "Y":
+	case actCopyLocation:
 		return m, m.copyDiffLocation("")
-	case "esc", "q":
+	case actBack, actQuit:
 		if m.pickerReturn {
 			m.restorePicker()
 			return m, nil
 		}
-		if msg.String() == "q" {
+		if p.action == actQuit {
 			return m, tea.Quit
 		}
-	case "ctrl+c":
+	case actInterrupt:
 		return m, tea.Quit
-	case "tab":
+	case actSwitchView:
 		m.pickerReturn, m.pickerBackToHistory = false, false
 		m.staged = !m.staged
 		m.jumps = nil
@@ -109,29 +136,26 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewTop = 0
 		m.rows = nil
 		m.rebuild()
-	case "w":
+	case actWrap:
 		m.wrap = !m.wrap
 		m.horizontal = 0
 		m.flash = wrapFlash(m.wrap)
 		m.rebuild()
-	case "r":
+	case actRefresh:
 		m.refreshCache = nil
 		m.generation++
 		return m.refresh()
-	case "d":
+	case actDiscard:
 		return m.startDiscard()
-	case "?":
-		m.modal = "help"
-		m.help.reset()
-	case "H":
+	case actHistory:
 		return m.openHistory()
-	case "S":
+	case actStash:
 		if !m.busy {
 			return m.startStashPush()
 		}
-	case " ", "s":
-		return m.stageSelection(msg.String() == "s")
-	case "c":
+	case actStageFile, actStageHunk:
+		return m.stageSelection(p.action == actStageHunk)
+	case actCommit:
 		if !m.busy {
 			if len(m.snapshot.Staged) == 0 && len(m.snapshot.Unstaged) == 0 {
 				m.message = "Nothing to commit"
@@ -153,11 +177,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return recentCommitsLoaded{commits: commits, err: err, request: request}
 			}
 		}
-	case "p":
+	case actPush:
 		if !m.busy {
 			return m.startPush()
 		}
-	case "P":
+	case actPull:
 		if !m.busy {
 			return m.startPull()
 		}
@@ -167,17 +191,13 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleDiffTool handles the search and file picker keys shared by the
 // working-tree and commit diff views.
-func (m *model) handleDiffTool(key string) bool {
-	switch key {
-	case "/":
+func (m *model) handleDiffTool(p keyPress) bool {
+	switch p.action {
+	case actSearch:
 		m.startSearch()
-	case "n":
-		m.searchJump(m.searchDirection())
-	case "N":
-		m.searchJump(-m.searchDirection())
-	case "f":
+	case actFiles:
 		m.openPicker()
-	case "e":
+	case actExpandDeleted:
 		m.toggleDeletedFile()
 	default:
 		return false
@@ -295,7 +315,7 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		opened := false
 		m = m.inDiff(func(view *model) {
 			if view.modal == "files" {
-				opened = view.handlePickerKey(key.String(), runes)
+				opened = view.handlePickerKey(key)
 			} else {
 				view.handleSearchKey(key.String(), runes)
 			}
@@ -316,29 +336,36 @@ func (m model) handleModal(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.modal == "help" {
+		if m.keyEditor.open {
+			return m.handleKeyEditorKey(key)
+		}
 		entries := m.helpLines()
 		pages := max(1, len(entries)-helpVisibleRows(m.height)+1)
-		if m.handleListKey(&m.help, key.String(), listRunes(key), pages, helpVisibleRows(m.height), nil) {
+		p := m.listPress(&m.help, key, scopeHelp)
+		if m.handleListKey(&m.help, p, pages, helpVisibleRows(m.height), nil) {
 			return m, nil
 		}
-		switch key.String() {
-		case "esc", "?", "q":
+		switch p.action {
+		case actBack, actHelp, actQuit, actInterrupt:
 			m.modal = ""
+		case actEditKeys:
+			m.openKeyEditor()
 		}
 		return m, nil
 	}
 	if m.modal == "error" {
-		switch key.String() {
-		case "j", "down":
+		p := m.press(key, scopeShared)
+		switch p.action {
+		case actDown:
 			m.errorPos = min(m.errorPos+1, m.errorMaxPos())
-		case "k", "up":
+		case actUp:
 			m.errorPos = max(0, m.errorPos-1)
-		case "enter":
+		case actOpen:
 			m.modal = ""
 			if blockedByChanges(m.errorText) {
 				return m.showChanges()
 			}
-		case "esc", "q":
+		case actBack, actQuit:
 			m.modal = ""
 		}
 		return m, nil

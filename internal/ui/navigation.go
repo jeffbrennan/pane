@@ -59,13 +59,10 @@ func (m *model) horizontalMove(amount int) {
 	}
 }
 
-func (m *model) handleDiffNavigation(key string) bool {
-	if len(key) == 1 && key[0] >= '0' && key[0] <= '9' && m.pending == "" {
-		m.count = min(1000000, m.count*10+int(key[0]-'0'))
-		return true
-	}
-	hadCount := m.count > 0
-	count := max(1, m.count)
+// handleDiffNavigation applies the motions shared by every diff view and
+// reports whether p was one.
+func (m *model) handleDiffNavigation(p keyPress) bool {
+	count := p.count
 	before := m.location()
 	jump := false
 	defer func() {
@@ -73,136 +70,100 @@ func (m *model) handleDiffNavigation(key string) bool {
 			m.recordJump(before)
 		}
 	}()
-	if m.pending != "" {
-		pending := m.pending
-		m.pending = ""
-		m.count = 0
-		if key == "esc" {
-			return true
-		}
-		if pending == "g" && key == "g" {
-			if hadCount {
-				m.sourceLineJump(count)
-			} else {
-				m.move(-m.pos)
-			}
-			jump = true
-			return true
-		}
-		if pending == "g" {
-			switch key {
-			case "H", "M", "L":
-				m.screenJump(key)
-				jump = true
-				return true
-			case "?":
-				m.startSearchDirection(-1)
-				return true
-			case "i":
-				for range min(count, len(m.jumps)) {
-					m.travelJump(1)
-				}
-				return true
-			}
-		}
-		if (pending == "]" || pending == "[") && key == "c" {
-			direction := 1
-			if pending == "[" {
-				direction = -1
-			}
-			for range min(count, len(m.rows)) {
-				m.changeJump(direction)
-			}
-			jump = true
-			return true
-		}
-		if pending == "z" {
-			switch key {
-			case "t", "z", "b":
-				m.positionViewport(key)
-				return true
-			case "h", "ctrl+h", "backspace":
-				m.horizontalMove(-4)
-				return true
-			case "l":
-				m.horizontalMove(4)
-				return true
-			case "H":
-				m.horizontalMove(-max(1, m.width/2))
-				return true
-			case "L":
-				m.horizontalMove(max(1, m.width/2))
-				return true
-			}
-		}
-	}
 	_, page, _ := m.diffViewport(max(1, m.height-2))
-	if key != "g" && key != "z" && key != "]" && key != "[" {
-		m.count = 0
-	}
-	switch key {
-	case "g", "z", "]", "[":
-		m.pending = key
-	case "G", "end":
-		if hadCount && key == "G" {
+	switch p.action {
+	case actTop:
+		if p.hadCount {
+			m.sourceLineJump(count)
+		} else {
+			m.move(-m.pos)
+		}
+		jump = true
+	case actBottom:
+		if p.hadCount {
 			m.sourceLineJump(count)
 		} else {
 			m.move(len(m.rows) - 1 - m.pos)
 		}
 		jump = true
-	case "home":
-		m.move(-m.pos)
+	case actScreenTop, actScreenMiddle, actScreenBottom:
+		m.screenJump(p.action)
 		jump = true
-	case "j", "down":
+	case actSearchBack:
+		m.startSearchDirection(-1)
+	case actJumpForward:
+		for range min(count, len(m.jumps)) {
+			m.travelJump(1)
+		}
+	case actJumpBack:
+		for range min(count, len(m.jumps)) {
+			m.travelJump(-1)
+		}
+	case actNextChange, actPrevChange:
+		direction := 1
+		if p.action == actPrevChange {
+			direction = -1
+		}
+		for range min(count, len(m.rows)) {
+			m.changeJump(direction)
+		}
+		jump = true
+	case actAlignTop:
+		m.positionViewport("t")
+	case actAlignCenter:
+		m.positionViewport("z")
+	case actAlignBottom:
+		m.positionViewport("b")
+	case actScrollLeft, actFold:
+		m.horizontalMove(-4)
+	case actScrollRight, actUnfold:
+		m.horizontalMove(4)
+	case actHalfLeft:
+		m.horizontalMove(-max(1, m.width/2))
+	case actHalfRight:
+		m.horizontalMove(max(1, m.width/2))
+	case actDown:
 		m.move(m.lineRows(count))
-	case "k", "up":
+	case actUp:
 		m.move(m.lineRows(-count))
-	case "}":
+	case actNextGroup:
 		for range min(count, len(m.rows)) {
 			m.paragraphJump(1)
 		}
-	case "{":
+	case actPrevGroup:
 		for range min(count, len(m.rows)) {
 			m.paragraphJump(-1)
 		}
-	case "J":
+	case actNextFile:
 		for range min(count, len(m.rows)) {
 			m.jump(1)
 		}
 		jump = true
-	case "K":
+	case actPrevFile:
 		for range min(count, len(m.rows)) {
 			m.jump(-1)
 		}
 		jump = true
-	case "ctrl+o":
-		for range min(count, len(m.jumps)) {
-			m.travelJump(-1)
-		}
-	case "n", "N":
+	case actNextMatch, actPrevMatch:
 		direction := 1
-		if key == "N" {
+		if p.action == actPrevMatch {
 			direction = -1
 		}
 		for range min(count, max(1, len(m.rows))) {
 			m.searchJump(direction * m.searchDirection())
 		}
-	case "ctrl+d":
+	case actHalfDown:
 		m.move(max(1, page/2) * count)
-	case "ctrl+u":
+	case actHalfUp:
 		m.move(-max(1, page/2) * count)
-	case "ctrl+f", "pgdown":
+	case actPageDown:
 		m.move(page * count)
-	case "ctrl+b", "pgup":
+	case actPageUp:
 		m.move(-page * count)
-	case "ctrl+e":
+	case actScrollDown:
 		m.scrollViewport(count)
-	case "ctrl+y":
+	case actScrollUp:
 		m.scrollViewport(-count)
-	case "h", "ctrl+h", "backspace":
-		m.horizontalMove(-4)
-	case "l":
-		m.horizontalMove(4)
 	default:
 		return false
 	}

@@ -52,16 +52,25 @@ func listRunes(key tea.KeyMsg) []rune {
 	return nil
 }
 
-// handleListKey applies the shared list grammar: counts, gg, G, half and full
-// page motions, group jumps and filter editing. n is the number of visible
-// entries and groups maps an index to the start of its group for { and };
-// nil groups step five entries at a time. It reports whether it consumed the
-// key, so the screen can handle its own actions.
-func (m *model) handleListKey(l *listState, key string, runes []rune, n, page int, groups func(int) int) bool {
-	keyString := key
+// listPress resolves key for a list screen. While the list's filter is
+// being edited the key goes to the filter unresolved.
+func (m *model) listPress(l *listState, key tea.KeyMsg, scope string) keyPress {
 	if l.filtering {
-		last := max(0, n-1)
-		switch keyString {
+		return rawPress(key)
+	}
+	return m.press(key, scope)
+}
+
+// handleListKey applies the shared list grammar: counts, top and bottom,
+// half and full page motions, group jumps and filter editing. n is the
+// number of visible entries and groups maps an index to the start of its
+// group for the group motions; nil groups step five entries at a time. It
+// reports whether it consumed the key, so the screen can handle its own
+// actions.
+func (m *model) handleListKey(l *listState, p keyPress, n, page int, groups func(int) int) bool {
+	last := max(0, n-1)
+	if l.filtering {
+		switch keyString := p.key.String(); keyString {
 		case "esc":
 			// The first escape drops the filter; the next one leaves the screen.
 			l.clearFilter()
@@ -75,7 +84,7 @@ func (m *model) handleListKey(l *listState, key string, runes []rune, n, page in
 			l.selected = max(0, l.selected-1)
 		default:
 			before := l.draft
-			l.draft, l.draftCursor, _ = editLine(l.draft, l.draftCursor, keyString, runes)
+			l.draft, l.draftCursor, _ = editLine(l.draft, l.draftCursor, keyString, listRunes(p.key))
 			if before != l.draft {
 				l.filter = l.draft
 				l.reset()
@@ -83,77 +92,52 @@ func (m *model) handleListKey(l *listState, key string, runes []rune, n, page in
 		}
 		return true
 	}
-	if len(keyString) == 1 && keyString[0] >= '0' && keyString[0] <= '9' && m.pending == "" {
-		m.count = min(1000000, m.count*10+int(keyString[0]-'0'))
-		return true
-	}
-	hadCount := m.count > 0
-	count := max(1, m.count)
-	last := max(0, n-1)
-	if m.pending != "" {
-		pending := m.pending
-		m.pending = ""
-		m.count = 0
-		switch {
-		case keyString == "esc":
-			return true
-		case pending == "g" && keyString == "g":
-			l.selected = 0
-			if hadCount {
-				l.selected = min(count-1, last)
-			}
-			return true
-		case pending == "g" && (keyString == "H" || keyString == "M" || keyString == "L"):
-			top, visible := listViewport(*l, n, page)
-			end := min(last, top+visible-1)
-			l.selected = top
-			if keyString == "M" {
-				l.selected = (top + end) / 2
-			} else if keyString == "L" {
-				l.selected = end
-			}
-			return true
+	count := p.count
+	switch p.action {
+	case actNone:
+		// Counts and pending sequences resolve to no action.
+		return m.pending != "" || m.count > 0
+	case actTop:
+		l.selected = 0
+		if p.hadCount {
+			l.selected = min(count-1, last)
 		}
-	}
-	if keyString != "g" {
-		m.count = 0
-	}
-	switch keyString {
-	case "g":
-		m.pending = "g"
-	case "j", "down":
+	case actScreenTop, actScreenMiddle, actScreenBottom:
+		top, visible := listViewport(*l, n, page)
+		end := min(last, top+visible-1)
+		l.selected = top
+		if p.action == actScreenMiddle {
+			l.selected = (top + end) / 2
+		} else if p.action == actScreenBottom {
+			l.selected = end
+		}
+	case actDown:
 		l.selected = min(l.selected+count, last)
-	case "k", "up":
+	case actUp:
 		l.selected = max(0, l.selected-count)
-	case "G", "end":
-		if hadCount && keyString == "G" {
+	case actBottom:
+		if p.hadCount {
 			l.selected = min(count-1, last)
 		} else {
 			l.selected = last
 		}
-	case "home":
-		l.selected = 0
-	case "ctrl+n":
-		l.selected = min(l.selected+count, last)
-	case "ctrl+p":
-		l.selected = max(0, l.selected-count)
-	case "ctrl+d":
+	case actHalfDown:
 		l.selected = min(l.selected+max(1, page/2)*count, last)
-	case "ctrl+u":
+	case actHalfUp:
 		l.selected = max(0, l.selected-max(1, page/2)*count)
-	case "ctrl+f", "pgdown":
+	case actPageDown:
 		l.selected = min(l.selected+max(1, page)*count, last)
-	case "ctrl+b", "pgup":
+	case actPageUp:
 		l.selected = max(0, l.selected-max(1, page)*count)
-	case "}":
+	case actNextGroup:
 		l.selected = listGroupJump(l.selected, n, count, groups, 1)
-	case "{":
+	case actPrevGroup:
 		l.selected = listGroupJump(l.selected, n, count, groups, -1)
-	case "/":
+	case actSearch:
 		l.filtering = true
 		l.draft = l.filter
 		l.draftCursor = len([]rune(l.draft))
-	case "esc":
+	case actBack:
 		if l.filter != "" {
 			l.clearFilter()
 			return true

@@ -227,6 +227,34 @@ and a count such as `3)` jumps three commits.
 | --- | --- |
 | `?` | Show shortcuts |
 | `esc / q` | Go back one screen; `q` quits on the first screen |
+| `e` | Customize keys (in this dialog) |
+
+### Customizing keys
+
+The tables above are the defaults. Press `?` then `e` to open the key editor:
+`↵` replaces an action's key with the next key you press, `a` adds another
+key, `x` resets the action, and `/` filters. Arrow keys, home / end and page
+up / down work alongside the vim keys from the start.
+
+Changes are saved to `~/.config/pane/keys` (`$XDG_CONFIG_HOME/pane/keys` when
+set), which you can also edit by hand. It only lists the actions you changed:
+
+```
+# action = key, key; separate the keys of a sequence with spaces
+search = ctrl+f, /
+page-down = pgdown
+next-file = alt+down
+changes.push = ctrl+p
+```
+
+Shared actions such as `down` or `wrap` apply on every screen. Actions
+prefixed with a screen, such as `changes.push` or `branches.delete`, apply
+only there and take precedence over shared ones. Binding a key that another
+action in the same scope uses offers to swap them. The key editor lists every
+action ID. Keys use bubbletea names: `ctrl+x`, `alt+x`, `shift+tab`, `f3`,
+`pgdown`, `space`. `ctrl+c` always interrupts, and text inputs such as the
+commit message keep their editing keys. Terminals do not pass Cmd shortcuts
+through to pane.
 
 ## Diffs and review
 

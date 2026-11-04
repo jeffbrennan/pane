@@ -114,9 +114,9 @@ func (m model) selectionBadge() string {
 func (m model) pendingIndicator() string {
 	if m.pending != "" {
 		if m.count > 0 {
-			return fmt.Sprintf("%d%s…", m.count, m.pending)
+			return fmt.Sprintf("%d%s…", m.count, keyLabel(m.pending))
 		}
-		return m.pending + "…"
+		return keyLabel(m.pending) + "…"
 	}
 	if m.count > 0 {
 		return fmt.Sprintf("%d…", m.count)
@@ -144,12 +144,12 @@ func footer(back bool, actions ...shortcut) string {
 		if i == 4 {
 			break
 		}
-		pairs = append(pairs, action.keys, action.action)
+		pairs = append(pairs, action.label(), action.action)
 	}
 	if back {
-		pairs = append(pairs, "esc", "back")
+		pairs = append(pairs, activeKeys.label("back"), "back")
 	}
-	pairs = append(pairs, "?", "help")
+	pairs = append(pairs, activeKeys.label("help"), "help")
 	return keyHints(pairs...)
 }
 

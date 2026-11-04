@@ -96,7 +96,7 @@ func TestStreamPickerJumpAndSearch(t *testing.T) {
 	}
 	view.openPicker()
 	view.picker.list.selected = 1
-	view.handlePickerKey("enter", nil)
+	view.handlePickerKey(keyMsg("enter"))
 	if view.picker.pendingPath != "two" {
 		t.Fatal("unloaded picker selection did not wait")
 	}

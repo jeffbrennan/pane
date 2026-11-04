@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/jeffbrennan/pane/internal/syntax"
 )
@@ -210,7 +211,7 @@ func (m *model) setPickerDirectory(item pickerItem, collapsed bool) {
 	}
 }
 
-func (m *model) handlePickerKey(key string, runes []rune) bool {
+func (m *model) handlePickerKey(key tea.KeyMsg) bool {
 	items := m.pickerItems()
 	page := 0
 	_, page = m.pickerViewport(len(items))
@@ -221,26 +222,24 @@ func (m *model) handlePickerKey(key string, runes []rune) bool {
 		return max(0, index)
 	}
 	before := m.picker.list.filter
-	handled := m.handleListKey(&m.picker.list, key, runes, len(items), page, groups)
+	p := m.listPress(&m.picker.list, key, scopeFiles)
+	handled := m.handleListKey(&m.picker.list, p, len(items), page, groups)
 	if m.picker.list.filter != before {
 		m.resetPickerSearch()
 	}
-	keyName := key
 	selected := min(m.picker.list.selected, max(0, len(items)-1))
 	opened := false
 	if !handled {
-		switch keyName {
-		case "v":
+		switch p.action {
+		case actViewed:
 			m.picker.hideViewed = !m.picker.hideViewed
 			if m.picker.cache != nil {
 				m.picker.cache.items = nil
 			}
 			m.picker.list.reset()
-		case "ctrl+c":
+		case actInterrupt, actBack, actQuit:
 			m.modal = ""
-		case "esc":
-			m.modal = ""
-		case "enter":
+		case actOpen:
 			if len(items) == 0 {
 				m.modal = ""
 			} else if items[selected].directory {
@@ -258,34 +257,25 @@ func (m *model) handlePickerKey(key string, runes []rune) bool {
 				m.positionViewport("t")
 				m.recordJump(before)
 			}
-		case "up", "ctrl+p", "ctrl+k", "shift+tab":
-			m.picker.list.selected = max(0, selected-1)
-		case "down", "ctrl+n", "ctrl+j", "tab":
-			m.picker.list.selected = min(selected+1, max(0, len(items)-1))
-		default:
-			switch keyName {
-			case "h", "left":
-				if len(items) > 0 {
-					item := items[selected]
-					if item.directory && !item.collapsed {
-						m.setPickerDirectory(item, true)
-					} else {
-						parent := path.Dir(item.path)
-						for i, candidate := range items {
-							if candidate.directory && candidate.path == parent {
-								m.picker.list.selected = i
-								m.setPickerDirectory(candidate, true)
-								break
-							}
+		case actFold:
+			if len(items) > 0 {
+				item := items[selected]
+				if item.directory && !item.collapsed {
+					m.setPickerDirectory(item, true)
+				} else {
+					parent := path.Dir(item.path)
+					for i, candidate := range items {
+						if candidate.directory && candidate.path == parent {
+							m.picker.list.selected = i
+							m.setPickerDirectory(candidate, true)
+							break
 						}
 					}
 				}
-			case "l", "right":
-				if len(items) > 0 {
-					m.setPickerDirectory(items[selected], false)
-				}
-			case "q":
-				m.modal = ""
+			}
+		case actUnfold:
+			if len(items) > 0 {
+				m.setPickerDirectory(items[selected], false)
 			}
 		}
 	}
@@ -359,12 +349,12 @@ func (m model) showFilesDialog(lines []string) {
 	if query == "" {
 		queryLine = styleDim + "/ to filter" + styleReset
 	}
-	hint := keyHints("j/k", "move", "h/l", "fold", "/", "filter", "↵", "open", "esc", "close")
+	hint := keyHints(activeKeys.pair("down", "up"), "move", activeKeys.pair("fold", "unfold"), "fold", activeKeys.label("search"), "filter", activeKeys.label("open"), "open", activeKeys.label("back"), "close")
 	if m.picker.list.filtering {
 		queryLine = "/" + renderInput(m.picker.list.filter, m.picker.list.draftCursor, max(1, innerWidth-1))
 		hint = keyHints("↑/↓", "move", "↵", "open", "esc", "done")
 	} else if ansi.StringWidth(hint) > innerWidth {
-		hint = keyHints("/", "filter", "↵", "open", "esc", "close")
+		hint = keyHints(activeKeys.label("search"), "filter", activeKeys.label("open"), "open", activeKeys.label("back"), "close")
 	}
 	info := fmt.Sprintf("%d/%d", len(matches), len(entries))
 	viewed := 0

@@ -189,7 +189,7 @@ func TestFilePickerVimMotions(t *testing.T) {
 		key  string
 		want int
 	}{{"ctrl+d", 3}, {"ctrl+f", 6}, {"ctrl+u", 4}, {"ctrl+b", 0}, {"end", 6}, {"home", 0}} {
-		m.handlePickerKey(tc.key, nil)
+		m.handlePickerKey(keyMsg(tc.key))
 		if m.picker.list.selected != tc.want {
 			t.Fatalf("%s selected %d, want %d", tc.key, m.picker.list.selected, tc.want)
 		}
@@ -202,7 +202,7 @@ func TestFilePickerVimMotions(t *testing.T) {
 	if m.picker.list.filter != "gG3" {
 		t.Fatalf("motion keys were not entered as search text: %q", m.picker.list.filter)
 	}
-	m.handlePickerKey("ctrl+d", nil)
+	m.handlePickerKey(keyMsg("ctrl+d"))
 	if m.picker.list.selected != 0 {
 		t.Fatal("page motion should be safe with no matches")
 	}
