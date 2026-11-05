@@ -118,45 +118,68 @@ diff spans for visible lines.
 
 ## Linux results
 
-The synthetic numbers below are from an Intel Core i5-8250U (4C/8T, 2017 ULV)
-running Linux and Go 1.27.3 on 2026-11-05. The Apple column is
-`perf/baseline.tsv`; it will usually stay faster because it is newer silicon.
-Compare the Linux before/after columns when judging a change.
+The numbers below are from an Intel Core i5-8250U (4C/8T, 2017 ULV) running
+Linux and Go 1.27.3 on 2026-11-05. The Apple column is `perf/baseline.tsv`; it
+will usually stay faster because it is newer silicon. Compare the Linux
+before/after columns when judging a change.
 
-The before column is commit `17502e6` measured in a clean worktree, and the now
-column is the code at `3bc4cf3`. Timings are medians of three runs, and each run
-is already the harness's median of five. This ULV laptop shows noticeable
+The before column is commit `17502e6` measured in a clean worktree. The now
+column is the code at `506a246`. Timings are medians of three runs, and each
+run is already the harness's median of five. This ULV laptop shows noticeable
 run-to-run variance under sustained load, so treat differences under 5% or 2 ms
 as noise, matching `perf-diff`'s rule.
 
 | Metric | Apple baseline | Linux before | Linux now | Change |
 |---|---:|---:|---:|---:|
-| Heap after build, 51k rows | 8.30 MB | 8.21 MB | 7.80 MB | −5% |
+| Heap after build, 51k rows | 8.30 MB | 8.21 MB | 7.97 MB | −3% |
 | `row` struct size | 104 B | 104 B | 96 B | −7.7% |
-| `view_alloc_bytes`, 51k rows | 299 KB | 299 KB | 39 KB | −87% |
-| `view_ns`, 51k rows | 207 µs | 228 µs | 91 µs | −60% |
-| `view_ns`, 100k-row file | 170 µs | 238 µs | 97 µs | −59% |
-| `moved_index_ns`, 51k rows | 3.49 ms | 4.95 ms | 2.66 ms | −46% |
-| `moved_index_ns`, 100k-line file | 6.43 ms | 11.26 ms | 4.12 ms | −63% |
-| `build_ns`, 51k rows | 1.74 ms | 5.37 ms | 4.92 ms | −8% |
-| `build_ns`, 100k-row file | 10.68 ms | 18.58 ms | 16.82 ms | −9% |
-| `synthetic-range rebuild_ns`, 100 commits | 2.07 ms | 6.81 ms | 1.85 ms | −73% |
-| `synthetic-refresh full_rebuild_ns`, 1000 files | 3.19 ms | 11.40 ms | 10.01 ms | −12% |
+| `view_alloc_bytes`, 51k rows | 299 KB | 299 KB | 25.8 KB | −91% |
+| `view_ns`, 51k rows | 207 µs | 228 µs | 65 µs | −72% |
+| `view_ns`, 100k-row file | 170 µs | 238 µs | 75 µs | −68% |
+| `moved_index_ns`, 51k rows | 3.49 ms | 4.95 ms | 2.59 ms | −48% |
+| `moved_index_ns`, 100k-line file | 6.43 ms | 11.26 ms | 4.09 ms | −64% |
+| `synthetic-range rebuild_ns`, 100 commits | 2.07 ms | 6.81 ms | 0.76 ms | −89% |
+| `synthetic-refresh full_rebuild_ns`, 1000 files | 3.19 ms | 11.40 ms | 8.14 ms | −29% |
+| `synthetic-refresh spliced_refresh_ns`, 1000 files | 2.99 ms | 7.30 ms | 6.28 ms | −14% |
 
 Paths that were not the target of this pass are broadly unchanged:
 
 | Metric | Apple baseline | Linux before | Linux now |
 |---|---:|---:|---:|
-| `search_miss_ns`, 51k rows | 1.60 ms | 3.06 ms | 3.18 ms (noise) |
-| `resize_width_apply_ns` | 0.77 ms | 2.34 ms | 2.00 ms |
-| `wrap_toggle_ns` | 1.63 ms | 3.06 ms | 3.27 ms (noise) |
-| `scroll_j_mid_ns` | 20.7 µs | 27.8 µs | 35.5 µs (noise) |
+| `search_miss_ns`, 51k rows | 1.60 ms | 3.06 ms | 2.93 ms (noise) |
+| `resize_width_apply_ns` | 0.77 ms | 2.34 ms | 1.92 ms |
+| `wrap_toggle_ns` | 1.63 ms | 3.06 ms | 2.96 ms (noise) |
+| `scroll_j_mid_ns` | 20.7 µs | 27.8 µs | 26.7 µs (noise) |
+
+The full harness's `synthetic-many build_ns` is noisy on this machine
+(5.4–7.2 ms across runs). The isolated `BenchmarkRebuild` is the stable
+measure, and a same-session worktree A/B showed no rebuild regression.
+
+### Render and rebuild benchmarks
+
+These direct benchmarks cover the shapes the recent UI work targets:
+all-added rows, paired removed/added rows with inline word diffs, and a
+one-row scroll. `BenchmarkRenderView/additions` started this pass at roughly
+265 µs, 299 KB, and 3,943 allocations per frame.
+
+| Benchmark | Result |
+|---|---:|
+| `BenchmarkRenderView/additions` | 70 µs, 26 KB, 306 allocs |
+| `BenchmarkRenderView/mixed` | 108 µs, 37 KB, 395 allocs |
+| `BenchmarkRenderScroll/additions` | 102 µs, 55 KB, 321 allocs |
+| `BenchmarkRenderScroll/mixed` | 143 µs, 66 KB, 410 allocs |
+| `BenchmarkRebuild/many` | 5.00 ms, 5.33 MB |
+| `BenchmarkRebuild/huge` | 13.7 ms, 9.61 MB |
+
+```sh
+go test ./internal/ui -run '^$' -bench 'BenchmarkRender|BenchmarkRebuild' -benchmem
+```
 
 `just perf-check` reports several metrics above twice the Apple baseline on
 this machine. Those are hardware-bound and are not Linux regressions; use the
 same-machine before/after columns or a Linux baseline when adding a new gate.
 
-To add a row, run the synthetic harness and append the new medians here:
+To add a harness row, run the synthetic harness and append the new medians:
 
 ```sh
 PANE_PERF=1 PANE_PERF_RUN=linux-$(date -u +%Y%m%dT%H%M%S) \
