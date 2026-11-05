@@ -56,12 +56,13 @@ func (idx *movedIndex) addChange(c git.Change) {
 	oldLine, newLine := 0, 0
 	inHunk := false
 	var kind byte
-	var texts []string
+	var count int
+	var hash uint64
+	var pending []string
 	start, path := 0, ""
 	flush := func() {
-		if kind != 0 && len(texts) >= 3 {
-			hash := movedHash(texts)
-			block := movedRange{start: start, end: start + len(texts) - 1, hash: hash, path: path}
+		if kind != 0 && count >= 3 {
+			block := movedRange{start: start, end: start + count - 1, hash: hash, path: path}
 			if kind == '+' {
 				idx.added[c.Path] = append(idx.added[c.Path], block)
 				idx.addedHashes[hash] = true
@@ -72,10 +73,13 @@ func (idx *movedIndex) addChange(c git.Change) {
 				}
 			}
 		}
-		texts = nil
+		count = 0
 		kind = 0
+		pending = pending[:0]
 	}
-	for _, line := range strings.Split(c.Diff, "\n") {
+	for rest := c.Diff; rest != ""; {
+		line, next, _ := strings.Cut(rest, "\n")
+		rest = next
 		if match := syntax.MatchHunkHeader(line); match != nil {
 			flush()
 			oldLine, _ = atoiHeader(match[1])
@@ -109,7 +113,24 @@ func (idx *movedIndex) addChange(c git.Change) {
 				start = newLine
 			}
 		}
-		texts = append(texts, line[1:])
+		// A block needs at least three lines, so hold the first two and only
+		// start hashing once a third arrives. Most one- and two-line changes
+		// are never candidates, including very long minified lines.
+		text := line[1:]
+		if count < 3 {
+			pending = append(pending, text)
+			count++
+			if count == 3 {
+				hash = movedHashOffset
+				for _, held := range pending {
+					hash = movedHashLine(hash, held)
+				}
+				pending = pending[:0]
+			}
+		} else {
+			hash = movedHashLine(hash, text)
+			count++
+		}
 		if kind == '+' {
 			newLine++
 		} else {
@@ -130,19 +151,20 @@ func atoiHeader(value string) (int, bool) {
 	return n, value != ""
 }
 
-// movedHash is an allocation-free FNV-1a over the block's line contents.
-func movedHash(lines []string) uint64 {
-	const offset = 14695981039346656037
-	const prime = 1099511628211
-	hash := uint64(offset)
-	for _, line := range lines {
-		for i := 0; i < len(line); i++ {
-			hash ^= uint64(line[i])
-			hash *= prime
-		}
-		hash *= prime
+// FNV-1a constants for the incremental moved-block hash.
+const (
+	movedHashOffset = 14695981039346656037
+	movedHashPrime  = 1099511628211
+)
+
+// movedHashLine folds one line into an FNV-1a block hash, including the
+// separator between lines.
+func movedHashLine(hash uint64, line string) uint64 {
+	for i := 0; i < len(line); i++ {
+		hash ^= uint64(line[i])
+		hash *= movedHashPrime
 	}
-	return hash
+	return hash * movedHashPrime
 }
 
 func findMovedRange(ranges []movedRange, line int) (movedRange, bool) {
