@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strings"
+
 	"github.com/jeffbrennan/pane/internal/syntax"
 )
 
@@ -32,6 +34,11 @@ func (m model) inlineSpansForRow(index int) []syntax.Span {
 	} else {
 		oldStart, oldEnd = m.inlineLineRun(index, true)
 		newStart, newEnd = m.inlineLinesAfter(oldEnd)
+	}
+	// A pure addition or deletion has no counterpart to compare against, which
+	// is common in large diffs. Bail out before materializing either side.
+	if oldStart == oldEnd || newStart == newEnd {
+		return nil
 	}
 	oldLines, newLines := m.inlineLines(oldStart, oldEnd), m.inlineLines(newStart, newEnd)
 	if len(oldLines) == 0 || len(oldLines) != len(newLines) {
@@ -109,12 +116,25 @@ func (m model) inlineLines(start, end int) []inlineLine {
 	for i := start; i < end; {
 		line := m.rows[i].lineNumber()
 		kind := m.rows[i].kind
-		var text []byte
-		j := i
+		j := i + 1
 		for ; j < end && m.rows[j].lineNumber() == line && m.rows[j].kind == kind; j++ {
-			text = append(text, m.rows[j].text...)
 		}
-		lines = append(lines, inlineLine{kind: kind, line: line, text: string(text)})
+		// Unwrapped lines are already one string per source line. Only join
+		// when wrapping split the line across several rows.
+		text := m.rows[i].text
+		if j-i > 1 {
+			size := 0
+			for k := i; k < j; k++ {
+				size += len(m.rows[k].text)
+			}
+			var joined strings.Builder
+			joined.Grow(size)
+			for k := i; k < j; k++ {
+				joined.WriteString(m.rows[k].text)
+			}
+			text = joined.String()
+		}
+		lines = append(lines, inlineLine{kind: kind, line: line, text: text})
 		i = j
 	}
 	return lines
