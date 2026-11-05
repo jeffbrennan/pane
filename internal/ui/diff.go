@@ -60,6 +60,12 @@ func buildRowsDisplayReuse(changes []git.Change, width int, wrap bool, expanded 
 	for _, part := range parts {
 		total += len(part)
 	}
+	// A single file needs no concatenation. Returning its rows directly avoids
+	// copying every row, which matters most for a huge one-file diff.
+	if len(parts) == 1 {
+		indexRowHeaders(parts[0])
+		return parts[0], gutterWidth
+	}
 	var rows []row
 	if cap(reuse) >= total {
 		rows = reuse[:0]
