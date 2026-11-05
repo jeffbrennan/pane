@@ -367,21 +367,24 @@ func RenderWithHighlight(text string, spans, inline []Span, start int, query, ba
 		}
 	}
 	matches := make([]bool, len(text))
-	folded, needle := Fold(text, query), Fold(query, query)
-	if needle != "" && len(folded) == len(text) {
-		for offset := 0; offset < len(folded); {
-			i := strings.Index(folded[offset:], needle)
-			if i < 0 {
-				break
+	if query != "" {
+		folded, needle := Fold(text, query), Fold(query, query)
+		if needle != "" && len(folded) == len(text) {
+			for offset := 0; offset < len(folded); {
+				i := strings.Index(folded[offset:], needle)
+				if i < 0 {
+					break
+				}
+				offset += i
+				for j := offset; j < offset+len(needle); j++ {
+					matches[j] = true
+				}
+				offset += len(needle)
 			}
-			offset += i
-			for j := offset; j < offset+len(needle); j++ {
-				matches[j] = true
-			}
-			offset += len(needle)
 		}
 	}
 	var b strings.Builder
+	b.Grow(len(text) + 32 + len(spans)*8 + len(inline)*16)
 	color := uint8(0)
 	match := false
 	change := false
