@@ -127,8 +127,9 @@ func (m *model) appendCommitChanges(changes []git.Change, done bool) {
 	changes = view.applySyntaxDemand(git.Context{Commit: view.contextCommit, Staged: view.staged, Base: view.contextBase}, changes)
 	if len(view.contextFiles) == 0 && len(view.collapsedFiles) == 0 {
 		parts := make([][]row, len(changes))
+		collapsed := view.collapsedPaths(changes)
 		parallelEach(len(changes), func(i int) {
-			parts[i] = changeRows(changes[i], true, view.diffContentWidth(), view.wrap, view.expandedDeleted[changes[i].Path], width, view.shortPaths)
+			parts[i] = changeRows(changes[i], true, view.diffContentWidth(), view.wrap, view.expandedDeleted[changes[i].Path], collapsed[changes[i].Path], width, view.shortPaths)
 		})
 		total := 0
 		for _, part := range parts {
@@ -169,7 +170,7 @@ func (m *model) appendCommitChanges(changes []git.Change, done bool) {
 		m.history.rows = rows
 		return
 	}
-	part, _ := buildRowsDisplay(changes, view.diffContentWidth(), view.wrap, view.expandedDeleted, width, view.shortPaths)
+	part, _ := buildRowsDisplayCollapsed(changes, view.diffContentWidth(), view.wrap, view.expandedDeleted, width, view.shortPaths, view.collapsedPaths(changes))
 	view.applyViewed(part, changes)
 	part = view.localContextRows(part, changes)
 	part = view.foldContextFiles(part)

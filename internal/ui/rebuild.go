@@ -62,7 +62,7 @@ func (m *model) rebuildRows(previous func(path string) ([]row, bool)) {
 	if previous != nil && gutterWidth == m.gutterWidth {
 		rows = spliceRows(changes, *m, previous, gutterWidth)
 	} else {
-		rows, gutterWidth = buildRowsDisplayReuse(changes, m.diffContentWidth(), m.wrap, m.expandedDeleted, m.gutterFloor, m.shortPaths, m.rows)
+		rows, gutterWidth = buildRowsDisplayReuse(changes, m.diffContentWidth(), m.wrap, m.expandedDeleted, m.gutterFloor, m.shortPaths, m.collapsedPaths(changes), m.rows)
 	}
 	m.gutterWidth = gutterWidth
 	m.previousChanges = nil
@@ -168,9 +168,10 @@ func (m *model) reflowRows(oldContentWidth int) {
 			rebuilds = append(rebuilds, rebuild{i, changes[i]})
 		}
 	}
+	collapsed := m.collapsedPaths(changes)
 	parallelEach(len(rebuilds), func(i int) {
 		r := rebuilds[i]
-		plans[r.index].part = changeRows(r.change, r.index > 0, width, m.wrap, m.expandedDeleted[r.change.Path], m.gutterWidth, m.shortPaths)
+		plans[r.index].part = changeRows(r.change, r.index > 0, width, m.wrap, m.expandedDeleted[r.change.Path], collapsed[r.change.Path], m.gutterWidth, m.shortPaths)
 	})
 	rows := assembleRowPlans(plans, m.rows)
 	if len(rows) > 0 && rows[0].kind == 's' {
@@ -302,9 +303,10 @@ func spliceRows(changes []git.Change, m model, previous func(path string) ([]row
 			builds = append(builds, build{i})
 		}
 	}
+	collapsed := view.collapsedPaths(changes)
 	parallelEach(len(builds), func(i int) {
 		index := builds[i].index
-		parts[index] = changeRows(changes[index], index > 0, view.diffContentWidth(), view.wrap, view.expandedDeleted[changes[index].Path], gutterWidth, view.shortPaths)
+		parts[index] = changeRows(changes[index], index > 0, view.diffContentWidth(), view.wrap, view.expandedDeleted[changes[index].Path], collapsed[changes[index].Path], gutterWidth, view.shortPaths)
 	})
 	total := 0
 	for _, part := range parts {

@@ -235,7 +235,7 @@ func (m *model) rebuildSequence() {
 			view.seedViewedCollapse(m.sequence.changes[i])
 			m.collapsedFiles, m.generatedHandled = view.collapsedFiles, view.generatedHandled
 			changes := m.applySyntaxDemand(git.Context{Commit: m.sequence.commits[i].Hash}, m.sequence.changes[i])
-			files, m.sequence.gutterWidths[i] = buildRowsDisplay(changes, width, m.wrap, expanded, 0, m.shortPaths)
+			files, m.sequence.gutterWidths[i] = buildRowsDisplayCollapsed(changes, width, m.wrap, expanded, 0, m.shortPaths, view.collapsedPaths(changes))
 			if len(files) == 0 {
 				files = append(files, row{kind: '@', text: "  No file changes"})
 			}

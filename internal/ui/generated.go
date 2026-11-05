@@ -7,6 +7,25 @@ import (
 	"github.com/jeffbrennan/pane/internal/git"
 )
 
+// collapsedPaths returns the collapsed files for the model's current context,
+// so row building can stop at their headers instead of laying out every line.
+func (m model) collapsedPaths(changes []git.Change) map[string]bool {
+	if len(m.collapsedFiles) == 0 {
+		return nil
+	}
+	var collapsed map[string]bool
+	for _, c := range changes {
+		key := git.Context{Path: c.Path, Commit: m.contextCommit, Staged: m.staged, Base: m.contextBase}
+		if m.collapsedFiles[key] {
+			if collapsed == nil {
+				collapsed = make(map[string]bool)
+			}
+			collapsed[c.Path] = true
+		}
+	}
+	return collapsed
+}
+
 func (m *model) collapseGenerated(changes []git.Change) {
 	for _, c := range changes {
 		if !c.Generated {

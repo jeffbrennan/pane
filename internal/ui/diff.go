@@ -38,10 +38,14 @@ func displayPath(path string, shortened bool) string {
 }
 
 func buildRowsDisplay(changes []git.Change, width int, wrap bool, expanded map[string]bool, gutterWidth int, shortPaths bool) ([]row, int) {
-	return buildRowsDisplayReuse(changes, width, wrap, expanded, gutterWidth, shortPaths, nil)
+	return buildRowsDisplayReuse(changes, width, wrap, expanded, gutterWidth, shortPaths, nil, nil)
 }
 
-func buildRowsDisplayReuse(changes []git.Change, width int, wrap bool, expanded map[string]bool, gutterWidth int, shortPaths bool, reuse []row) ([]row, int) {
+func buildRowsDisplayCollapsed(changes []git.Change, width int, wrap bool, expanded map[string]bool, gutterWidth int, shortPaths bool, collapsed map[string]bool) ([]row, int) {
+	return buildRowsDisplayReuse(changes, width, wrap, expanded, gutterWidth, shortPaths, collapsed, nil)
+}
+
+func buildRowsDisplayReuse(changes []git.Change, width int, wrap bool, expanded map[string]bool, gutterWidth int, shortPaths bool, collapsed map[string]bool, reuse []row) ([]row, int) {
 	// Share one line number width across files so the number column stays
 	// put when moving between them.
 	widths := make([]int, len(changes))
@@ -54,7 +58,7 @@ func buildRowsDisplayReuse(changes []git.Change, width int, wrap bool, expanded 
 	// Files lay out independently, so large change sets build in parallel.
 	parts := make([][]row, len(changes))
 	parallelEach(len(changes), func(i int) {
-		parts[i] = changeRows(changes[i], i > 0, width, wrap, expanded[changes[i].Path], gutterWidth, shortPaths)
+		parts[i] = changeRows(changes[i], i > 0, width, wrap, expanded[changes[i].Path], collapsed[changes[i].Path], gutterWidth, shortPaths)
 	})
 	total := 0
 	for _, part := range parts {
@@ -105,12 +109,12 @@ func parallelEach(n int, f func(int)) {
 
 // changeRows lays out one file; separated adds the blank row that divides it
 // from the file before.
-func changeRows(c git.Change, separated bool, width int, wrap bool, expanded bool, gutterWidth int, shortPaths bool) []row {
+func changeRows(c git.Change, separated bool, width int, wrap bool, expanded bool, collapsed bool, gutterWidth int, shortPaths bool) []row {
 	deletedFile := strings.Contains(c.Diff, "\ndeleted file mode ") && !strings.Contains(c.Diff, "\nnew file mode ")
-	// A collapsed deleted file only needs its headers, so do not size the row
-	// slice for the file's whole contents.
+	// A collapsed file only needs its headers, so do not size the row slice
+	// for the file's whole contents.
 	capacity := 16
-	if !deletedFile || expanded {
+	if (!deletedFile || expanded) && !collapsed {
 		capacity = strings.Count(c.Diff, "\n") + 3
 	}
 	// Most lines take one row; sizing for them avoids regrowing large files.
@@ -185,6 +189,9 @@ func changeRows(c git.Change, separated bool, width int, wrap bool, expanded boo
 		if !expanded {
 			return rows
 		}
+	}
+	if collapsed {
+		return rows
 	}
 	oldSyntax, newSyntax := syntax.LinesFor(c.Path, c.SyntaxDiff, c.Diff)
 	oldLine, newLine, hunks := 0, 0, 0

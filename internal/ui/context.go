@@ -84,7 +84,7 @@ func (m model) localContextRows(rows []row, changes []git.Change) []row {
 			}
 		}
 		c.Diff = file.diff
-		full, _ := buildRowsDisplay([]git.Change{c}, m.diffContentWidth(), m.wrap, m.expandedDeleted, m.gutterWidth, m.shortPaths)
+		full, _ := buildRowsDisplayCollapsed([]git.Change{c}, m.diffContentWidth(), m.wrap, m.expandedDeleted, m.gutterWidth, m.shortPaths, m.collapsedPaths([]git.Change{c}))
 		var gap *row
 		for _, r := range full {
 			show := r.kind != ' ' || visible[r.target]

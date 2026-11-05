@@ -481,6 +481,23 @@ func BenchmarkRenderScroll(b *testing.B) {
 	}
 }
 
+func BenchmarkCollapsedGenerated(b *testing.B) {
+	diff := "diff --git a/gen.go b/gen.go\nnew file mode 100644\n@@ -0,0 +1,100000 @@\n" + strings.Repeat("+var generated = 1\n", 100000)
+	c := git.Change{Path: "gen.go", Diff: diff, Generated: true}
+	for _, collapsed := range []bool{false, true} {
+		name := "expanded"
+		if collapsed {
+			name = "collapsed"
+		}
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_ = changeRows(c, false, 160, true, false, collapsed, 6, false)
+			}
+		})
+	}
+}
+
 func BenchmarkRebuild(b *testing.B) {
 	huge := []git.Change{{Path: "huge.txt", Diff: "@@ -0,0 +1,100000 @@\n" + strings.Repeat("+a line in a very large file\n", 100000)}}
 	for _, tc := range []struct {
