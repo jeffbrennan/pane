@@ -124,7 +124,7 @@ will usually stay faster because it is newer silicon. Compare the Linux
 before/after columns when judging a change.
 
 The before column is commit `17502e6` measured in a clean worktree. The now
-column is the code at `6e58851`. Timings are medians of six runs for the
+column is the code at `4fe1ae1`. Timings are medians of six runs for the
 harness metrics, and each run is already the harness's median of five. This
 ULV laptop shows noticeable run-to-run variance under sustained load, so treat
 differences under 5% or 2 ms as noise, matching `perf-diff`'s rule.
@@ -170,9 +170,11 @@ one-row scroll. `BenchmarkRenderView/additions` started this pass at roughly
 | `BenchmarkRenderScroll/mixed` | 143 µs, 66 KB, 410 allocs |
 | `BenchmarkRebuild/many` | 4.58 ms, 4.95 MB |
 | `BenchmarkRebuild/huge` | 13.0 ms, 8.01 MB |
+| `BenchmarkCollapsedGenerated/expanded` | 10.1 ms, 8.01 MB |
+| `BenchmarkCollapsedGenerated/collapsed` | 2.14 ms, 1.6 KB |
 
 ```sh
-go test ./internal/ui -run '^$' -bench 'BenchmarkRender|BenchmarkRebuild' -benchmem
+go test ./internal/ui -run '^$' -bench 'BenchmarkRender|BenchmarkRebuild|BenchmarkCollapsed' -benchmem
 ```
 
 `just perf-check` reports several metrics above twice the Apple baseline on
