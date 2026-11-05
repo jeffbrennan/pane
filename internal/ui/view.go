@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -347,7 +348,7 @@ func (m model) renderNumberedDiffRow(r row, index int) string {
 			if index == m.pos && r.sourceLine > 0 {
 				value = r.sourceLine
 			}
-			number = fmt.Sprintf("%*d", width, value)
+			number = formatIntWidth(value, width)
 		}
 		if r.kind == 'm' || r.kind == 'M' {
 			// Details rows are not code, so relative numbers mean nothing there.
@@ -390,22 +391,66 @@ func rowGutter(r row, width int) string {
 	if r.offset > 0 {
 		return strings.Repeat(" ", width+3)
 	}
-	return fmt.Sprintf("%*d %c ", width, r.sourceLine, kind)
+	return formatGutter(r.sourceLine, width, kind)
+}
+
+// formatIntWidth right-aligns value in width bytes. It avoids fmt on the
+// per-row render path, where every visible line formats a relative number.
+func formatIntWidth(value, width int) string {
+	var buffer [24]byte
+	digits := strconv.AppendInt(buffer[:0], int64(value), 10)
+	if len(digits) >= width {
+		return string(digits)
+	}
+	if width > 60 {
+		return strings.Repeat(" ", width-len(digits)) + string(digits)
+	}
+	var out [64]byte
+	pad := width - len(digits)
+	for i := 0; i < pad; i++ {
+		out[i] = ' '
+	}
+	copy(out[pad:], digits)
+	return string(out[:width])
+}
+
+// formatGutter builds the padded number, space, kind, and trailing space in
+// one allocation. Values wider than the column keep their full width, like
+// the %*d form it replaces.
+func formatGutter(value, width int, kind byte) string {
+	var buffer [24]byte
+	digits := strconv.AppendInt(buffer[:0], int64(value), 10)
+	pad := max(0, width-len(digits))
+	if pad+len(digits)+3 > 64 {
+		return strings.Repeat(" ", pad) + string(digits) + " " + string(kind) + " "
+	}
+	var out [64]byte
+	for i := 0; i < pad; i++ {
+		out[i] = ' '
+	}
+	copy(out[pad:], digits)
+	at := pad + len(digits)
+	out[at], out[at+1], out[at+2] = ' ', kind, ' '
+	return string(out[:at+3])
 }
 
 func (m model) renderDiffRowWithGutter(r row, active bool, gutter string) string {
 	margin := diffMargin(m.width)
-	text := r.text
+	prefix := strings.Repeat(" ", margin)
+	if active {
+		prefix = styleBold + m.accent() + "▸" + strings.Repeat(" ", margin-1) + styleReset
+	}
+	body := r.text
 	spans, inline := r.syntaxSpans(), r.inlineSpans()
 	contentWidth := max(0, m.width-margin)
+	bodyWidth := max(0, contentWidth-stringWidth(gutter))
 	if r.kind == 'f' || r.kind == 'F' || r.kind == 'm' || r.kind == 'M' || r.kind == 'n' {
-		text = fit(text, contentWidth)
+		body = fit(body, contentWidth)
 	} else if !m.wrap {
-		text = sliceWidth(text, m.horizontal, max(0, contentWidth-stringWidth(gutter)))
+		body = fit(sliceWidth(body, m.horizontal, bodyWidth), bodyWidth)
 	} else {
-		text = fit(text, max(0, contentWidth-stringWidth(gutter)))
+		body = fit(body, bodyWidth)
 	}
-	text = fit(gutter+text, contentWidth)
 	query := m.activeSearch()
 	color := ""
 	switch r.kind {
@@ -421,11 +466,11 @@ func (m model) renderDiffRowWithGutter(r row, active bool, gutter string) string
 	case 'f', 'F':
 		if r.kind == 'f' && r.generated && (r.oldPath == "" || r.renameAdded) {
 			suffix := generatedLabel(r)
-			head := fit(text, max(0, contentWidth-stringWidth(suffix)))
+			head := fit(body, max(0, contentWidth-stringWidth(suffix)))
 			padding := strings.Repeat(" ", max(0, contentWidth-stringWidth(head)-stringWidth(suffix)))
-			text = head + padding + styleDim + suffix + styleReset
+			body = head + padding + styleDim + suffix + styleReset
 		} else {
-			text += strings.Repeat(" ", max(0, contentWidth-stringWidth(text)))
+			body += strings.Repeat(" ", max(0, contentWidth-stringWidth(body)))
 		}
 		color = renameHeaderDark
 		if m.lightTheme {
@@ -439,7 +484,9 @@ func (m model) renderDiffRowWithGutter(r row, active bool, gutter string) string
 	if r.isMoved() {
 		color = styleDim
 	}
-	if (r.kind == 'f' || r.kind == 'F') && len(inline) > 0 && strings.HasPrefix(text, gutter) {
+	text := body
+	prefixed := false
+	if (r.kind == 'f' || r.kind == 'F') && len(inline) > 0 {
 		highlight := "\x1b[48;2;100;38;43m"
 		if r.renameAdded {
 			highlight = "\x1b[48;2;42;83;52m"
@@ -450,44 +497,52 @@ func (m model) renderDiffRowWithGutter(r row, active bool, gutter string) string
 				highlight = "\x1b[48;2;175;220;181m"
 			}
 		}
-		text = color + gutter + syntax.RenderWithHighlight(text[len(gutter):], nil, inline, 0, query, color, m.lightTheme, highlight) + "\x1b[0m"
+		text = prefix + color + gutter + syntax.RenderWithHighlight(body, nil, inline, 0, query, color, m.lightTheme, highlight) + "\x1b[0m"
+		prefixed = true
 		color = ""
-	} else if (spans != nil || r.kind == '+' || r.kind == '-' || r.kind == 'd') && !r.isMoved() && strings.HasPrefix(text, gutter) {
-		visible := text[len(gutter):]
-		start := 0
-		if !m.wrap {
-			start = syntax.SliceStart(r.text, m.horizontal, max(0, contentWidth-stringWidth(gutter)))
-		}
-		background := ""
-		switch r.kind {
-		case '+':
-			background = darkAddedBackground
-			if m.lightTheme {
-				background = "\x1b[48;2;221;242;224m"
+	} else if spans != nil || r.kind == '+' || r.kind == '-' || r.kind == 'd' {
+		if !r.isMoved() {
+			start := 0
+			if !m.wrap {
+				start = syntax.SliceStart(r.text, m.horizontal, bodyWidth)
 			}
-		case '-', 'd':
-			background = darkRemovedBackground
-			if m.lightTheme {
-				background = "\x1b[48;2;250;225;225m"
+			background := ""
+			switch r.kind {
+			case '+':
+				background = darkAddedBackground
+				if m.lightTheme {
+					background = "\x1b[48;2;221;242;224m"
+				}
+			case '-', 'd':
+				background = darkRemovedBackground
+				if m.lightTheme {
+					background = "\x1b[48;2;250;225;225m"
+				}
 			}
+			padding := ""
+			if background != "" {
+				padding = strings.Repeat(" ", max(0, contentWidth-stringWidth(gutter)-stringWidth(body)))
+			}
+			text = prefix + background + gutter + syntax.Render(body, spans, inline, start, query, background, m.lightTheme) + padding + "\x1b[0m"
+			prefixed = true
+			color = ""
 		}
-		padding := ""
-		if background != "" {
-			padding = strings.Repeat(" ", max(0, contentWidth-stringWidth(gutter+visible)))
+	} else if query != "" {
+		text = prefix + gutter + highlightMatches(body, query)
+		prefixed = true
+	}
+	if !prefixed {
+		// Branches that skip syntax rendering still need the gutter on content
+		// rows, such as moved lines and plain context.
+		if gutter != "" {
+			text = gutter + text
 		}
-		text = background + gutter + syntax.Render(visible, spans, inline, start, query, background, m.lightTheme) + padding + "\x1b[0m"
-		color = ""
-	} else if query != "" && strings.HasPrefix(text, gutter) {
-		text = gutter + highlightMatches(text[len(gutter):], query)
+		if color != "" {
+			text = color + text + "\x1b[0m"
+		}
+		return prefix + text
 	}
-	if color != "" {
-		text = color + text + "\x1b[0m"
-	}
-	prefix := strings.Repeat(" ", margin)
-	if active {
-		prefix = styleBold + m.accent() + "▸" + strings.Repeat(" ", margin-1) + styleReset
-	}
-	return prefix + text
+	return text
 }
 
 func fit(s string, width int) string {
