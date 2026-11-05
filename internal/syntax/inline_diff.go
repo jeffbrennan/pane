@@ -2,11 +2,32 @@ package syntax
 
 import (
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
+
+// Word-diff results are pure functions of the two line strings, and a scroll
+// frame re-renders almost the same visible rows as the frame before it. A
+// small FIFO cache keeps that work from repeating without retaining diffs.
+const inlineSpanCacheLimit = 1024
+
+type inlineSpanKey struct {
+	old, new string
+}
+
+type inlineSpanPair struct {
+	removed, added []Span
+}
+
+var inlineSpanCache = struct {
+	sync.Mutex
+	entries map[inlineSpanKey]inlineSpanPair
+	keys    [inlineSpanCacheLimit]inlineSpanKey
+	next    int
+}{entries: make(map[inlineSpanKey]inlineSpanPair, inlineSpanCacheLimit)}
 
 func InlineChanges(lines []string) map[int][]Span {
 	result := make(map[int][]Span)
@@ -47,6 +68,28 @@ func ChangedSpans(old, new string) ([]Span, []Span) {
 	if len(old)+len(new) > 4096 {
 		return nil, nil
 	}
+	key := inlineSpanKey{old, new}
+	inlineSpanCache.Lock()
+	cached, ok := inlineSpanCache.entries[key]
+	inlineSpanCache.Unlock()
+	if ok {
+		return cached.removed, cached.added
+	}
+	removed, added := changedSpans(old, new)
+	inlineSpanCache.Lock()
+	if _, exists := inlineSpanCache.entries[key]; !exists {
+		if len(inlineSpanCache.entries) >= inlineSpanCacheLimit {
+			delete(inlineSpanCache.entries, inlineSpanCache.keys[inlineSpanCache.next])
+		}
+		inlineSpanCache.keys[inlineSpanCache.next] = key
+		inlineSpanCache.next = (inlineSpanCache.next + 1) % inlineSpanCacheLimit
+		inlineSpanCache.entries[key] = inlineSpanPair{removed, added}
+	}
+	inlineSpanCache.Unlock()
+	return removed, added
+}
+
+func changedSpans(old, new string) ([]Span, []Span) {
 	dmp := diffmatchpatch.New()
 	dmp.DiffTimeout = 30 * time.Millisecond
 	diffs := dmp.DiffMain(old, new, false)

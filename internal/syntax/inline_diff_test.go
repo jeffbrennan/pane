@@ -1,6 +1,8 @@
 package syntax
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -57,5 +59,23 @@ func TestChangedSpansRequireCommonText(t *testing.T) {
 	removed, added := ChangedSpans("hello beautiful world", "hello beautiful earth")
 	if len(removed) != 1 || len(added) != 1 {
 		t.Fatalf("missing changed spans: %#v %#v", removed, added)
+	}
+}
+
+func TestChangedSpansCacheStaysBounded(t *testing.T) {
+	for i := 0; i < inlineSpanCacheLimit+32; i++ {
+		ChangedSpans(fmt.Sprintf("old line %d with common text", i), fmt.Sprintf("new line %d with common text", i))
+	}
+	inlineSpanCache.Lock()
+	size := len(inlineSpanCache.entries)
+	inlineSpanCache.Unlock()
+	if size > inlineSpanCacheLimit {
+		t.Fatalf("inline span cache grew to %d entries", size)
+	}
+	old, new := "hello beautiful world", "hello beautiful earth"
+	removed, added := ChangedSpans(old, new)
+	wantRemoved, wantAdded := changedSpans(old, new)
+	if !slices.Equal(removed, wantRemoved) || !slices.Equal(added, wantAdded) {
+		t.Fatalf("cached spans differ: %#v %#v != %#v %#v", removed, added, wantRemoved, wantAdded)
 	}
 }
