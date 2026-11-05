@@ -5,14 +5,17 @@ import (
 )
 
 type row struct {
-	path, oldPath, text        string
-	spans                      *rowSpans
-	offset, target, sourceLine int
-	deletedLines               int
-	lineIndex, headerIndex     int32
-	commitIndex                uint16
-	renameAdded, submodule     bool
-	generated, viewed          bool
+	path, oldPath, text string
+	spans               *rowSpans
+	// Line numbers stay native ints so very large source lines are preserved.
+	target, sourceLine int
+	// Offsets and deleted-line counts are small in practice; keeping them
+	// compact lets the four int32 fields pack without padding.
+	offset, deletedLines   int32
+	lineIndex, headerIndex int32
+	commitIndex            uint16
+	renameAdded, submodule bool
+	generated, viewed      bool
 	// A highlighted line can have no spans but still use syntax-aware rendering.
 	syntaxPresent bool
 	kind          byte

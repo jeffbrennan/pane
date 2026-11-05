@@ -67,7 +67,7 @@ func (m model) fileEntries() []fileEntry {
 		}
 		switch {
 		case r.kind == 'f':
-			entries = append(entries, fileEntry{path: r.path, oldPath: r.oldPath, row: i, deleted: r.deletedLines, submodule: r.submodule, viewed: r.viewed})
+			entries = append(entries, fileEntry{path: r.path, oldPath: r.oldPath, row: i, deleted: int(r.deletedLines), submodule: r.submodule, viewed: r.viewed})
 		case len(entries) == 0 || r.offset > 0:
 		case r.kind == '+':
 			entries[len(entries)-1].added++

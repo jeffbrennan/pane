@@ -13,7 +13,7 @@ func (m model) location() jumpLocation {
 	loc := jumpLocation{index: m.pos, top: m.viewTop}
 	if m.pos >= 0 && m.pos < len(m.rows) {
 		r := m.rows[m.pos]
-		loc.path, loc.text, loc.line, loc.target, loc.offset, loc.kind = r.path, r.text, r.lineNumber(), r.target, r.offset, r.kind
+		loc.path, loc.text, loc.line, loc.target, loc.offset, loc.kind = r.path, r.text, r.lineNumber(), r.target, int(r.offset), r.kind
 	}
 	return loc
 }
@@ -66,12 +66,13 @@ func (m *model) travelJump(direction int) {
 	} else {
 		bestDistance := int(^uint(0) >> 1)
 		for i, r := range m.rows {
-			if r.path == loc.path && r.kind == loc.kind && r.target == loc.target && r.text == loc.text && r.offset == loc.offset {
+			offset := int(r.offset)
+			if r.path == loc.path && r.kind == loc.kind && r.target == loc.target && r.text == loc.text && offset == loc.offset {
 				index = i
 				break
 			}
 			if r.path == loc.path && r.kind == loc.kind {
-				distance := max(r.target-loc.target, loc.target-r.target)*1000 + max(r.offset-loc.offset, loc.offset-r.offset)
+				distance := max(r.target-loc.target, loc.target-r.target)*1000 + max(offset-loc.offset, loc.offset-offset)
 				if distance < bestDistance {
 					index, bestDistance = i, distance
 				}

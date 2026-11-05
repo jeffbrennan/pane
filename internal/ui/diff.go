@@ -130,7 +130,7 @@ func changeRows(c git.Change, separated bool, width int, wrap bool, expanded boo
 		header.setGeneratedCounts(added, deleted)
 	}
 	if deletedFile && !expanded {
-		header.deletedLines = deletedLines
+		header.deletedLines = int32(deletedLines)
 	}
 	if c.OldPath == "" {
 		rows = append(rows, header)
@@ -150,7 +150,7 @@ func changeRows(c git.Change, separated bool, width int, wrap bool, expanded boo
 			}
 			byteOffset := 0
 			for _, part := range wrapLine(text, max(1, width-5)) {
-				header.text, header.offset = " "+part, offset
+				header.text, header.offset = " "+part, int32(offset)
 				inline := syntax.Clip(spans, byteOffset, byteOffset+len(part))
 				for i := range inline {
 					inline[i].Start++
@@ -265,7 +265,7 @@ func changeRows(c git.Change, separated bool, width int, wrap bool, expanded boo
 				if syntaxMatches {
 					spans = syntax.Clip(lineSyntax.Spans, byteOffset, byteOffset+len(part))
 				}
-				rows = append(rows, (row{path: c.Path, offset: offset, target: target, sourceLine: number, text: part, kind: kind, spans: newRowSpans(spans, nil, nil), syntaxPresent: spans != nil}).withLineNumber(i))
+				rows = append(rows, (row{path: c.Path, offset: int32(offset), target: target, sourceLine: number, text: part, kind: kind, spans: newRowSpans(spans, nil, nil), syntaxPresent: spans != nil}).withLineNumber(i))
 				byteOffset += len(part)
 				offset += stringWidth(part)
 			}
@@ -376,7 +376,7 @@ func wrapContentRows(base row, text string, limit int) []row {
 	offset := 0
 	for _, part := range parts {
 		clone := base
-		clone.text, clone.offset = part, offset
+		clone.text, clone.offset = part, int32(offset)
 		rows = append(rows, clone)
 		offset += stringWidth(part)
 	}
@@ -389,7 +389,7 @@ func wrapHeaderRows(base row, text string, limit int) []row {
 	offset := 0
 	for _, part := range parts {
 		clone := base
-		clone.text, clone.offset, clone.kind = " "+part, offset, 'f'
+		clone.text, clone.offset, clone.kind = " "+part, int32(offset), 'f'
 		if offset > 0 {
 			clone.kind = 'F'
 		}
