@@ -405,6 +405,82 @@ func measureSyntaxPerf(t *testing.T) {
 	})
 }
 
+// benchmarkAdditions is the all-added shape used by the synthetic harness.
+func benchmarkAdditions() []git.Change {
+	changes := make([]git.Change, 500)
+	for i := range changes {
+		changes[i] = git.Change{Path: fmt.Sprintf("file-%04d.txt", i), Diff: "@@ -0,0 +1,100 @@\n" + strings.Repeat("+a representative line of text\n", 100)}
+	}
+	return changes
+}
+
+// benchmarkMixed is paired removed/added lines, which exercises inline diffs.
+func benchmarkMixed() []git.Change {
+	changes := make([]git.Change, 200)
+	for i := range changes {
+		var diff strings.Builder
+		diff.WriteString("@@ -1,20 +1,20 @@\n")
+		for j := 0; j < 20; j++ {
+			diff.WriteString("-old representative line\n")
+		}
+		for j := 0; j < 20; j++ {
+			diff.WriteString("+new representative line\n")
+		}
+		changes[i] = git.Change{Path: fmt.Sprintf("mixed-%04d.txt", i), Diff: diff.String()}
+	}
+	return changes
+}
+
+func BenchmarkRenderView(b *testing.B) {
+	for _, tc := range []struct {
+		name         string
+		changes      []git.Change
+		pos, viewTop int
+	}{
+		{"additions", benchmarkAdditions(), 0, 0},
+		{"mixed", benchmarkMixed(), 40, 20},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			m := model{width: 160, height: 50, wrap: true, screen: "commit", history: historyState{changes: tc.changes}}
+			m.rebuildCommit()
+			view := m.commitModel()
+			view.screen = "commit"
+			view.history.pos, view.history.viewTop = tc.pos, tc.viewTop
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_ = view.View()
+			}
+		})
+	}
+}
+
+func BenchmarkRenderScroll(b *testing.B) {
+	for _, tc := range []struct {
+		name         string
+		changes      []git.Change
+		pos, viewTop int
+	}{
+		{"additions", benchmarkAdditions(), 0, 0},
+		{"mixed", benchmarkMixed(), 40, 20},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			m := model{width: 160, height: 50, wrap: true, screen: "commit", history: historyState{changes: tc.changes}}
+			m.rebuildCommit()
+			view := m.commitModel()
+			view.screen = "commit"
+			view.history.pos, view.history.viewTop = tc.pos, tc.viewTop
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				next, _ := view.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+				view = next.(model)
+				_ = view.View()
+			}
+		})
+	}
+}
+
 func BenchmarkWorkingTreeRefresh(b *testing.B) {
 	base := make([]git.Change, 1000)
 	for i := range base {
