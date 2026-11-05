@@ -93,7 +93,7 @@ func (s searchMatcher) matches(text string) bool {
 }
 
 func (s searchMatcher) rowMatches(r *row) bool {
-	return s.matches(r.text) || (r.kind == 'f' && (s.matches(r.path) || s.matches(r.oldPath)))
+	return s.matches(r.text) || (r.kind == 'f' && (s.matches(r.path) || s.matches(r.oldPathValue())))
 }
 
 func (m model) activeSearch() string {

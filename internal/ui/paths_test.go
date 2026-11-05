@@ -53,7 +53,7 @@ func TestShortPathsToggleInDiffViews(t *testing.T) {
 			if len(view.rows) < 2 || !strings.Contains(view.rows[0].text, "…/root/file.go") || !strings.Contains(view.rows[1].text, "…/parent/file.go") {
 				t.Fatalf("short rows: %#v", view.rows)
 			}
-			if view.rows[0].path != c.Path || view.rows[0].oldPath != c.OldPath {
+			if view.rows[0].path != c.Path || view.rows[0].oldPathValue() != c.OldPath {
 				t.Fatalf("paths changed: %#v", view.rows[0])
 			}
 			if len(filterFiles(view.fileEntries(), "old/root")) != 1 {

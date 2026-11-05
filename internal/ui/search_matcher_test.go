@@ -50,7 +50,8 @@ func TestParallelSearchMatchesSequentialOrder(t *testing.T) {
 	for _, index := range []int{1, 2048, 15001, 50000, 99999} {
 		rows[index].text = "Finding needle here"
 	}
-	rows[75000] = row{kind: 'f', text: "header", path: "dir/needle.go", oldPath: "old/previous.go"}
+	rows[75000] = row{kind: 'f', text: "header", path: "dir/needle.go"}
+	rows[75000].setOldPath("old/previous.go")
 	m := model{rows: rows}
 	random := rand.New(rand.NewSource(42))
 	starts := []int{-1, 0, 1, 2047, 2048, 49999, 50000, len(rows) - 1, len(rows)}

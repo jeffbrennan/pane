@@ -465,7 +465,7 @@ func (m model) renderDiffRowWithGutter(r row, inline []syntax.Span, active bool,
 			color = styleDim
 		}
 	case 'f', 'F':
-		if r.kind == 'f' && r.generated && (r.oldPath == "" || r.renameAdded) {
+		if r.kind == 'f' && r.generated && (r.oldPathValue() == "" || r.renameAdded) {
 			suffix := generatedLabel(r)
 			head := fit(body, max(0, contentWidth-stringWidth(suffix)))
 			padding := strings.Repeat(" ", max(0, contentWidth-stringWidth(head)-stringWidth(suffix)))

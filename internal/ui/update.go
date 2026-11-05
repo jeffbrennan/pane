@@ -582,7 +582,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.appendCommitChanges(chunk.Changes, chunk.Done)
 		if m.picker.pendingPath != "" {
 			for i, r := range m.history.rows {
-				if r.kind == 'f' && (r.path == m.picker.pendingPath || r.oldPath == m.picker.pendingPath) {
+				if r.kind == 'f' && (r.path == m.picker.pendingPath || r.oldPathValue() == m.picker.pendingPath) {
 					m.history.pos = i
 					m.history.viewTop = i
 					m.picker.pendingPath = ""

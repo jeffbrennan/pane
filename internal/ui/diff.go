@@ -129,7 +129,8 @@ func changeRows(c git.Change, separated bool, width int, wrap bool, expanded boo
 		name = displayPath(c.OldPath, shortPaths)
 	}
 	_, _, submodule := git.SubmoduleLine(strings.SplitN(c.Diff, "\n", 2)[0])
-	header := row{path: c.Path, oldPath: c.OldPath, lineIndex: -1, text: " " + name, kind: 'f', submodule: submodule, generated: c.Generated}
+	header := row{path: c.Path, lineIndex: -1, text: " " + name, kind: 'f', submodule: submodule, generated: c.Generated}
+	header.setOldPath(c.OldPath)
 	if c.Generated {
 		added, deleted := countGeneratedLines(c.Diff)
 		header.setGeneratedCounts(added, deleted)
