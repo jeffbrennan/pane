@@ -159,7 +159,9 @@ func LinesFor(path, diff, display string) (map[int]Line, map[int]Line) {
 // lines from the old side.
 func displayedLines(display string) (oldLines, newLines []int) {
 	oldNumber, newNumber, inHunk := 0, 0, false
-	for _, line := range strings.Split(display, "\n") {
+	for rest := display; rest != ""; {
+		line, next, _ := strings.Cut(rest, "\n")
+		rest = next
 		if match := MatchHunkHeader(line); match != nil {
 			oldNumber, _ = strconv.Atoi(match[1])
 			newNumber, _ = strconv.Atoi(match[3])
@@ -220,7 +222,9 @@ func tokenizeDiff(path, diff, display string) (map[int]Line, map[int]Line) {
 	}
 	var old, new []string
 	inHunk := false
-	for _, line := range strings.Split(strings.TrimSuffix(diff, "\n"), "\n") {
+	for rest := strings.TrimSuffix(diff, "\n"); rest != ""; {
+		line, next, _ := strings.Cut(rest, "\n")
+		rest = next
 		if match := MatchHunkHeader(line); match != nil {
 			oldStart, _ := strconv.Atoi(match[1])
 			newStart, _ := strconv.Atoi(match[3])
@@ -259,25 +263,40 @@ func tokenizeLines(lexer chroma.Lexer, lines []string) map[int]Line {
 	if len(lines) == 0 {
 		return result
 	}
-	iterator, err := lexer.Tokenise(nil, strings.Join(lines, "\n")+"\n")
+	size := len(lines)
+	for _, text := range lines {
+		size += len(text)
+	}
+	var source strings.Builder
+	source.Grow(size)
+	for i, text := range lines {
+		if i > 0 {
+			source.WriteByte('\n')
+		}
+		source.WriteString(text)
+	}
+	source.WriteByte('\n')
+	iterator, err := lexer.Tokenise(nil, source.String())
 	if err != nil {
 		return nil
 	}
 	line, offset := 1, 0
 	for token := iterator(); token != chroma.EOF; token = iterator() {
 		color := TokenColor(token.Type)
-		parts := strings.Split(token.Value, "\n")
-		for i, part := range parts {
-			if i > 0 {
-				line++
-				offset = 0
-			}
+		for rest := token.Value; ; {
+			part, next, found := strings.Cut(rest, "\n")
 			if color != "" && len(part) > 0 && line <= len(lines) {
 				entry := result[line]
 				entry.Spans = append(entry.Spans, Span{Start: offset, End: offset + len(part), Color: color})
 				result[line] = entry
 			}
 			offset += len(part)
+			if !found {
+				break
+			}
+			line++
+			offset = 0
+			rest = next
 		}
 	}
 	return result
