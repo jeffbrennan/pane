@@ -106,13 +106,18 @@ func parallelEach(n int, f func(int)) {
 // changeRows lays out one file; separated adds the blank row that divides it
 // from the file before.
 func changeRows(c git.Change, separated bool, width int, wrap bool, expanded bool, gutterWidth int, shortPaths bool) []row {
+	deletedFile := strings.Contains(c.Diff, "\ndeleted file mode ") && !strings.Contains(c.Diff, "\nnew file mode ")
+	// A collapsed deleted file only needs its headers, so do not size the row
+	// slice for the file's whole contents.
+	capacity := 16
+	if !deletedFile || expanded {
+		capacity = strings.Count(c.Diff, "\n") + 3
+	}
 	// Most lines take one row; sizing for them avoids regrowing large files.
-	rows := make([]row, 0, strings.Count(c.Diff, "\n")+3)
-	oldSyntax, newSyntax := syntax.LinesFor(c.Path, c.SyntaxDiff, c.Diff)
+	rows := make([]row, 0, capacity)
 	if separated {
 		rows = append(rows, row{path: c.Path, lineIndex: -2, kind: 's'})
 	}
-	deletedFile := strings.Contains(c.Diff, "\ndeleted file mode ") && !strings.Contains(c.Diff, "\nnew file mode ")
 	deletedLines := 0
 	if deletedFile {
 		deletedLines = countDeletedLines(c.Diff)
@@ -180,6 +185,7 @@ func changeRows(c git.Change, separated bool, width int, wrap bool, expanded boo
 			return rows
 		}
 	}
+	oldSyntax, newSyntax := syntax.LinesFor(c.Path, c.SyntaxDiff, c.Diff)
 	oldLine, newLine, hunks := 0, 0, 0
 	inHunk, hasContent := false, false
 	var metadata []string
