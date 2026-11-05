@@ -10,12 +10,6 @@ import (
 // search keeps rendering independent of a huge contiguous change.
 const inlinePairs = 32
 
-type inlineLine struct {
-	kind byte
-	line int
-	text string
-}
-
 // inlineSpansForRow computes changed-word spans for the visible row at index.
 // Building every changed line eagerly dominated large diffs; a screen needs
 // spans only for the lines it draws.
@@ -40,16 +34,29 @@ func (m model) inlineSpansForRow(index int) []syntax.Span {
 	if oldStart == oldEnd || newStart == newEnd {
 		return nil
 	}
-	oldLines, newLines := m.inlineLines(oldStart, oldEnd), m.inlineLines(newStart, newEnd)
-	if len(oldLines) == 0 || len(oldLines) != len(newLines) {
+	// Each side can include up to inlinePairs lines found while scanning in
+	// both directions, so size the stack buffers for the combined bound.
+	var oldLines, newLines [2*inlinePairs + 2]int
+	var oldStarts, newStarts [2*inlinePairs + 2]int
+	oldCount := m.inlineLineNumbers(oldStart, oldEnd, oldLines[:], oldStarts[:])
+	newCount := m.inlineLineNumbers(newStart, newEnd, newLines[:], newStarts[:])
+	if oldCount == 0 || oldCount != newCount {
 		return nil
 	}
-	for j := range oldLines {
-		if oldLines[j].line != row.lineNumber() && newLines[j].line != row.lineNumber() {
+	line := row.lineNumber()
+	for j := 0; j < oldCount; j++ {
+		if oldLines[j] != line && newLines[j] != line {
 			continue
 		}
-		removed, added := syntax.ChangedSpans(oldLines[j].text, newLines[j].text)
-		if oldLines[j].line == row.lineNumber() {
+		oldNext, newNext := oldEnd, newEnd
+		if j+1 < oldCount {
+			oldNext = oldStarts[j+1]
+		}
+		if j+1 < newCount {
+			newNext = newStarts[j+1]
+		}
+		removed, added := syntax.ChangedSpans(m.inlineLineText(oldStarts[j], oldNext), m.inlineLineText(newStarts[j], newNext))
+		if oldLines[j] == line {
 			return clipRowSpan(m.rows, oldStart, index, removed)
 		}
 		return clipRowSpan(m.rows, newStart, index, added)
@@ -111,33 +118,38 @@ func (m model) inlineLinesAfter(index int) (int, int) {
 	return m.inlineLineRun(index, false)
 }
 
-func (m model) inlineLines(start, end int) []inlineLine {
-	var lines []inlineLine
+// inlineLineNumbers records each distinct source line's number and the row
+// where it starts. It returns the count without allocating.
+func (m model) inlineLineNumbers(start, end int, lines, starts []int) int {
+	count := 0
 	for i := start; i < end; {
-		line := m.rows[i].lineNumber()
-		kind := m.rows[i].kind
-		j := i + 1
-		for ; j < end && m.rows[j].lineNumber() == line && m.rows[j].kind == kind; j++ {
+		line, kind := m.rows[i].lineNumber(), m.rows[i].kind
+		lines[count], starts[count] = line, i
+		count++
+		i++
+		for i < end && m.rows[i].lineNumber() == line && m.rows[i].kind == kind {
+			i++
 		}
-		// Unwrapped lines are already one string per source line. Only join
-		// when wrapping split the line across several rows.
-		text := m.rows[i].text
-		if j-i > 1 {
-			size := 0
-			for k := i; k < j; k++ {
-				size += len(m.rows[k].text)
-			}
-			var joined strings.Builder
-			joined.Grow(size)
-			for k := i; k < j; k++ {
-				joined.WriteString(m.rows[k].text)
-			}
-			text = joined.String()
-		}
-		lines = append(lines, inlineLine{kind: kind, line: line, text: text})
-		i = j
 	}
-	return lines
+	return count
+}
+
+// inlineLineText joins the wrapped rows for one source line. Unwrapped lines
+// are already one string, so the common case does not allocate.
+func (m model) inlineLineText(start, end int) string {
+	if end-start <= 1 {
+		return m.rows[start].text
+	}
+	size := 0
+	for i := start; i < end; i++ {
+		size += len(m.rows[i].text)
+	}
+	var joined strings.Builder
+	joined.Grow(size)
+	for i := start; i < end; i++ {
+		joined.WriteString(m.rows[i].text)
+	}
+	return joined.String()
 }
 
 func clipRowSpan(rows []row, blockStart, index int, spans []syntax.Span) []syntax.Span {
