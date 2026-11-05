@@ -481,6 +481,27 @@ func BenchmarkRenderScroll(b *testing.B) {
 	}
 }
 
+func BenchmarkRebuild(b *testing.B) {
+	huge := []git.Change{{Path: "huge.txt", Diff: "@@ -0,0 +1,100000 @@\n" + strings.Repeat("+a line in a very large file\n", 100000)}}
+	for _, tc := range []struct {
+		name    string
+		changes []git.Change
+	}{
+		{"many", benchmarkAdditions()},
+		{"huge", huge},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			m := model{width: 160, height: 50, wrap: true, snapshot: git.Snapshot{Unstaged: tc.changes}}
+			m.rebuild()
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				m.rebuild()
+			}
+		})
+	}
+}
+
 func BenchmarkWorkingTreeRefresh(b *testing.B) {
 	base := make([]git.Change, 1000)
 	for i := range base {
