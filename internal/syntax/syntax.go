@@ -333,13 +333,31 @@ func Render(text string, spans, inline []Span, start int, query, background stri
 }
 
 func RenderWithHighlight(text string, spans, inline []Span, start int, query, background string, light bool, highlight string) string {
-	colors := make([]string, len(text))
+	// Index into a small palette instead of storing a string header per byte;
+	// diffs have only a handful of distinct colors, and this drops the largest
+	// per-row allocation in the render path.
+	palette := []string{""}
+	colorIDs := make([]uint8, len(text))
 	for _, span := range spans {
-		for i := max(0, span.Start-start); i < min(len(text), span.End-start); i++ {
-			colors[i] = span.Color
-			if light {
-				colors[i] = lightSyntaxColor(span.Color)
+		color := span.Color
+		if light {
+			color = lightSyntaxColor(span.Color)
+		}
+		id := uint8(0)
+		if color != "" {
+			for i, existing := range palette {
+				if existing == color {
+					id = uint8(i)
+					break
+				}
 			}
+			if id == 0 {
+				palette = append(palette, color)
+				id = uint8(len(palette) - 1)
+			}
+		}
+		for i := max(0, span.Start-start); i < min(len(text), span.End-start); i++ {
+			colorIDs[i] = id
 		}
 	}
 	changed := make([]bool, len(text))
@@ -364,7 +382,7 @@ func RenderWithHighlight(text string, spans, inline []Span, start int, query, ba
 		}
 	}
 	var b strings.Builder
-	color := ""
+	color := uint8(0)
 	match := false
 	change := false
 	for i := 0; i < len(text); i++ {
@@ -386,10 +404,10 @@ func RenderWithHighlight(text string, spans, inline []Span, start int, query, ba
 				b.WriteString(background)
 			}
 		}
-		if colors[i] != color {
+		if colorIDs[i] != color {
 			b.WriteString("\x1b[39m")
-			color = colors[i]
-			b.WriteString(color)
+			color = colorIDs[i]
+			b.WriteString(palette[color])
 		}
 		if matches[i] != match {
 			match = matches[i]
@@ -404,7 +422,7 @@ func RenderWithHighlight(text string, spans, inline []Span, start int, query, ba
 	if match {
 		b.WriteString("\x1b[27m")
 	}
-	if color != "" {
+	if color != 0 {
 		b.WriteString("\x1b[39m")
 	}
 	if change {
