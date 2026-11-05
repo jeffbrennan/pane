@@ -53,8 +53,9 @@ change.
 
 ## Current large-commit results
 
-Measured against a 9,195-file, 1.5M-row commit, except the base review row,
-which uses a 36,008-file, 271 MB working-tree diff:
+Measured on Apple Silicon (the same hardware behind `perf/baseline.tsv`)
+against a 9,195-file, 1.5M-row commit, except the base review row, which uses a
+36,008-file, 271 MB working-tree diff:
 
 | Metric | Result | Initial target | Status |
 |---|---|---|---|
@@ -114,3 +115,51 @@ once more for the in-diff handler. The scan moved to the points where rows are
 built or appended, so a scroll frame now walks only the visible rows. `View()`
 itself was already proportional to the viewport; the remaining cost is inline
 diff spans for visible lines.
+
+## Linux results
+
+The synthetic numbers below are from an Intel Core i5-8250U (4C/8T, 2017 ULV)
+running Linux and Go 1.27.3 on 2026-11-05. The Apple column is
+`perf/baseline.tsv`; it will usually stay faster because it is newer silicon.
+Compare the Linux before/after columns when judging a change.
+
+The before column is commit `17502e6` measured in a clean worktree, and the now
+column is the code at `3bc4cf3`. Timings are medians of three runs, and each run
+is already the harness's median of five. This ULV laptop shows noticeable
+run-to-run variance under sustained load, so treat differences under 5% or 2 ms
+as noise, matching `perf-diff`'s rule.
+
+| Metric | Apple baseline | Linux before | Linux now | Change |
+|---|---:|---:|---:|---:|
+| Heap after build, 51k rows | 8.30 MB | 8.21 MB | 7.80 MB | −5% |
+| `row` struct size | 104 B | 104 B | 96 B | −7.7% |
+| `view_alloc_bytes`, 51k rows | 299 KB | 299 KB | 39 KB | −87% |
+| `view_ns`, 51k rows | 207 µs | 228 µs | 91 µs | −60% |
+| `view_ns`, 100k-row file | 170 µs | 238 µs | 97 µs | −59% |
+| `moved_index_ns`, 51k rows | 3.49 ms | 4.95 ms | 2.66 ms | −46% |
+| `moved_index_ns`, 100k-line file | 6.43 ms | 11.26 ms | 4.12 ms | −63% |
+| `build_ns`, 51k rows | 1.74 ms | 5.37 ms | 4.92 ms | −8% |
+| `build_ns`, 100k-row file | 10.68 ms | 18.58 ms | 16.82 ms | −9% |
+| `synthetic-range rebuild_ns`, 100 commits | 2.07 ms | 6.81 ms | 1.85 ms | −73% |
+| `synthetic-refresh full_rebuild_ns`, 1000 files | 3.19 ms | 11.40 ms | 10.01 ms | −12% |
+
+Paths that were not the target of this pass are broadly unchanged:
+
+| Metric | Apple baseline | Linux before | Linux now |
+|---|---:|---:|---:|
+| `search_miss_ns`, 51k rows | 1.60 ms | 3.06 ms | 3.18 ms (noise) |
+| `resize_width_apply_ns` | 0.77 ms | 2.34 ms | 2.00 ms |
+| `wrap_toggle_ns` | 1.63 ms | 3.06 ms | 3.27 ms (noise) |
+| `scroll_j_mid_ns` | 20.7 µs | 27.8 µs | 35.5 µs (noise) |
+
+`just perf-check` reports several metrics above twice the Apple baseline on
+this machine. Those are hardware-bound and are not Linux regressions; use the
+same-machine before/after columns or a Linux baseline when adding a new gate.
+
+To add a row, run the synthetic harness and append the new medians here:
+
+```sh
+PANE_PERF=1 PANE_PERF_RUN=linux-$(date -u +%Y%m%dT%H%M%S) \
+  PANE_PERF_LOG="$PWD/.scratch/perf-linux.tsv" \
+  go test -run '^TestPerf$' -count=1 ./internal/ui
+```
