@@ -329,8 +329,9 @@ func (m model) lineDistance(index int) int {
 }
 
 func (m model) renderNumberedDiffRow(r row, index int) string {
-	if index >= 0 && len(r.inlineSpans()) == 0 {
-		r.setInlineSpans(m.inlineSpansForRow(index))
+	inline := r.inlineSpans()
+	if index >= 0 && len(inline) == 0 {
+		inline = m.inlineSpansForRow(index)
 	}
 	gutterWidth := m.rowGutterWidth(r)
 	gutter := rowGutter(r, gutterWidth)
@@ -360,11 +361,11 @@ func (m model) renderNumberedDiffRow(r row, index int) string {
 			gutter = number + " "
 		}
 	}
-	return m.renderDiffRowWithGutter(r, index >= 0 && index == m.pos, gutter)
+	return m.renderDiffRowWithGutter(r, inline, index >= 0 && index == m.pos, gutter)
 }
 
 func (m model) renderDiffRow(r row, active bool) string {
-	return m.renderDiffRowWithGutter(r, active, rowGutter(r, m.rowGutterWidth(r)))
+	return m.renderDiffRowWithGutter(r, r.inlineSpans(), active, rowGutter(r, m.rowGutterWidth(r)))
 }
 
 func (m model) rowGutterWidth(r row) int {
@@ -434,14 +435,14 @@ func formatGutter(value, width int, kind byte) string {
 	return string(out[:at+3])
 }
 
-func (m model) renderDiffRowWithGutter(r row, active bool, gutter string) string {
+func (m model) renderDiffRowWithGutter(r row, inline []syntax.Span, active bool, gutter string) string {
 	margin := diffMargin(m.width)
 	prefix := strings.Repeat(" ", margin)
 	if active {
 		prefix = styleBold + m.accent() + "▸" + strings.Repeat(" ", margin-1) + styleReset
 	}
 	body := r.text
-	spans, inline := r.syntaxSpans(), r.inlineSpans()
+	spans := r.syntaxSpans()
 	contentWidth := max(0, m.width-margin)
 	bodyWidth := max(0, contentWidth-stringWidth(gutter))
 	if r.kind == 'f' || r.kind == 'F' || r.kind == 'm' || r.kind == 'M' || r.kind == 'n' {
