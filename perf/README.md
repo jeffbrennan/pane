@@ -124,32 +124,32 @@ will usually stay faster because it is newer silicon. Compare the Linux
 before/after columns when judging a change.
 
 The before column is commit `17502e6` measured in a clean worktree. The now
-column is the code at `506a246`. Timings are medians of three runs, and each
-run is already the harness's median of five. This ULV laptop shows noticeable
-run-to-run variance under sustained load, so treat differences under 5% or 2 ms
-as noise, matching `perf-diff`'s rule.
+column is the code at `6e58851`. Timings are medians of six runs for the
+harness metrics, and each run is already the harness's median of five. This
+ULV laptop shows noticeable run-to-run variance under sustained load, so treat
+differences under 5% or 2 ms as noise, matching `perf-diff`'s rule.
 
 | Metric | Apple baseline | Linux before | Linux now | Change |
 |---|---:|---:|---:|---:|
-| Heap after build, 51k rows | 8.30 MB | 8.21 MB | 7.97 MB | −3% |
-| `row` struct size | 104 B | 104 B | 96 B | −7.7% |
+| Heap after build, 51k rows | 8.30 MB | 8.21 MB | 7.15 MB | −13% |
+| `row` struct size | 104 B | 104 B | 80 B | −23% |
 | `view_alloc_bytes`, 51k rows | 299 KB | 299 KB | 25.8 KB | −91% |
-| `view_ns`, 51k rows | 207 µs | 228 µs | 65 µs | −72% |
-| `view_ns`, 100k-row file | 170 µs | 238 µs | 75 µs | −68% |
+| `view_ns`, 51k rows | 207 µs | 228 µs | 68 µs | −70% |
+| `view_ns`, 100k-row file | 170 µs | 238 µs | 73 µs | −69% |
 | `moved_index_ns`, 51k rows | 3.49 ms | 4.95 ms | 2.59 ms | −48% |
-| `moved_index_ns`, 100k-line file | 6.43 ms | 11.26 ms | 4.09 ms | −64% |
-| `synthetic-range rebuild_ns`, 100 commits | 2.07 ms | 6.81 ms | 0.76 ms | −89% |
+| `moved_index_ns`, 100k-line file | 6.43 ms | 11.26 ms | 4.18 ms | −63% |
+| `synthetic-range rebuild_ns`, 100 commits | 2.07 ms | 6.81 ms | 1.55 ms | −77% |
 | `synthetic-refresh full_rebuild_ns`, 1000 files | 3.19 ms | 11.40 ms | 8.14 ms | −29% |
-| `synthetic-refresh spliced_refresh_ns`, 1000 files | 2.99 ms | 7.30 ms | 6.28 ms | −14% |
+| `synthetic-refresh spliced_refresh_ns`, 1000 files | 2.99 ms | 7.30 ms | 5.12 ms | −30% |
 
 Paths that were not the target of this pass are broadly unchanged:
 
 | Metric | Apple baseline | Linux before | Linux now |
 |---|---:|---:|---:|
-| `search_miss_ns`, 51k rows | 1.60 ms | 3.06 ms | 2.93 ms (noise) |
-| `resize_width_apply_ns` | 0.77 ms | 2.34 ms | 1.92 ms |
-| `wrap_toggle_ns` | 1.63 ms | 3.06 ms | 2.96 ms (noise) |
-| `scroll_j_mid_ns` | 20.7 µs | 27.8 µs | 26.7 µs (noise) |
+| `search_miss_ns`, 51k rows | 1.60 ms | 3.06 ms | 3.31 ms (noise) |
+| `resize_width_apply_ns` | 0.77 ms | 2.34 ms | 1.77 ms |
+| `wrap_toggle_ns` | 1.63 ms | 3.06 ms | 3.33 ms (noise) |
+| `scroll_j_mid_ns` | 20.7 µs | 27.8 µs | 26.8 µs (noise) |
 
 The full harness's `synthetic-many build_ns` is noisy on this machine
 (5.4–7.2 ms across runs). The isolated `BenchmarkRebuild` is the stable
@@ -168,8 +168,8 @@ one-row scroll. `BenchmarkRenderView/additions` started this pass at roughly
 | `BenchmarkRenderView/mixed` | 108 µs, 37 KB, 395 allocs |
 | `BenchmarkRenderScroll/additions` | 102 µs, 55 KB, 321 allocs |
 | `BenchmarkRenderScroll/mixed` | 143 µs, 66 KB, 410 allocs |
-| `BenchmarkRebuild/many` | 5.00 ms, 5.33 MB |
-| `BenchmarkRebuild/huge` | 13.7 ms, 9.61 MB |
+| `BenchmarkRebuild/many` | 4.58 ms, 4.95 MB |
+| `BenchmarkRebuild/huge` | 13.0 ms, 8.01 MB |
 
 ```sh
 go test ./internal/ui -run '^$' -bench 'BenchmarkRender|BenchmarkRebuild' -benchmem
