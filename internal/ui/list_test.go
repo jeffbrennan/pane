@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -162,5 +163,17 @@ func TestListScreensShareMotionsAndFilters(t *testing.T) {
 				t.Fatal("enter did not end filtering")
 			}
 		})
+	}
+}
+
+func TestStyledRowRestoresRowStyleAfterColors(t *testing.T) {
+	m := model{width: 40}
+	row := m.styledRow(1, 0, 3, "a\x1b[31mred"+styleReset+"after", "")
+	if !strings.Contains(row, styleReset+styleDim+"after") {
+		t.Fatalf("text after a color should stay dim: %q", row)
+	}
+	selected := m.styledRow(0, 0, 3, "a\x1b[31mred"+styleReset+"after", "")
+	if !strings.Contains(selected, styleReset+"\x1b[7mafter") {
+		t.Fatalf("text after a color should stay selected: %q", selected)
 	}
 }

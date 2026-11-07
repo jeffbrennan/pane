@@ -50,7 +50,7 @@ func (s *HistoryStream) start() error {
 		}
 		return CommandError(out, err)
 	}
-	args := []string{"log", "-z", "--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00%P%x00"}
+	args := []string{"log", "-z", "--format=%x00%H%x00%aN%x00%aE%x00%aI%x00%s%x00%B%x00%P%x00"}
 	if s.repo.FirstParent {
 		args = append(args, "--first-parent")
 	}

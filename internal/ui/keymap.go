@@ -105,6 +105,7 @@ const (
 	actPrune          action = "prune"
 	actWindow         action = "window"
 	actShowHidden     action = "show-hidden"
+	actContributors   action = "contributors"
 	actReviewRange    action = "review-range"
 	actEditKeys       action = "edit-keys"
 	actAddKey         action = "add-key"
@@ -264,6 +265,7 @@ var defaultBindings = []binding{
 	{scopeHotspots, actReviewRange, []string{"V"}, "Review the selection as a commit range"},
 	{scopeHotspots, actWindow, []string{"w"}, "Cycle 3 months, 12 months, all time"},
 	{scopeHotspots, actShowHidden, []string{"a"}, "Show or hide generated and vendored files"},
+	{scopeHotspots, actContributors, []string{"c"}, "Show who changed the selection over time"},
 
 	{scopeFiles, actDown, []string{"ctrl+j", "tab"}, "Down"},
 	{scopeFiles, actUp, []string{"ctrl+k", "shift+tab"}, "Up"},

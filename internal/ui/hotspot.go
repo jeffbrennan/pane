@@ -25,6 +25,38 @@ import (
 
 const hotHalfLife = 90 * 24 * time.Hour
 
+// hotBuckets is how many equal slices of the window an activity strip shows,
+// oldest on the left.
+const hotBuckets = 12
+
+// hotTimeline is activity per slice of the window. Unlike the score it is not
+// decayed: the strip shows when work happened, and its position already says
+// how recent it was.
+type hotTimeline [hotBuckets]float64
+
+func (t *hotTimeline) add(other hotTimeline) {
+	for i := range t {
+		t[i] += other[i]
+	}
+}
+
+func (t hotTimeline) peak() float64 {
+	peak := 0.0
+	for _, v := range t {
+		peak = max(peak, v)
+	}
+	return peak
+}
+
+// hotBucket places a commit time in the window that runs from start to now.
+func hotBucket(when, start, now int64) int {
+	if now <= start {
+		return hotBuckets - 1
+	}
+	i := int(float64(when-start) / float64(now-start) * hotBuckets)
+	return max(0, min(i, hotBuckets-1))
+}
+
 type hotClass uint8
 
 const (
@@ -71,6 +103,7 @@ type hotFile struct {
 	score          float64
 	last           time.Time
 	authors        map[string]int
+	timeline       hotTimeline
 }
 
 type hotAuthor struct {
@@ -79,6 +112,7 @@ type hotAuthor struct {
 	churn       int
 	dirs        map[string]int
 	first, last time.Time
+	timeline    hotTimeline
 }
 
 type hotItemsCache struct {
@@ -118,6 +152,19 @@ type hotspotState struct {
 	authorFilter     string
 	since            string
 	author           string
+	// scope limits the authors view to who changed one path; scopeReturn is
+	// the view to go back to.
+	scope        string
+	scopeFile    bool
+	scopeReturn  string
+	scopeAuthors []*hotAuthor
+	scopeLoading bool
+}
+
+type hotspotScopeLoaded struct {
+	scope   string
+	authors []*hotAuthor
+	request int
 }
 
 type hotspotsLoaded struct {
@@ -383,10 +430,12 @@ func aggregateHotspots(commits []git.HotCacheCommit, marks git.PathMarks, cutoff
 	hidden := hotHidden{}
 	hiddenGenerated := make(map[string]bool)
 	hiddenVendored := make(map[string]bool)
+	start := hotWindowStart(commits, cutoff)
 	for _, commit := range commits {
 		if commit.Time < cutoff {
 			continue
 		}
+		bucket := hotBucket(commit.Time, start, now.Unix())
 		when := time.Unix(commit.Time, 0)
 		age := max(0, now.Sub(when).Seconds())
 		decay := math.Pow(0.5, age/hotHalfLife.Seconds())
@@ -398,6 +447,7 @@ func aggregateHotspots(commits []git.HotCacheCommit, marks git.PathMarks, cutoff
 			authors[commit.Author] = author
 		}
 		author.commits++
+		author.timeline[bucket]++
 		if author.first.IsZero() || when.Before(author.first) {
 			author.first = when
 		}
@@ -417,10 +467,12 @@ func aggregateHotspots(commits []git.HotCacheCommit, marks git.PathMarks, cutoff
 				file = &hotFile{path: change.Path, class: class, authors: make(map[string]int)}
 				files[change.Path] = file
 			}
-			weight := decay * math.Log2(1+float64(change.Added+change.Deleted)) / sweep
+			attention := math.Log2(1+float64(change.Added+change.Deleted)) / sweep
+			weight := decay * attention
 			file.added += change.Added
 			file.deleted += change.Deleted
 			file.score += weight
+			file.timeline[bucket] += attention
 			if class == hotGenerated || class == hotVendored {
 				// Hidden noise must not lift a directory's rank.
 				file.authors[commit.Author] += change.Added + change.Deleted
@@ -474,6 +526,19 @@ func advanceHotCutoff(since string, now time.Time) int64 {
 		return cutoff
 	}
 	return 0
+}
+
+// hotWindowStart is where activity strips begin: the oldest commit inside the
+// window rather than the window's edge, so a young repository's history fills
+// the strip instead of crowding into its last cell.
+func hotWindowStart(commits []git.HotCacheCommit, cutoff int64) int64 {
+	start := int64(0)
+	for _, commit := range commits {
+		if commit.Time >= cutoff && (start == 0 || commit.Time < start) {
+			start = commit.Time
+		}
+	}
+	return start
 }
 
 func oldestHotCommit(commits []git.HotCacheCommit) int64 {
@@ -534,7 +599,8 @@ func topDir(path string) string {
 }
 
 // 5: bots are recognised by convention instead of a name list.
-const hotCacheVersion = 5
+// 6: summaries carry activity timelines.
+const hotCacheVersion = 6
 
 type hotCache struct {
 	Version  int                  `json:"version"`
@@ -547,22 +613,24 @@ type hotCache struct {
 }
 
 type hotCacheFile struct {
-	Path    string         `json:"path"`
-	Added   int            `json:"added"`
-	Deleted int            `json:"deleted"`
-	Commits int            `json:"commits"`
-	Score   float64        `json:"score"`
-	Last    int64          `json:"last"`
-	Authors map[string]int `json:"authors"`
+	Path     string         `json:"path"`
+	Added    int            `json:"added"`
+	Deleted  int            `json:"deleted"`
+	Commits  int            `json:"commits"`
+	Score    float64        `json:"score"`
+	Last     int64          `json:"last"`
+	Authors  map[string]int `json:"authors"`
+	Timeline hotTimeline    `json:"timeline"`
 }
 
 type hotCacheAuthor struct {
-	Name    string         `json:"name"`
-	Commits int            `json:"commits"`
-	Churn   int            `json:"churn"`
-	Dirs    map[string]int `json:"dirs"`
-	First   int64          `json:"first"`
-	Last    int64          `json:"last"`
+	Name     string         `json:"name"`
+	Commits  int            `json:"commits"`
+	Churn    int            `json:"churn"`
+	Dirs     map[string]int `json:"dirs"`
+	First    int64          `json:"first"`
+	Last     int64          `json:"last"`
+	Timeline hotTimeline    `json:"timeline"`
 }
 
 type hotSummary struct {
@@ -594,6 +662,7 @@ type hotCacheItem struct {
 	Owner     string          `json:"owner"`
 	Owners    []hotCacheOwner `json:"owners"`
 	Class     uint8           `json:"class"`
+	Timeline  hotTimeline     `json:"timeline"`
 }
 
 type hotCacheOwner struct {
@@ -657,11 +726,11 @@ func readHotSummary(path, head, since, author string) ([]hotFile, map[string]*ho
 	}
 	files := make([]hotFile, len(summary.Files))
 	for i, file := range summary.Files {
-		files[i] = hotFile{path: file.Path, added: file.Added, deleted: file.Deleted, commits: file.Commits, score: file.Score, last: time.Unix(file.Last, 0), authors: file.Authors}
+		files[i] = hotFile{path: file.Path, added: file.Added, deleted: file.Deleted, commits: file.Commits, score: file.Score, last: time.Unix(file.Last, 0), authors: file.Authors, timeline: file.Timeline}
 	}
 	authors := make(map[string]*hotAuthor, len(summary.Authors))
 	for _, author := range summary.Authors {
-		authors[author.Name] = &hotAuthor{name: author.Name, commits: author.Commits, churn: author.Churn, dirs: author.Dirs, first: unixOrZero(author.First), last: unixOrZero(author.Last)}
+		authors[author.Name] = &hotAuthor{name: author.Name, commits: author.Commits, churn: author.Churn, dirs: author.Dirs, first: unixOrZero(author.First), last: unixOrZero(author.Last), timeline: author.Timeline}
 	}
 	items := make([]hotItem, len(summary.Items))
 	for i, item := range summary.Items {
@@ -669,6 +738,7 @@ func readHotSummary(path, head, since, author string) ([]hotFile, map[string]*ho
 			path: item.Path, name: item.Name, branch: item.Branch, directory: item.Directory,
 			collapsed: item.Collapsed, score: item.Score, commits: item.Commits, people: item.People,
 			churn: item.Churn, last: time.Unix(item.Last, 0), owner: item.Owner, class: hotClass(item.Class),
+			timeline: item.Timeline,
 		}
 		for _, owner := range item.Owners {
 			items[i].owners = append(items[i].owners, hotOwnerShare{name: owner.Name, share: owner.Share})
@@ -709,16 +779,17 @@ func writeHotSummary(path, head, since, author string, cutoff, cachedAt int64, f
 		})
 	}
 	for _, file := range files {
-		summary.Files = append(summary.Files, hotCacheFile{Path: file.path, Added: file.added, Deleted: file.deleted, Commits: file.commits, Score: file.score, Last: file.last.Unix(), Authors: file.authors})
+		summary.Files = append(summary.Files, hotCacheFile{Path: file.path, Added: file.added, Deleted: file.deleted, Commits: file.commits, Score: file.score, Last: file.last.Unix(), Authors: file.authors, Timeline: file.timeline})
 	}
 	for _, item := range authors {
-		summary.Authors = append(summary.Authors, hotCacheAuthor{Name: item.name, Commits: item.commits, Churn: item.churn, Dirs: item.dirs, First: item.first.Unix(), Last: item.last.Unix()})
+		summary.Authors = append(summary.Authors, hotCacheAuthor{Name: item.name, Commits: item.commits, Churn: item.churn, Dirs: item.dirs, First: item.first.Unix(), Last: item.last.Unix(), Timeline: item.timeline})
 	}
 	for _, item := range items {
 		cached := hotCacheItem{
 			Path: item.path, Name: item.name, Branch: item.branch, Directory: item.directory,
 			Collapsed: item.collapsed, Score: item.score, Commits: item.commits, People: item.people,
 			Churn: item.churn, Last: item.last.Unix(), Owner: item.owner, Class: uint8(item.class),
+			Timeline: item.timeline,
 		}
 		for _, owner := range item.owners {
 			cached.Owners = append(cached.Owners, hotCacheOwner{Name: owner.name, Share: owner.share})
@@ -813,6 +884,7 @@ type hotNode struct {
 	class      hotClass
 	owner      string
 	owners     []hotOwnerShare
+	timeline   hotTimeline
 }
 
 func (m model) hotItems() []hotItem {
@@ -878,6 +950,7 @@ type hotItem struct {
 	last               time.Time
 	owner              string
 	owners             []hotOwnerShare
+	timeline           hotTimeline
 }
 
 func classRank(class hotClass) int {
@@ -1019,6 +1092,7 @@ func buildHotItems(files []hotFile, dirs map[string]*hotDirStat, sortPath bool, 
 			}
 			node.score, node.commits, node.churn, node.last = node.file.score, node.file.commits, node.file.added+node.file.deleted, node.file.last
 			node.people, node.class = hotHumanCount(node.file.authors), node.file.class
+			node.timeline = node.file.timeline
 			return node.score, node.commits, node.churn, node.last, node.owner, node.class, node.people, node.owners
 		}
 		node.class = hotVendored
@@ -1026,6 +1100,7 @@ func buildHotItems(files []hotFile, dirs map[string]*hotDirStat, sortPath bool, 
 		for _, child := range node.children {
 			score, commits, churn, last, _, class, _, childOwners := aggregate(child, depth+1)
 			node.score += score
+			node.timeline.add(child.timeline)
 			if last.After(node.last) {
 				node.last = last
 			}
@@ -1111,6 +1186,7 @@ func buildHotItems(files []hotFile, dirs map[string]*hotDirStat, sortPath bool, 
 				collapsed: node.file == nil && !state.open(node.path, depth), file: node.file,
 				class: node.class, score: node.score, commits: node.commits, people: node.people,
 				churn: node.churn, last: node.last, owner: node.owner, owners: node.owners,
+				timeline: node.timeline,
 			}
 			if item.directory {
 				item.name = marker + item.name + "/"
@@ -1172,18 +1248,26 @@ func (m model) hotspotSequence(path string) tea.Cmd {
 	}
 }
 
-func hotBar(score, maxScore float64, width int) string {
-	if maxScore <= 0 {
-		return strings.Repeat("░", width)
-	}
-	filled := int(math.Round(score / maxScore * float64(width)))
-	filled = max(0, min(filled, width))
-	return strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
-}
+var hotLevels = []rune("▁▂▃▄▅▆▇█")
 
-const (
-	hotBarWidth = 8
-)
+// hotStrip draws a timeline one cell per slice of the window, newest on the
+// right. Heights share a log scale across the list so rows compare, and any
+// activity at all shows at least the lowest block so one commit is never
+// lost. Active cells are drawn at full strength so they stand out of the dim
+// row; quiet slices are a faint dot.
+func hotStrip(t hotTimeline, peak float64, color string) string {
+	var b strings.Builder
+	for _, v := range t {
+		if v <= 0 || peak <= 0 {
+			b.WriteString("·")
+			continue
+		}
+		level := int(math.Ceil(math.Log1p(v) / math.Log1p(peak) * float64(len(hotLevels))))
+		level = max(1, min(level, len(hotLevels)))
+		b.WriteString(styleNormal + color + string(hotLevels[level-1]) + styleReset)
+	}
+	return b.String()
+}
 
 // hotRows is the number of list rows that fit between the title, header,
 // detail line and status bar.
@@ -1237,24 +1321,38 @@ func hotOwnersText(owners []hotOwnerShare) string {
 	return strings.Join(parts, " · ")
 }
 
-// hotColumnMax maps each tree prefix to the largest score among its siblings,
-// so every level has a full bar.
-func hotColumnMax(items []hotItem) map[string]float64 {
-	maximum := make(map[string]float64)
+// hotPeak is the busiest slice across a list, the one scale its strips share
+// so a quiet file reads quiet next to a busy directory.
+func hotPeak(items []hotItem) float64 {
+	peak := 0.0
 	for _, item := range items {
-		prefix := item.branch
-		if i := strings.LastIndex(prefix, "─ "); i >= 0 {
-			prefix = prefix[:i]
-		}
-		maximum[prefix] = max(maximum[prefix], item.score)
+		peak = max(peak, item.timeline.peak())
 	}
-	return maximum
+	return peak
+}
+
+// hotAgeStyle brightens recent changes so the eye lands on live work: the
+// last day in the accent color, the last week at full strength, older left
+// dim. A slice of the strip can span a month, so this is what tells three
+// minutes from two days.
+func (m model) hotAgeStyle(when, now time.Time) string {
+	switch age := now.Sub(when); {
+	case when.IsZero():
+		return ""
+	case age < 24*time.Hour:
+		return styleNormal + m.accent()
+	case age < 7*24*time.Hour:
+		return styleNormal
+	}
+	return ""
 }
 
 // hotColumns formats the fixed columns that follow a tree or file name. The
-// owners text comes last and is the first thing cut on a narrow screen.
+// activity strip and age may carry colors, so they are padded by cell width.
+// The owners text comes last and is the first thing cut on a narrow screen.
 func hotColumns(activity, commits, people, last, owners string) string {
-	text := fmt.Sprintf("%-8s  %7s  %6s  %5s", activity, commits, people, last)
+	text := padCell(activity, hotBuckets) + fmt.Sprintf("  %7s  %6s  ", commits, people) +
+		strings.Repeat(" ", max(0, 5-ansi.StringWidth(last))) + last
 	if owners != "" {
 		text += "  " + owners
 	}
@@ -1264,11 +1362,7 @@ func hotColumns(activity, commits, people, last, owners string) string {
 // hotFixedWidth is the width of hotColumns without the owners text.
 var hotFixedWidth = len(hotColumns("", "", "", "", ""))
 
-func (m model) hotItemColumns(item hotItem, maximum map[string]float64, now time.Time) string {
-	prefix := item.branch
-	if i := strings.LastIndex(prefix, "─ "); i >= 0 {
-		prefix = prefix[:i]
-	}
+func (m model) hotItemColumns(item hotItem, peak float64, now time.Time) string {
 	if item.more {
 		return ""
 	}
@@ -1278,23 +1372,50 @@ func (m model) hotItemColumns(item hotItem, maximum map[string]float64, now time
 	}
 	owners := ""
 	if m.showHotOwners() {
-		owners = hotOwnersText(item.owners)
+		owners = syntax.Clean(hotOwnersText(item.owners))
 	}
-	return hotColumns(hotBar(item.score, maximum[prefix], hotBarWidth), formatCount(item.commits), people, hotAge(item.last, now), owners)
+	last := hotAge(item.last, now)
+	if style := m.hotAgeStyle(item.last, now); style != "" && last != "" {
+		last = style + last + styleReset
+	}
+	return hotColumns(hotStrip(item.timeline, peak, ""), formatCount(item.commits), people, last, owners)
 }
 
 func (m model) showHotOwners() bool { return len(m.hotspots.authors) > 1 }
 
 // hotAuthorColumns formats the columns that follow an author's name.
-func hotAuthorColumns(commits, active, areas string) string {
-	text := fmt.Sprintf("%7s  %-13s", commits, active)
+func hotAuthorColumns(activity, commits, active, areas string) string {
+	text := padCell(activity, hotBuckets) + fmt.Sprintf("  %7s  %-13s", commits, active)
 	if areas != "" {
 		text += "  " + areas
 	}
 	return text
 }
 
-var hotAuthorFixedWidth = len(hotAuthorColumns("", "", ""))
+// hotAuthorFixedWidth reserves room for the activity and commit count only;
+// the active range and areas are cut first on a narrow screen.
+var hotAuthorFixedWidth = hotBuckets + len(fmt.Sprintf("  %7s", ""))
+
+// hotBadgeWidth is the initials column before an author's name: two cells and
+// a space.
+const hotBadgeWidth = 3
+
+// hotAuthorRow renders one author with the same initials and color history
+// gives them, and their activity in that color.
+func (m model) hotAuthorRow(i, selected, count int, author *hotAuthor, nameWidth int, peak float64, now time.Time) string {
+	color, badge := m.authorNameColor(author.name), authorInitials(author.name)
+	if isBotAuthor(author.name) {
+		// Bots stay dim like the rest of the row.
+		color, badge = "", "⚙ "
+	}
+	areas := ""
+	if !m.hotspots.scopeFile {
+		areas = syntax.Clean(topAuthorDirs(author, 3))
+	}
+	columns := hotAuthorColumns(hotStrip(author.timeline, peak, color), formatCount(author.commits), hotActive(author, now), areas)
+	name := styleNormal + color + badge + styleReset + " " + padCell(syntax.Clean(author.name), nameWidth-hotBadgeWidth)
+	return m.styledRow(i, selected, count, name+"  "+columns, "")
+}
 
 func hotActive(author *hotAuthor, now time.Time) string {
 	first, last := hotAge(author.first, now), hotAge(author.last, now)
@@ -1309,15 +1430,32 @@ func hotActive(author *hotAuthor, now time.Time) string {
 
 // hotHeaderRow labels the columns at the same offsets listTableRow uses.
 func (m model) hotHeaderRow(count, nameWidth int) string {
-	name, columns := "area", hotColumns("activity", "commits", "people", "last", "")
+	activity := m.hotSpanLabel()
+	name, columns := "area", hotColumns(activity, "commits", "people", "last", "")
 	if m.showHotOwners() {
 		columns += "  owners"
 	}
 	if m.hotspots.mode == "authors" {
-		name, columns = "author", hotAuthorColumns("commits", "active", "areas")
+		name, columns = strings.Repeat(" ", hotBadgeWidth)+"author", hotAuthorColumns(activity, "commits", "active", "areas")
 	}
 	indent := strings.Repeat(" ", listPrefixWidth(count))
 	return styleDim + ansi.Truncate(indent+padCell(name, nameWidth)+"  "+columns, m.width, "") + styleReset
+}
+
+// hotSpanLabel heads the activity column with how far back its strips reach.
+// Every commit has one author, so the earliest first commit among them is
+// where the strips start, whether the data came from a stream or the summary.
+func (m model) hotSpanLabel() string {
+	var start time.Time
+	for _, author := range m.hotspots.authors {
+		if !author.first.IsZero() && (start.IsZero() || author.first.Before(start)) {
+			start = author.first
+		}
+	}
+	if age := hotAge(start, time.Now()); age != "" {
+		return age + " → now"
+	}
+	return "activity"
 }
 
 func (m model) hotWindowLabel() string {
@@ -1356,7 +1494,7 @@ func (m model) hotFileItems() []hotItem {
 		items = append(items, hotItem{
 			path: file.path, name: file.path, file: &file, class: file.class, score: file.score,
 			commits: file.commits, people: hotHumanCount(file.authors), churn: file.added + file.deleted,
-			last: file.last, owners: hotOwners(owners),
+			last: file.last, owners: hotOwners(owners), timeline: file.timeline,
 		})
 	}
 	sort.SliceStable(items, func(i, j int) bool { return items[i].score > items[j].score })
@@ -1446,6 +1584,12 @@ func (m model) hotView() string {
 		view = "authors"
 	}
 	title += " · " + view
+	if m.hotspots.scope != "" {
+		title += " in " + m.hotspots.scope
+		if !m.hotspots.scopeFile {
+			title += "/"
+		}
+	}
 	lines := []string{m.titleBar(" "+m.accent()+syntax.Clean(title)+styleReset, stateBadges(m.filterBadge(m.hotspots.list.filter)))}
 	now := time.Now()
 	rows := m.hotRows()
@@ -1460,15 +1604,18 @@ func (m model) hotView() string {
 		offset, visible := listViewport(m.hotspots.list, len(authors), rows)
 		end := min(len(authors), offset+visible)
 		names := make([]string, 0, end-offset)
+		pad := strings.Repeat(" ", hotBadgeWidth)
 		for _, author := range authors[offset:end] {
-			names = append(names, author.name)
+			names = append(names, pad+author.name)
 		}
-		nameWidth := m.listNameWidth(len(authors), append(names, "author"), hotAuthorFixedWidth)
+		nameWidth := m.listNameWidth(len(authors), append(names, pad+"author"), hotAuthorFixedWidth)
 		header = m.hotHeaderRow(len(authors), nameWidth)
+		peak := 0.0
+		for _, author := range authors {
+			peak = max(peak, author.timeline.peak())
+		}
 		for i := offset; i < end; i++ {
-			author := authors[i]
-			columns := hotAuthorColumns(formatCount(author.commits), hotActive(author, now), topAuthorDirs(author, 3))
-			body = append(body, m.listTableRow(i, selected, len(authors), author.name, nameWidth, columns))
+			body = append(body, m.hotAuthorRow(i, selected, len(authors), authors[i], nameWidth, peak, now))
 		}
 	default:
 		if m.hotspots.mode == "files" {
@@ -1479,7 +1626,7 @@ func (m model) hotView() string {
 		selected = min(selected, max(0, len(items)-1))
 		offset, visible := listViewport(m.hotspots.list, len(items), rows)
 		end := min(len(items), offset+visible)
-		maximum := hotColumnMax(items)
+		peak := hotPeak(items)
 		names := make([]string, 0, end-offset)
 		for _, item := range items[offset:end] {
 			names = append(names, item.branch+item.name)
@@ -1487,11 +1634,15 @@ func (m model) hotView() string {
 		nameWidth := m.listNameWidth(len(items), append(names, "area"), hotFixedWidth)
 		header = m.hotHeaderRow(len(items), nameWidth)
 		for i := offset; i < end; i++ {
-			body = append(body, m.listTableRow(i, selected, len(items), items[i].branch+items[i].name, nameWidth, m.hotItemColumns(items[i], maximum, now)))
+			name := padCell(syntax.Clean(items[i].branch+items[i].name), nameWidth)
+			body = append(body, m.styledRow(i, selected, len(items), name+"  "+m.hotItemColumns(items[i], peak, now), ""))
 		}
 	}
 	lines = append(lines, header)
 	lines = append(lines, body...)
+	if m.hotspots.mode == "authors" && len(m.hotFilteredAuthors()) == 0 && m.hotspots.scopeLoading {
+		lines = append(lines, fit(" Loading contributors…", m.width))
+	}
 	if len(items) == 0 && m.hotspots.mode != "authors" {
 		text := " No changes in the window"
 		if m.hotspots.loading {
@@ -1563,7 +1714,7 @@ func (m model) hotFooter() string {
 	if hidden > 0 {
 		a = fmt.Sprintf("hidden %d", hidden)
 	}
-	actions := []shortcut{hint(view, "hotspots.switch-view"), hint("window", "hotspots.window"), hint(a, "hotspots.show-hidden"), hint("open", "open")}
+	actions := []shortcut{hint(view, "hotspots.switch-view"), hint("window", "hotspots.window"), hint(a, "hotspots.show-hidden"), hint("who", "hotspots.contributors")}
 	if m.hotspots.mode == "authors" {
 		actions = []shortcut{hint(view, "hotspots.switch-view"), hint("window", "hotspots.window"), hint("filter", "open")}
 	}
@@ -1617,6 +1768,9 @@ func topAuthorDir(author *hotAuthor) string {
 }
 
 func (m model) hotAuthorList() []*hotAuthor {
+	if m.hotspots.scope != "" {
+		return m.hotspots.scopeAuthors
+	}
 	if cache := m.hotspots.items; cache != nil && cache.filled && cache.dataVersion == m.hotspots.dataVersion && cache.authors != nil {
 		return cache.authors
 	}
@@ -1624,6 +1778,16 @@ func (m model) hotAuthorList() []*hotAuthor {
 	for _, author := range m.hotspots.authors {
 		authors = append(authors, author)
 	}
+	sortHotAuthors(authors)
+	if cache := m.hotspots.items; cache != nil {
+		cache.authors = authors
+		cache.dataVersion = m.hotspots.dataVersion
+	}
+	return authors
+}
+
+// sortHotAuthors puts people before bots, then the most commits first.
+func sortHotAuthors(authors []*hotAuthor) {
 	sort.Slice(authors, func(i, j int) bool {
 		leftBot, rightBot := isBotAuthor(authors[i].name), isBotAuthor(authors[j].name)
 		if leftBot != rightBot {
@@ -1634,10 +1798,58 @@ func (m model) hotAuthorList() []*hotAuthor {
 		}
 		return authors[i].name < authors[j].name
 	})
-	if cache := m.hotspots.items; cache != nil {
-		cache.authors = authors
-		cache.dataVersion = m.hotspots.dataVersion
+}
+
+// loadHotScope finds who changed one path. The commits stay in memory after a
+// streamed load; a load from the summary kept none, so they come from the
+// per-commit cache instead.
+func (m model) loadHotScope(scope string) tea.Cmd {
+	commits := append([]git.HotCacheCommit(nil), m.hotspots.commits...)
+	root, since, author, request := m.repo.Root, m.hotspots.since, m.hotspots.author, m.hotspots.request
+	return func() tea.Msg {
+		if len(commits) == 0 {
+			if cache, ok := readHotCache(hotCachePath(root, since, author), since, author); ok {
+				commits = cache.Commits
+			}
+		}
+		now := time.Now()
+		return hotspotScopeLoaded{scope: scope, authors: hotScopeAuthors(commits, scope, advanceHotCutoff(since, now), now), request: request}
 	}
+}
+
+// hotScopeAuthors aggregates only the changes to scope. Paths are made
+// relative to it so an author's areas name its subdirectories, and the window
+// keeps the whole repository's start so strips line up with the tree.
+func hotScopeAuthors(commits []git.HotCacheCommit, scope string, cutoff int64, now time.Time) []*hotAuthor {
+	// No commit falls between the cutoff and the window's start, so the
+	// start serves as the cutoff and the scoped strips begin where the
+	// tree's do.
+	cutoff = hotWindowStart(commits, cutoff)
+	var scoped []git.HotCacheCommit
+	for _, commit := range commits {
+		var changes []git.HotCacheChange
+		for _, change := range commit.Changes {
+			switch {
+			case change.Path == scope:
+				change.Path = scope[strings.LastIndex(scope, "/")+1:]
+			case strings.HasPrefix(change.Path, scope+"/"):
+				change.Path = change.Path[len(scope)+1:]
+			default:
+				continue
+			}
+			changes = append(changes, change)
+		}
+		if len(changes) > 0 {
+			commit.Changes = changes
+			scoped = append(scoped, commit)
+		}
+	}
+	_, byName, _, _ := aggregateHotspots(scoped, builtinPathMarks(scoped), cutoff, now)
+	authors := make([]*hotAuthor, 0, len(byName))
+	for _, author := range byName {
+		authors = append(authors, author)
+	}
+	sortHotAuthors(authors)
 	return authors
 }
 
@@ -1667,6 +1879,12 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch p.action {
 	case actBack, actQuit:
+		if m.hotspots.scope != "" {
+			m.hotspots.mode = m.hotspots.scopeReturn
+			m.hotspots.scope, m.hotspots.scopeAuthors = "", nil
+			m.hotspots.list.reset()
+			break
+		}
 		if m.hotspots.authorFilter != "" {
 			m.hotspots.authorFilter = ""
 			m.hotspots.list.reset()
@@ -1678,7 +1896,25 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case actInterrupt:
 		m.closeHotspotStream()
 		return m, tea.Quit
+	case actContributors:
+		if m.hotspots.mode == "authors" {
+			break
+		}
+		items := m.hotVisible()
+		if len(items) == 0 {
+			break
+		}
+		item := items[min(m.hotspots.list.selected, len(items)-1)]
+		if item.more {
+			break
+		}
+		m.hotspots.scope, m.hotspots.scopeFile, m.hotspots.scopeReturn = item.path, !item.directory, m.hotspots.mode
+		m.hotspots.scopeAuthors, m.hotspots.scopeLoading = nil, true
+		m.hotspots.mode = "authors"
+		m.hotspots.list.reset()
+		return m, m.loadHotScope(item.path)
 	case actSwitchView:
+		m.hotspots.scope, m.hotspots.scopeAuthors = "", nil
 		switch m.hotspots.mode {
 		case "":
 			m.hotspots.mode = "files"
@@ -1767,6 +2003,7 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			authors := m.hotFilteredAuthors()
 			if len(authors) > 0 {
 				m.hotspots.authorFilter = authors[min(m.hotspots.list.selected, len(authors)-1)].name
+				m.hotspots.scope, m.hotspots.scopeAuthors = "", nil
 				m.hotspots.mode = ""
 				m.hotspots.list.reset()
 				resetItems()

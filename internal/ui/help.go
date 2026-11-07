@@ -88,6 +88,7 @@ var shortcutSections = []shortcutSection{
 		hint("Review the selection as a commit range", "hotspots.review-range"),
 		hint("Cycle 3 months, 12 months, all time", "hotspots.window"),
 		hint("Show or hide generated and vendored files", "hotspots.show-hidden"),
+		hint("Show who changed the selection over time", "hotspots.contributors"),
 		hint("Filter hotspots", "search"),
 	}},
 	{"Commit input", []string{"commit-input"}, []shortcut{

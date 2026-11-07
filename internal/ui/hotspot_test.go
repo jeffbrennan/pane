@@ -825,3 +825,102 @@ func TestHotspotBotOnlyAreaStillNamesTheBot(t *testing.T) {
 		t.Fatalf("owners = %#v, want the bot when there is nobody else", owners)
 	}
 }
+
+func TestHotspotTimelinePlacesRecentWorkOnTheRight(t *testing.T) {
+	now := time.Now()
+	start := now.Add(-365 * 24 * time.Hour)
+	commits := []git.HotCacheCommit{
+		git.NewHotCacheCommit("old", start.Add(time.Hour).Unix(), "A", []git.HotCacheChange{{Path: "src/old.go", Added: 10}}),
+		git.NewHotCacheCommit("new", now.Add(-3*time.Minute).Unix(), "B", []git.HotCacheChange{{Path: "src/new.go", Added: 10}}),
+	}
+	files, authors, _, _ := aggregateHotspots(commits, newHotPathMarks(), start.Unix(), now)
+	byPath := map[string]hotFile{}
+	for _, file := range files {
+		byPath[file.path] = file
+	}
+	if byPath["src/old.go"].timeline[0] == 0 || byPath["src/old.go"].timeline[hotBuckets-1] != 0 {
+		t.Fatalf("old work should sit in the first slice: %v", byPath["src/old.go"].timeline)
+	}
+	if byPath["src/new.go"].timeline[hotBuckets-1] == 0 {
+		t.Fatalf("recent work should sit in the last slice: %v", byPath["src/new.go"].timeline)
+	}
+	if authors["B"].timeline[hotBuckets-1] != 1 {
+		t.Fatalf("author timeline counts commits per slice: %v", authors["B"].timeline)
+	}
+	items := buildHotItems(files, nil, false, hotTreeState{}, "")
+	if items[0].path != "src" || items[0].timeline[0] == 0 || items[0].timeline[hotBuckets-1] == 0 {
+		t.Fatalf("a directory's timeline sums its files: %#v", items[0])
+	}
+}
+
+func TestHotspotStripSharesOneScaleAndKeepsSingleCommits(t *testing.T) {
+	var busy, quiet hotTimeline
+	busy[hotBuckets-1] = 100
+	quiet[0] = 1
+	busyStrip, quietStrip := ansi.Strip(hotStrip(busy, 100, "")), ansi.Strip(hotStrip(quiet, 100, ""))
+	if ansi.StringWidth(busyStrip) != hotBuckets || ansi.StringWidth(quietStrip) != hotBuckets {
+		t.Fatalf("strips must be %d cells: %q %q", hotBuckets, busyStrip, quietStrip)
+	}
+	if !strings.HasSuffix(busyStrip, "█") {
+		t.Fatalf("the busiest slice should be full: %q", busyStrip)
+	}
+	if strings.HasPrefix(quietStrip, "·") || strings.HasPrefix(quietStrip, "█") {
+		t.Fatalf("a single small commit should show low but visible: %q", quietStrip)
+	}
+}
+
+func TestHotspotRecentChangesStandOut(t *testing.T) {
+	m := model{}
+	now := time.Now()
+	if m.hotAgeStyle(now.Add(-3*time.Minute), now) == m.hotAgeStyle(now.Add(-48*time.Hour), now) {
+		t.Fatal("three minutes and two days ago should not look the same")
+	}
+	if m.hotAgeStyle(now.Add(-60*24*time.Hour), now) != "" {
+		t.Fatal("old changes stay dim")
+	}
+}
+
+func TestHotspotScopeAuthorsOnlyCountThePath(t *testing.T) {
+	now := time.Now()
+	commits := []git.HotCacheCommit{
+		git.NewHotCacheCommit("c1", now.Unix(), "A", []git.HotCacheChange{{Path: "internal/ui/view.go", Added: 3}}),
+		git.NewHotCacheCommit("c2", now.Unix(), "B", []git.HotCacheChange{{Path: "internal/git/git.go", Added: 3}}),
+		git.NewHotCacheCommit("c3", now.Unix(), "A", []git.HotCacheChange{{Path: "internal/ui/list.go", Added: 3}, {Path: "main.go", Added: 1}}),
+		git.NewHotCacheCommit("c4", now.Unix(), "C", []git.HotCacheChange{{Path: "internal/uiextra/x.go", Added: 3}}),
+	}
+	authors := hotScopeAuthors(commits, "internal/ui", 0, now)
+	if len(authors) != 1 || authors[0].name != "A" || authors[0].commits != 2 {
+		t.Fatalf("only A changed internal/ui: %#v", authors)
+	}
+	if authors[0].dirs["view.go"] == 0 && authors[0].dirs["."] == 0 {
+		t.Fatalf("areas should be relative to the scope: %v", authors[0].dirs)
+	}
+	if file := hotScopeAuthors(commits, "main.go", 0, now); len(file) != 1 || file[0].commits != 1 {
+		t.Fatalf("a file scope finds who changed that file: %#v", file)
+	}
+}
+
+func TestHotspotContributorsKeyScopesTheAuthorsView(t *testing.T) {
+	m := model{width: 100, height: 20, screen: "hotspots", hotspots: hotspotState{items: &hotItemsCache{}}}
+	m.hotspots.files = []hotFile{{path: "src/a.go", commits: 1, authors: map[string]int{"A": 1}}}
+	next, cmd := m.handleHotspotKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = next.(model)
+	if m.hotspots.mode != "authors" || m.hotspots.scope != "src" || cmd == nil {
+		t.Fatalf("c should open contributors for the selection: mode %q scope %q", m.hotspots.mode, m.hotspots.scope)
+	}
+	if !strings.Contains(ansi.Strip(m.hotView()), "in src/") {
+		t.Fatal("the title should name the scope")
+	}
+	next, _ = m.handleHotspotKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m = next.(model)
+	if m.hotspots.mode != "" || m.hotspots.scope != "" {
+		t.Fatalf("back should return to the tree: mode %q scope %q", m.hotspots.mode, m.hotspots.scope)
+	}
+}
+
+func TestHotspotAuthorBadgeMatchesHistory(t *testing.T) {
+	m := model{}
+	if m.authorNameColor("Jeff  Brennan") != m.authorColor(git.CommitInfo{Author: "jeff brennan", Email: "x@y"}) {
+		t.Fatal("an author's hotspot color must match their history badge")
+	}
+}

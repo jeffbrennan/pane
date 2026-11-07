@@ -425,6 +425,11 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		next.width, next.height, next.wrap = m.width, m.height, m.wrap
 		next.viewed = m.viewed
 		return next, next.Init()
+	case hotspotScopeLoaded:
+		if m.screen != "hotspots" || msg.request != m.hotspots.request || msg.scope != m.hotspots.scope {
+			break
+		}
+		m.hotspots.scopeAuthors, m.hotspots.scopeLoading = msg.authors, false
 	case hotspotsStarted:
 		if m.screen != "hotspots" || msg.request != m.hotspots.request || msg.err != nil {
 			if msg.plan.stream != nil {

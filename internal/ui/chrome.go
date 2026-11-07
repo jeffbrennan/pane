@@ -12,10 +12,11 @@ import (
 // hints and dialog boxes so moving between screens feels like one app.
 
 const (
-	styleReset = "\x1b[0m"
-	styleBold  = "\x1b[1m"
-	styleDim   = "\x1b[2m"
-	cursor     = "\x1b[7m \x1b[0m"
+	styleReset  = "\x1b[0m"
+	styleBold   = "\x1b[1m"
+	styleDim    = "\x1b[2m"
+	styleNormal = "\x1b[22m" // full strength inside a dim row
+	cursor      = "\x1b[7m \x1b[0m"
 )
 
 func (m model) accent() string {

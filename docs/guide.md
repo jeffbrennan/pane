@@ -63,9 +63,17 @@ navigation works across commits. Press `Esc` or `q` to return to history.
 Activity is scored by attention, not raw churn: each commit's weight is damped
 by its size and by how many files it touched, with a 90-day half-life, so a
 fixture dump does not outrank a file people keep editing. The tree opens one
-level deep and merges single-child directories. Rows show the activity bar,
+level deep and merges single-child directories. Rows show an activity strip,
 distinct commits, people, last change, and the top two owners, with a detail
-line for the selection. Bots are not people to ask: they stay listed and dimmed
+line for the selection. The strip splits the window into twelve slices from
+its oldest commit to now, newest on the right; every row shares one log
+scale, so a quiet file reads quiet beside a busy directory. The last change is
+highlighted when it is under a day old and brighter when under a week.
+
+The authors view gives each person the initials and color history uses, with
+their own strip. Press `c` on any tree or file row to see who changed that
+path over time; `/` searches the names and `esc` returns to the tree. Bots are
+not people to ask: they stay listed and dimmed
 in the authors view, but they are left out of the people counts and out of the
 owners column unless an area has no human author at all. Automation is
 recognised by convention — a `[bot]` suffix, or a word such as `bot`, `ci`, or
@@ -162,6 +170,7 @@ and a count such as `3)` jumps three commits.
 | `V` | Review the selection as a commit range |
 | `w` | Cycle 3 months, 12 months, all time |
 | `a` | Show or hide generated and vendored files |
+| `c` | Show who changed the selection over time |
 | `/` | Filter hotspots |
 
 ### Commit input

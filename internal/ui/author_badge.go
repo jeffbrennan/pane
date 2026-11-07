@@ -45,10 +45,14 @@ func (m model) historyGutter() int {
 // commits under several emails, such as GitHub's noreply address for merges
 // made on the web, and the name is what the reader sees.
 func authorKey(c git.CommitInfo) string {
-	if name := strings.ToLower(strings.Join(strings.Fields(c.Author), " ")); name != "" {
+	if name := authorNameKey(c.Author); name != "" {
 		return name
 	}
 	return strings.ToLower(strings.TrimSpace(c.Email))
+}
+
+func authorNameKey(name string) string {
+	return strings.ToLower(strings.Join(strings.Fields(name), " "))
 }
 
 // authorColor is a stable color for an author, so the same person reads the
@@ -57,8 +61,21 @@ func (m model) authorColor(c git.CommitInfo) string {
 	if isBotAuthor(c.Author) {
 		return styleDim
 	}
+	return m.authorKeyColor(authorKey(c))
+}
+
+// authorNameColor is authorColor for a name alone, as hotspots know authors,
+// so a person's timeline matches their history badge.
+func (m model) authorNameColor(name string) string {
+	if isBotAuthor(name) {
+		return styleDim
+	}
+	return m.authorKeyColor(authorNameKey(name))
+}
+
+func (m model) authorKeyColor(key string) string {
 	h := fnv.New32a()
-	h.Write([]byte(authorKey(c)))
+	h.Write([]byte(key))
 	palette := authorPalette.dark
 	if m.lightTheme {
 		palette = authorPalette.light
