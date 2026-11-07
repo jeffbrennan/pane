@@ -1554,9 +1554,11 @@ func hotColumns(activity, commits, people, last, owners string) string {
 // hotFixedWidth is the width of hotColumns without the owners text.
 var hotFixedWidth = len(hotColumns("", "", "", "", ""))
 
-func (m model) hotItemColumns(item hotItem, peak float64, now time.Time) string {
+// hotItemColumns returns a tree or file row's fixed columns and, apart, the
+// owners text that ends it.
+func (m model) hotItemColumns(item hotItem, peak float64, now time.Time) (string, string) {
 	if item.more {
-		return ""
+		return "", ""
 	}
 	people := ""
 	if item.people > 0 {
@@ -1570,7 +1572,7 @@ func (m model) hotItemColumns(item hotItem, peak float64, now time.Time) string 
 	if style := m.hotAgeStyle(item.last, now); style != "" && last != "" {
 		last = style + last + styleReset
 	}
-	return hotColumns(hotStrip(item.timeline, peak, ""), formatCount(item.commits), people, last, owners)
+	return hotColumns(hotStrip(item.timeline, peak, ""), formatCount(item.commits), people, last, ""), owners
 }
 
 func (m model) showHotOwners() bool { return len(m.hotspots.authors) > 1 }
@@ -1604,9 +1606,9 @@ func (m model) hotAuthorRow(i, selected, count int, author *hotAuthor, nameWidth
 	if !m.hotspots.scopeFile {
 		areas = syntax.Clean(topAuthorDirs(author, 3))
 	}
-	columns := hotAuthorColumns(hotStrip(author.timeline, peak, color), formatCount(author.commits), hotActive(author, now), areas)
-	name := styleNormal + color + badge + styleReset + " " + padCell(syntax.Clean(author.name), nameWidth-hotBadgeWidth)
-	return m.hotRow(i, selected, count, name+"  "+columns)
+	columns := hotAuthorColumns(hotStrip(author.timeline, peak, color), formatCount(author.commits), hotActive(author, now), "")
+	name := styleNormal + color + badge + styleReset + " " + syntax.Clean(author.name)
+	return m.hotRow(i, selected, count, name, nameWidth, columns, areas)
 }
 
 func hotActive(author *hotAuthor, now time.Time) string {
@@ -1649,6 +1651,42 @@ func (m model) hotAuthorEntries() []hotAuthorEntry {
 		}
 	}
 	return entries
+}
+
+// hotAuthorGap reports whether a blank line follows entry i: one separates
+// each author, with their areas, from the next.
+func hotAuthorGap(entries []hotAuthorEntry, i int) bool {
+	return i+1 < len(entries) && entries[i+1].area == ""
+}
+
+// hotAuthorViewport is the range of entries that fits in rows lines once the
+// gaps between authors are counted, keeping the selection on screen.
+func hotAuthorViewport(entries []hotAuthorEntry, list listState, rows int) (int, int) {
+	offset, _ := listViewport(list, len(entries), rows)
+	if len(entries) == 0 {
+		return 0, 0
+	}
+	selected := min(list.selected, len(entries)-1)
+	height := func(i int) int {
+		if hotAuthorGap(entries, i) {
+			return 2
+		}
+		return 1
+	}
+	used := 1
+	for i := offset; i < selected; i++ {
+		used += height(i)
+	}
+	for used > rows && offset < selected {
+		used -= height(offset)
+		offset++
+	}
+	end, used := offset, 0
+	for end < len(entries) && used+1 <= rows {
+		used += height(end)
+		end++
+	}
+	return offset, end
 }
 
 // A single file has no areas below it to expand into.
@@ -1705,17 +1743,25 @@ func (m model) hotAreaRow(i, selected, count int, entry hotAuthorEntry, nameWidt
 	}
 	area := entry.author.areas[entry.area]
 	share := fmt.Sprintf("%d%% of their commits", area.commits*100/max(1, entry.author.commits))
-	columns := hotAuthorColumns(hotStrip(area.timeline, peak, color), formatCount(area.commits), hotSpan(area.first, area.last, now), share)
-	return m.hotRow(i, selected, count, padCell(syntax.Clean(hotAreaName(entry)), nameWidth)+"  "+columns)
+	columns := hotAuthorColumns(hotStrip(area.timeline, peak, color), formatCount(area.commits), hotSpan(area.first, area.last, now), "")
+	return m.hotRow(i, selected, count, syntax.Clean(hotAreaName(entry)), nameWidth, columns, share)
 }
 
-// hotRow draws a selected row without its colors: under reverse video a
-// colored strip or badge turns into blocks of color that hide the text.
-func (m model) hotRow(i, selected, count int, text string) string {
-	if i == selected {
-		text = ansi.Strip(text)
+// hotRow draws one row: the name padded to nameWidth, the fixed columns, then
+// the free text that ends it. Rows are dim and the selected one is drawn at
+// full strength with an accented number and arrow, so badges and strips keep
+// their colors instead of turning into blocks under reverse video.
+func (m model) hotRow(i, selected, count int, name string, nameWidth int, columns, tail string) string {
+	text := padCell(name, nameWidth) + "  " + columns
+	if tail != "" {
+		text += "  " + tail
 	}
-	return m.styledRow(i, selected, count, text, "")
+	if i != selected {
+		return m.styledRow(i, selected, count, text, "")
+	}
+	numberWidth := len(strconv.Itoa(max(1, count-1)))
+	line := fmt.Sprintf("%s%*d ▸ %s%s", m.accent(), numberWidth, 0, styleReset, text)
+	return bar(m.width, line, "") + styleReset
 }
 
 // hotHeaderRow labels the columns at the same offsets listTableRow uses.
@@ -1899,8 +1945,7 @@ func (m model) hotView() string {
 	case "authors":
 		entries := m.hotAuthorEntries()
 		selected = min(selected, max(0, len(entries)-1))
-		offset, visible := listViewport(m.hotspots.list, len(entries), rows)
-		end := min(len(entries), offset+visible)
+		offset, end := hotAuthorViewport(entries, m.hotspots.list, rows)
 		names := make([]string, 0, end-offset)
 		pad := strings.Repeat(" ", hotBadgeWidth)
 		for _, entry := range entries[offset:end] {
@@ -1921,9 +1966,12 @@ func (m model) hotView() string {
 		for i := offset; i < end; i++ {
 			if entries[i].area != "" {
 				body = append(body, m.hotAreaRow(i, selected, len(entries), entries[i], nameWidth, peak, now))
-				continue
+			} else {
+				body = append(body, m.hotAuthorRow(i, selected, len(entries), entries[i].author, nameWidth, peak, now))
 			}
-			body = append(body, m.hotAuthorRow(i, selected, len(entries), entries[i].author, nameWidth, peak, now))
+			if i+1 < end && hotAuthorGap(entries, i) {
+				body = append(body, "")
+			}
 		}
 	default:
 		if m.hotspots.mode == "files" {
@@ -1942,8 +1990,8 @@ func (m model) hotView() string {
 		nameWidth := m.listNameWidth(len(items), append(names, "area"), hotFixedWidth)
 		header = m.hotHeaderRow(len(items), nameWidth)
 		for i := offset; i < end; i++ {
-			name := padCell(syntax.Clean(items[i].branch+items[i].name), nameWidth)
-			body = append(body, m.hotRow(i, selected, len(items), name+"  "+m.hotItemColumns(items[i], peak, now)))
+			columns, owners := m.hotItemColumns(items[i], peak, now)
+			body = append(body, m.hotRow(i, selected, len(items), syntax.Clean(items[i].branch+items[i].name), nameWidth, columns, owners))
 		}
 	}
 	lines = append(lines, header)

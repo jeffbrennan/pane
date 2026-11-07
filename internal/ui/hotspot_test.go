@@ -1038,13 +1038,36 @@ func TestHotspotEnterNarrowsHistoryToTheAuthor(t *testing.T) {
 	}
 }
 
-func TestHotspotSelectedRowDropsColors(t *testing.T) {
+func TestHotspotSelectedRowKeepsColorsWithoutReverseVideo(t *testing.T) {
 	m := model{width: 120, height: 20}
-	row := m.hotRow(0, 0, 2, "\x1b[22m\x1b[38;2;1;2;3m▃\x1b[0m name")
-	if strings.Contains(row, "38;2;1;2;3") {
-		t.Fatalf("reverse video turns colors into blocks: %q", row)
+	badge, strip := "\x1b[38;2;9;9;9mAB\x1b[0m", "\x1b[22m\x1b[38;2;1;2;3m▃\x1b[0m"
+	row := m.hotRow(0, 0, 2, badge+" name", 10, strip, "src 50%")
+	if strings.Contains(row, "\x1b[7m") || strings.Contains(row, styleDim) {
+		t.Fatalf("the selection is full-strength text, not reverse video: %q", row)
 	}
-	if other := m.hotRow(1, 0, 2, "\x1b[38;2;1;2;3m▃\x1b[0m"); !strings.Contains(other, "38;2;1;2;3") {
-		t.Fatal("unselected rows keep their colors")
+	if !strings.Contains(row, badge) || !strings.Contains(row, strip) {
+		t.Fatalf("badge and strip keep their colors: %q", row)
+	}
+	if plain := ansi.Strip(row); !strings.Contains(plain, "0 ▸ AB name     ▃  src 50%") {
+		t.Fatalf("columns must line up with unselected rows: %q", plain)
+	}
+	if other := m.hotRow(1, 0, 2, "name", 10, strip, ""); !strings.HasPrefix(other, styleDim) {
+		t.Fatalf("other rows stay dim: %q", other)
+	}
+}
+
+func TestHotspotAuthorsAreSpacedApart(t *testing.T) {
+	a, b := &hotAuthor{name: "A"}, &hotAuthor{name: "B"}
+	entries := []hotAuthorEntry{{author: a}, {author: a, area: "src"}, {author: a, area: "docs", last: true}, {author: b}, {author: &hotAuthor{name: "C"}}}
+	// Areas sit under their author; a gap follows each group.
+	if hotAuthorGap(entries, 0) || hotAuthorGap(entries, 1) || !hotAuthorGap(entries, 2) || !hotAuthorGap(entries, 3) || hotAuthorGap(entries, 4) {
+		t.Fatal("gaps belong between authors only")
+	}
+	// Five lines fit A's group, the gap and B.
+	if offset, end := hotAuthorViewport(entries, listState{}, 5); offset != 0 || end != 4 {
+		t.Fatalf("viewport [%d,%d)", offset, end)
+	}
+	if offset, end := hotAuthorViewport(entries, listState{selected: 4}, 3); end != 5 || offset != 3 {
+		t.Fatalf("the selection stays on screen: [%d,%d)", offset, end)
 	}
 }
