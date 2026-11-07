@@ -82,7 +82,11 @@ in the authors view, but they are left out of the people counts and out of the
 owners column unless an area has no human author at all. Automation is
 recognised by convention — a `[bot]` suffix, or a word such as `bot`, `ci`, or
 `automation` in the name. An account a project runs under an ordinary-looking
-handle carries no marker in Git and counts as a person. The hotspot keys below
+handle carries no marker in Git and counts as a person. One person's names
+merge: names that commit with the same email, a name that is itself one of
+those emails, and names differing only in case all show as the most used real
+name. Placeholder addresses such as `root@…` or `you@example.com` never merge
+anyone; a `.mailmap` remains the precise fix and is applied first. The hotspot keys below
 cycle the window and reveal generated and vendored files. Tests and docs rank
 below source, and paths deleted inside the window are dropped.
 

@@ -11,10 +11,10 @@ import (
 )
 
 type HistoryStream struct {
-	repo   Repo
-	path   string
-	since  string
-	author string
+	repo    Repo
+	path    string
+	since   string
+	authors []string
 
 	mu      sync.Mutex
 	readMu  sync.Mutex
@@ -26,9 +26,10 @@ type HistoryStream struct {
 	pending string
 }
 
-// WithAuthor limits the stream to one author's commits.
-func (s *HistoryStream) WithAuthor(author string) *HistoryStream {
-	s.author = author
+// WithAuthors limits the stream to commits by any of patterns, which are
+// AuthorPattern or AuthorEmailPattern results.
+func (s *HistoryStream) WithAuthors(patterns ...string) *HistoryStream {
+	s.authors = patterns
 	return s
 }
 
@@ -64,8 +65,9 @@ func (s *HistoryStream) start() error {
 	if s.since != "" {
 		args = append(args, "--since="+s.since)
 	}
-	if s.author != "" {
-		args = append(args, "--author="+AuthorPattern(s.author))
+	// Git matches a commit whose author fits any one of the patterns.
+	for _, pattern := range s.authors {
+		args = append(args, "--author="+pattern)
 	}
 	if s.path != "" {
 		args = append(args, "--follow", "--name-status", "-M", "--", s.path)
@@ -221,14 +223,21 @@ func (s *HistoryStream) running() bool { return s.cmd != nil }
 // AuthorPattern matches exactly one author name for git log --author, which
 // otherwise takes a substring regular expression over "Name <email>".
 func AuthorPattern(name string) string {
+	return "^" + quoteBasicRegexp(name) + " <"
+}
+
+// AuthorEmailPattern matches exactly one author email for git log --author.
+func AuthorEmailPattern(email string) string {
+	return "<" + quoteBasicRegexp(email) + ">$"
+}
+
+func quoteBasicRegexp(text string) string {
 	var b strings.Builder
-	b.WriteByte('^')
-	for _, r := range name {
+	for _, r := range text {
 		if strings.ContainsRune(`\.*[^$`, r) {
 			b.WriteByte('\\')
 		}
 		b.WriteRune(r)
 	}
-	b.WriteString(" <")
 	return b.String()
 }

@@ -1071,3 +1071,106 @@ func TestHotspotAuthorsAreSpacedApart(t *testing.T) {
 		t.Fatalf("the selection stays on screen: [%d,%d)", offset, end)
 	}
 }
+
+func TestHotspotNameColumnHoldsStillWhileScrolling(t *testing.T) {
+	authors := map[string]*hotAuthor{}
+	for i := 0; i < 30; i++ {
+		name := fmt.Sprintf("A%02d", i)
+		if i == 29 {
+			name = "A Much Longer Name At The Bottom"
+		}
+		authors[name] = &hotAuthor{name: name, commits: 100 - i}
+	}
+	m := model{width: 120, height: 10, screen: "hotspots", hotspots: hotspotState{mode: "authors", authors: authors, items: &hotItemsCache{}}}
+	header := func() string { return strings.Split(ansi.Strip(m.hotView()), "\n")[1] }
+	top := header()
+	m.hotspots.list.selected = 29
+	if bottom := header(); bottom != top {
+		t.Fatalf("columns moved while scrolling:\n%q\n%q", top, bottom)
+	}
+	for _, mode := range []string{"", "files"} {
+		m = model{width: 120, height: 6, screen: "hotspots", hotspots: hotspotState{mode: mode, items: &hotItemsCache{}}}
+		for i := 0; i < 20; i++ {
+			path := fmt.Sprintf("f%02d.go", i)
+			if i == 19 {
+				path = "a/very/long/path/that/sits/last.go"
+			}
+			m.hotspots.files = append(m.hotspots.files, hotFile{path: path, score: float64(100 - i), commits: 1, authors: map[string]int{"A": 1}})
+		}
+		top = header()
+		m.hotspots.list.selected = 19
+		if bottom := header(); bottom != top {
+			t.Fatalf("%q view columns moved while scrolling:\n%q\n%q", mode, top, bottom)
+		}
+	}
+}
+
+func TestHotspotMergesOnePersonsNames(t *testing.T) {
+	now := time.Now().Unix()
+	commit := func(hash, name, email string) git.HotCacheCommit {
+		c := git.NewHotCacheCommit(hash, now, name, []git.HotCacheChange{{Path: "src/a.go", Added: 1}})
+		c.Email = email
+		return c
+	}
+	commits := []git.HotCacheCommit{
+		commit("c1", "John Doe", "John.Doe@company.com"),
+		commit("c2", "John Doe", "john.doe@company.com"),
+		commit("c3", "john.doe@company.com", "john.doe@company.com"),
+		commit("c4", "john.doe@company.com", "jd@laptop.local"),
+		commit("c5", "john doe", "jdoe@users.noreply.github.com"),
+		// A shared placeholder address must not merge different people.
+		commit("c6", "Alice", "you@example.com"),
+		commit("c7", "Bob", "you@example.com"),
+		commit("c8", "Carol", "root@build.company.com"),
+		commit("c9", "Dan", "root@build.company.com"),
+	}
+	_, authors, _, _ := aggregateHotspots(commits, builtinPathMarks(commits), 0, time.Now())
+	john := authors["John Doe"]
+	if john == nil || john.commits != 5 || len(authors) != 5 {
+		names := []string{}
+		for name := range authors {
+			names = append(names, name)
+		}
+		t.Fatalf("John's three names should be one person: %v", names)
+	}
+	if len(john.person.names) != 3 || john.person.names[0] != "John Doe" {
+		t.Fatalf("the most used real name leads: %v", john.person.names)
+	}
+	m := model{hotspots: hotspotState{authors: authors}}
+	patterns := strings.Join(m.hotAuthorPatterns("John Doe"), "\n")
+	for _, want := range []string{`^John Doe <`, `^john\.doe@company\.com <`, `^john doe <`, `<jdoe@users\.noreply\.github\.com>$`} {
+		if !strings.Contains(patterns, want) {
+			t.Fatalf("history should match %q:\n%s", want, patterns)
+		}
+	}
+}
+
+func TestHotspotMergedAuthorHistoryFindsEveryName(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	r := testRepo(t)
+	t.Setenv("GIT_AUTHOR_EMAIL", "john.doe@company.com")
+	for i, name := range []string{"John Doe", "john.doe@company.com", "John Doe"} {
+		t.Setenv("GIT_AUTHOR_NAME", name)
+		if err := os.MkdirAll(filepath.Join(r.Root, "src"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, r, "src/a.go", strings.Repeat("x\n", i+1))
+		if _, err := r.Commit(fmt.Sprintf("change %d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, authors, err := hotspots(r, "1.year", "")
+	if err != nil || authors["John Doe"] == nil || authors["John Doe"].commits != 3 {
+		t.Fatalf("the two names should merge: %v %#v", err, authors)
+	}
+	m := model{width: 120, height: 30, wrap: true, repo: r, viewed: newViewedStore(r.Root), screen: "hotspots"}
+	m.hotspots.authors = authors
+	next, cmd := m.openAuthorPathHistory("src", "John Doe")
+	m = next.(model)
+	for i := 0; cmd != nil && i < 20 && (m.history.loading || len(m.history.commits) == 0); i++ {
+		m, cmd = applyBatch(t, m, cmd)
+	}
+	if len(m.history.commits) != 3 {
+		t.Fatalf("history should show all three commits, got %d", len(m.history.commits))
+	}
+}

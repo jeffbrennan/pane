@@ -133,6 +133,9 @@ func (m model) openAuthorPathHistory(path, author string) (tea.Model, tea.Cmd) {
 	previous.fileHistoryReturn = nil
 	m.fileHistoryReturn = &previous
 	m.history = historyState{path: path, since: m.hotspots.since, author: author, request: m.history.request}
+	if author != "" {
+		m.history.authorPatterns = m.hotAuthorPatterns(author)
+	}
 	m.stash.viewing = false
 	m.screen = "history"
 	m.pending, m.count = "", 0

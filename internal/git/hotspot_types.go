@@ -12,6 +12,7 @@ type HotCacheCommit struct {
 	Hash    string           `json:"hash"`
 	Time    int64            `json:"time"`
 	Author  string           `json:"author"`
+	Email   string           `json:"email,omitempty"`
 	Changes []HotCacheChange `json:"changes"`
 }
 
