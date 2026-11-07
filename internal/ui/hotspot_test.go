@@ -1174,3 +1174,23 @@ func TestHotspotMergedAuthorHistoryFindsEveryName(t *testing.T) {
 		t.Fatalf("history should show all three commits, got %d", len(m.history.commits))
 	}
 }
+
+func TestHotspotAreasDropStrayEditsAndScaleWithinTheAuthor(t *testing.T) {
+	author := &hotAuthor{name: "A", commits: 200, areas: map[string]*hotArea{
+		"src":    {commits: 150},
+		"test":   {commits: 60},
+		".cargo": {commits: 1},
+	}}
+	if areas := hotAuthorAreas(author); len(areas) != 2 || areas[0] != "src" || areas[1] != "test" {
+		t.Fatalf("areas under 1%% of commits are left out: %v", areas)
+	}
+	// On the list's log scale a third of the peak is already most of the
+	// height; within one author it stays near the middle.
+	strip := ansi.Strip(hotAreaStrip(hotTimeline{30, 90, 1}, 90, ""))
+	if !strings.HasPrefix(strip, "▅█▁") {
+		t.Fatalf("linear strip: %q", strip)
+	}
+	if log := ansi.Strip(hotStrip(hotTimeline{30, 90}, 90, "")); !strings.HasPrefix(log, "▇") {
+		t.Fatalf("log strip should lift the smaller slice: %q", log)
+	}
+}

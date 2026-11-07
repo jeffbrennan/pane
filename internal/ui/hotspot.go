@@ -1467,13 +1467,25 @@ var hotLevels = []rune("▁▂▃▄▅▆▇█")
 // lost. Active cells are drawn at full strength so they stand out of the dim
 // row; quiet slices are a faint dot.
 func hotStrip(t hotTimeline, peak float64, color string) string {
+	return hotDrawStrip(t, peak, color, func(v float64) float64 { return math.Log1p(v) / math.Log1p(peak) })
+}
+
+// hotAreaStrip scales heights by square root instead. Within one person a
+// log scale lifts every area they touch often to full height, so their
+// busiest areas look alike, while a linear one flattens everything but the
+// top area; the square root keeps both ends readable.
+func hotAreaStrip(t hotTimeline, peak float64, color string) string {
+	return hotDrawStrip(t, peak, color, func(v float64) float64 { return math.Sqrt(v / peak) })
+}
+
+func hotDrawStrip(t hotTimeline, peak float64, color string, scale func(float64) float64) string {
 	var b strings.Builder
 	for _, v := range t {
 		if v <= 0 || peak <= 0 {
 			b.WriteString("·")
 			continue
 		}
-		level := int(math.Ceil(math.Log1p(v) / math.Log1p(peak) * float64(len(hotLevels))))
+		level := int(math.Ceil(scale(v) * float64(len(hotLevels))))
 		level = max(1, min(level, len(hotLevels)))
 		b.WriteString(styleNormal + color + string(hotLevels[level-1]) + styleReset)
 	}
@@ -1711,10 +1723,15 @@ func hotAuthorViewport(entries []hotAuthorEntry, list listState, rows int) (int,
 // A single file has no areas below it to expand into.
 func (m model) hotAuthorExpandable() bool { return !m.hotspots.scopeFile }
 
+// hotAuthorAreas lists where an author worked, busiest first. Areas under 1%
+// of their commits are left out: they are mostly stray config edits, and
+// would bury the areas that say what the person works on.
 func hotAuthorAreas(author *hotAuthor) []string {
 	areas := make([]string, 0, len(author.areas))
-	for dir := range author.areas {
-		areas = append(areas, dir)
+	for dir, area := range author.areas {
+		if area.commits*100/max(1, author.commits) >= 1 {
+			areas = append(areas, dir)
+		}
 	}
 	sort.Slice(areas, func(i, j int) bool {
 		left, right := author.areas[areas[i]], author.areas[areas[j]]
@@ -1755,14 +1772,16 @@ func (m model) hotAreaPath(area string) string {
 
 // hotAreaRow shows one author's work in one area, in the author's color, on
 // the same scale as the author rows.
-func (m model) hotAreaRow(i, selected, count int, entry hotAuthorEntry, nameWidth int, peak float64, now time.Time) string {
+func (m model) hotAreaRow(i, selected, count int, entry hotAuthorEntry, nameWidth int, now time.Time) string {
 	color := m.authorNameColor(entry.author.name)
 	if isBotAuthor(entry.author.name) {
 		color = ""
 	}
 	area := entry.author.areas[entry.area]
 	share := fmt.Sprintf("%d%% of their commits", area.commits*100/max(1, entry.author.commits))
-	columns := hotAuthorColumns(hotStrip(area.timeline, peak, color), formatCount(area.commits), hotSpan(area.first, area.last, now), "")
+	// Areas share their author's scale, not the list's, so the strips show
+	// how that person's attention split between them.
+	columns := hotAuthorColumns(hotAreaStrip(area.timeline, entry.author.timeline.peak(), color), formatCount(area.commits), hotSpan(area.first, area.last, now), "")
 	return m.hotRow(i, selected, count, syntax.Clean(hotAreaName(entry)), nameWidth, columns, share)
 }
 
@@ -2007,7 +2026,7 @@ func (m model) hotView() string {
 		}
 		for i := offset; i < end; i++ {
 			if entries[i].area != "" {
-				body = append(body, m.hotAreaRow(i, selected, len(entries), entries[i], nameWidth, peak, now))
+				body = append(body, m.hotAreaRow(i, selected, len(entries), entries[i], nameWidth, now))
 			} else {
 				body = append(body, m.hotAuthorRow(i, selected, len(entries), entries[i].author, nameWidth, peak, now))
 			}
