@@ -92,7 +92,8 @@ func TestHotSlotPlacesAuthorLocalTime(t *testing.T) {
 	var punch hotPunch
 	punch.record(git.HotSlot("2026-11-02 14:03:00 +0100"))
 	punch.record(0)
-	if punch[0][14] != 1 || punch.peak() != 1 {
+	punch.record(git.HotSlot("2026-11-02 15:40:00 +0100"))
+	if punch[0][14] != 1 || punch.columns()[0][7] != 2 || punch.peak() != 2 {
 		t.Fatalf("punch card: %v", punch)
 	}
 }
@@ -234,8 +235,8 @@ func TestHotspotProfileWindowKeepsThePersonOrReturns(t *testing.T) {
 func TestHotspotProfileShowsLanguagesAreasFilesAndPeople(t *testing.T) {
 	m := pressHot(t, hotProfileModel(120, 40), "p")
 	view := ansi.Strip(m.hotView())
-	for _, want := range []string{"Ana Lima", "also ana, ana@lima.dev", "languages", "Go", "TypeScript", "also docs",
-		"areas", "src/", "src/a.go", "works alongside", "Ben Ode", syntax.Clean("Cy ❤️"), "when they work", "Mon"} {
+	for _, want := range []string{"Ana Lima", "languages", "Go", "TypeScript", "docs ",
+		"areas", "src/", "src/a.go", "alongside", "Ben Ode", syntax.Clean("Cy ❤️"), "week", "Mon"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("profile is missing %q:\n%s", want, view)
 		}
@@ -260,7 +261,7 @@ func TestHotspotProfileFitsEveryWidthAndDropsSectionsInOrder(t *testing.T) {
 	// week first.
 	m := pressHot(t, hotProfileModel(80, 16), "p")
 	view := ansi.Strip(m.hotView())
-	if !strings.Contains(view, "languages") || !strings.Contains(view, "areas") || strings.Contains(view, "when they work") {
+	if !strings.Contains(view, "languages") || !strings.Contains(view, "areas") || strings.Contains(view, "week") {
 		t.Fatalf("short screen should keep the top sections only:\n%s", view)
 	}
 	if lines := strings.Split(m.hotView(), "\n"); len(lines) != 16 {
@@ -273,7 +274,7 @@ func TestHotspotProfileEmojiNamesKeepColumnsAligned(t *testing.T) {
 	var rows []string
 	for _, line := range strings.Split(ansi.Strip(m.hotView()), "\n") {
 		if strings.Contains(line, "Ben Ode") || strings.Contains(line, syntax.Clean("Cy ❤️")) {
-			if strings.Contains(line, "%") {
+			if strings.Contains(line, "█") {
 				rows = append(rows, line)
 			}
 		}
@@ -281,9 +282,9 @@ func TestHotspotProfileEmojiNamesKeepColumnsAligned(t *testing.T) {
 	if len(rows) != 2 {
 		t.Fatalf("alongside rows: %q", rows)
 	}
-	end := func(line string) int { return ansi.StringWidth(strings.TrimRight(line, " ")) }
-	if end(rows[0]) != end(rows[1]) {
-		t.Fatalf("counts should end in one column:\n%s\n%s", rows[0], rows[1])
+	bar := func(line string) int { return ansi.StringWidth(line[:strings.Index(line, "█")]) }
+	if bar(rows[0]) != bar(rows[1]) {
+		t.Fatalf("overlap bars should start in one column:\n%s\n%s", rows[0], rows[1])
 	}
 }
 

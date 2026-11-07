@@ -94,13 +94,14 @@ The detail line under the authors view names the selected person's top
 languages. `p` opens their profile: the languages they write (ranked by the same
 attention files are, so one bulk import does not define anyone, with their
 share of the repository's work in each), the areas they work in, their most
-changed files, who changes the same files, and a weekday-by-hour punch card in
-their own time zone. The header lists every name and email merged into them.
+changed files, who changes the same files, and a heat map of their week in
+two-hour slots, in their own time zone.
 `(` and `)` step to the previous or next person in the list, `w` keeps the
 same person in another window, and `↵` opens the selected row: a language
 narrows the files view to that person and language, an area or file opens their
-history there, and a collaborator opens that person's profile. Two columns pair
-up from 100 columns wide; on a short terminal the lowest sections drop first.
+history there, and a collaborator opens that person's profile. Languages and areas
+sit side by side whenever both fit, shrinking the share bar and dropping date
+spans first; on a short terminal the lowest sections drop first.
 Config, data and docs files are listed under the language bar rather than in it.
 
 Results are cached in `~/Library/Caches/pane` as per-commit numstat, so

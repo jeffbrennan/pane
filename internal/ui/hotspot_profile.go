@@ -27,11 +27,28 @@ func (p *hotPunch) record(slot uint8) {
 	}
 }
 
+// hotPunchHours is how many hours each column of the week chart covers.
+const hotPunchHours = 2
+
+// hotPunchColumns is how many columns a day has in the week chart.
+const hotPunchColumns = 24 / hotPunchHours
+
+// columns sums each day's hours into the chart's columns.
+func (p hotPunch) columns() [7][hotPunchColumns]float64 {
+	var columns [7][hotPunchColumns]float64
+	for day, hours := range p {
+		for hour, count := range hours {
+			columns[day][hour/hotPunchHours] += float64(count)
+		}
+	}
+	return columns
+}
+
 func (p hotPunch) peak() float64 {
 	peak := 0.0
-	for _, day := range p {
+	for _, day := range p.columns() {
 		for _, count := range day {
-			peak = max(peak, float64(count))
+			peak = max(peak, count)
 		}
 	}
 	return peak
@@ -181,31 +198,78 @@ type hotProfileItem struct {
 	text func(width int) string
 }
 
-// hotProfileSection is one titled block. Items are selectable; notes are the
-// dim lines that follow them.
+// hotProfileSection is one boxed panel. Items are selectable; notes are the
+// dim lines that follow them, drawn at the width the box gives them. label heads the columns that rows align flush
+// right beneath it.
 type hotProfileSection struct {
-	title string
-	items []hotProfileItem
-	notes []string
+	title, label string
+	items        []hotProfileItem
+	notes        []func(width int) string
+	// width is the widest row or note at its natural size, without the
+	// selection marker, so boxes can be sized to what they hold.
+	width int
+	// least is the narrowest the content can be drawn at once its
+	// adjustable columns shrink; 0 means it cannot shrink.
+	least int
+	// stretch boxes the section across the whole screen.
+	stretch bool
+	// tall redraws the notes at a height, tallest first, so a chart can use
+	// the room the screen has left; nil keeps the notes as they are.
+	tall func(level int) []func(width int) string
 }
 
+// hotProfileTallest is the most levels a tall section is drawn at.
+const hotProfileTallest = 3
+
+// natural is the box width that fits the section without cutting anything:
+// "│ ", the marker, the content, "  │", and room for the border's title and
+// label.
+func (s hotProfileSection) natural() int {
+	return s.boxWidth(s.width)
+}
+
+// narrowest is the box width at the content's least width.
+func (s hotProfileSection) narrowest() int {
+	if s.least == 0 {
+		return s.natural()
+	}
+	return s.boxWidth(s.least)
+}
+
+func (s hotProfileSection) boxWidth(content int) int {
+	border := 8 + ansi.StringWidth(s.title)
+	if s.label != "" {
+		border += 1 + ansi.StringWidth(s.label)
+	}
+	return max(border, 5+2+content)
+}
+
+// height counts the box's borders around its rows.
 func (s hotProfileSection) height() int {
 	if len(s.items) == 0 && len(s.notes) == 0 {
 		return 0
 	}
-	return 1 + len(s.items) + len(s.notes)
+	return 2 + len(s.items) + len(s.notes)
 }
 
 // fit trims the section's items to rows lines. A section that cannot keep its
-// title, notes and one item does not fit at all.
+// borders, notes and one item does not fit at all.
 func (s hotProfileSection) fit(rows int) (hotProfileSection, bool) {
 	if s.height() == 0 {
+		return s, false
+	}
+	if s.tall != nil {
+		for level := hotProfileTallest; level >= 1; level-- {
+			if s.notes = s.tall(level); s.height() <= rows {
+				return s, true
+			}
+		}
 		return s, false
 	}
 	if s.height() <= rows {
 		return s, true
 	}
-	keep := rows - 1 - len(s.notes)
+	keep := rows - 2 - len(s.notes)
 	if len(s.items) == 0 || keep < 1 {
 		return s, false
 	}
@@ -213,9 +277,13 @@ func (s hotProfileSection) fit(rows int) (hotProfileSection, bool) {
 	return s, true
 }
 
-// hotProfileBlock is one band of the screen: a section across the width, or
-// two side by side on a wide terminal.
-type hotProfileBlock struct{ left, right *hotProfileSection }
+// hotProfileBlock is one band of the screen: a box across the width, or two
+// side by side on a wide terminal.
+type hotProfileBlock struct {
+	left, right *hotProfileSection
+	// full spans the screen; otherwise a lone box keeps a column's width.
+	full bool
+}
 
 func (b hotProfileBlock) sections() []*hotProfileSection {
 	var sections []*hotProfileSection
@@ -235,60 +303,51 @@ func (b hotProfileBlock) height() int {
 	return height
 }
 
-// hotProfileWide is the width from which sections pair up in two columns.
-const hotProfileWide = 100
-
-// hotProfileHeader is the lines above the sections: who, how much, and when.
-const hotProfileHeader = 2
-
-func (m model) hotProfileColumns() bool { return m.width >= hotProfileWide }
-
-// hotProfileColumnWidth is the width a section renders in, after the screen's
-// one-cell margin and, in two columns, the gutter between them.
-func (m model) hotProfileColumnWidth(full bool) int {
-	if full || !m.hotProfileColumns() {
-		return max(1, m.width-1)
-	}
-	return max(1, (m.width-1-3)/2)
+// hotProfileColumns reports whether languages and areas fit side by side at
+// their narrowest, the test for laying the screen out in two columns.
+func (m model) hotProfileColumns(sections []*hotProfileSection) bool {
+	return sections[0].narrowest()+1+sections[1].narrowest() <= m.width
 }
 
-// hotProfileLayout picks the sections that fit, in priority order: languages,
-// areas, files, collaborators, then the week. The first band that does not fit
-// whole is trimmed, and everything after it is dropped.
+// hotProfileLayout picks the sections that fit under the header, in priority
+// order: languages, areas, files, collaborators, then the week. The first
+// band that does not fit whole is trimmed, and everything after it is
+// dropped.
 func (m model) hotProfileLayout(author *hotAuthor, now time.Time) []hotProfileBlock {
 	sections := m.hotProfileSections(author, now)
 	var bands [][]*hotProfileSection
-	if m.hotProfileColumns() {
-		bands = [][]*hotProfileSection{{sections[0], sections[1]}, {sections[2]}, {sections[3], sections[4]}}
+	columns := m.hotProfileColumns(sections)
+	if columns {
+		// Collaborators keep a column's width beside nothing, so the week can
+		// take the whole screen below them.
+		bands = [][]*hotProfileSection{{sections[0], sections[1]}, {sections[2]}, {sections[3], {}}, {sections[4]}}
 	} else {
 		for _, section := range sections {
 			bands = append(bands, []*hotProfileSection{section})
 		}
 	}
-	rows := max(0, m.height-2-hotProfileHeader)
+	rows := max(0, m.height-2-len(m.hotProfileHeaderLines(author, now)))
 	var blocks []hotProfileBlock
 	for _, band := range bands {
-		// A blank line sets each band off from the one above.
-		room := rows - 1
 		var fitted []*hotProfileSection
 		trimmed := false
 		for _, section := range band {
-			fit, ok := section.fit(room)
+			fit, ok := section.fit(rows)
 			if !ok {
-				fitted = append(fitted, nil)
 				trimmed = trimmed || section.height() > 0
 				continue
 			}
 			trimmed = trimmed || fit.height() < section.height()
 			fitted = append(fitted, &fit)
 		}
-		block := hotProfileBlock{left: fitted[0]}
-		if len(fitted) > 1 {
-			block.right = fitted[1]
-		}
-		if block.height() > 0 {
+		// A pair that lost one box keeps the other on the left.
+		if len(fitted) > 0 {
+			block := hotProfileBlock{left: fitted[0], full: len(band) == 1 || !columns}
+			if len(fitted) > 1 {
+				block.right = fitted[1]
+			}
 			blocks = append(blocks, block)
-			rows -= 1 + block.height()
+			rows -= block.height()
 		}
 		if trimmed {
 			break
@@ -337,32 +396,50 @@ func (m model) hotProfileSections(author *hotAuthor, now time.Time) []*hotProfil
 	languages := &hotProfileSection{title: "languages"}
 	headline, other := hotLanguageShares(author.languages)
 	headline = headline[:min(hotProfileLanguages, len(headline))]
+	// The repo column says how much of everyone's work in a language is this
+	// person's; alone in a repository it is always 100%, so it is left out.
+	repoShare := func(language hotLanguageShare) float64 {
+		if repo := data.repo[language.name]; repo != nil && repo.attention > 0 {
+			return language.stat.attention / repo.attention
+		}
+		return 1
+	}
+	for _, language := range headline {
+		if repoShare(language) < 0.999 {
+			languages.label = "repo"
+		}
+	}
+	// The share bar gives up cells, down to a few, before the names are cut.
+	const barWidest, barNarrowest = 16, 6
 	nameWidth := 0
 	for _, language := range headline {
 		nameWidth = max(nameWidth, ansi.StringWidth(language.name))
 	}
-	nameWidth = min(nameWidth, 14)
+	rest := 2 + 4 + 2 + hotBuckets
+	if languages.label != "" {
+		rest += 2 + 4
+	}
 	for _, language := range headline {
 		languages.items = append(languages.items, hotProfileItem{
 			row: hotProfileRow{kind: "language", key: language.name},
 			text: func(width int) string {
-				barWidth := max(4, min(16, width-nameWidth-2-6-2-hotBuckets))
+				barWidth := max(barNarrowest, min(barWidest, width-nameWidth-2-rest))
 				filled := int(math.Round(language.share * float64(barWidth)))
 				if language.share > 0 {
 					filled = max(1, filled)
 				}
-				bar := styleNormal + color + strings.Repeat("█", filled) + styleReset + strings.Repeat("░", barWidth-filled)
-				text := padCell(language.name, nameWidth) + "  " + bar + fmt.Sprintf("  %3d%%", int(math.Round(language.share*100))) +
-					"  " + hotAreaStrip(language.stat.timeline, peak, color)
-				if repo := data.repo[language.name]; repo != nil && repo.attention > language.stat.attention*1.001 {
-					tail := fmt.Sprintf("  %d%% of the repo's", int(math.Round(language.stat.attention/repo.attention*100)))
-					if ansi.StringWidth(text)+ansi.StringWidth(tail) <= width {
-						text += tail
-					}
+				columns := styleNormal + color + strings.Repeat("█", filled) + styleReset + strings.Repeat("░", barWidth-filled) +
+					fmt.Sprintf("  %4s  ", hotPercent(language.share)) + hotAreaStrip(language.stat.timeline, peak, color)
+				if languages.label != "" {
+					columns += fmt.Sprintf("  %4s", hotPercent(repoShare(language)))
 				}
-				return text
+				return hotProfileCells(func(room int) string { return padCell(language.name, room) }, columns, width)
 			},
 		})
+	}
+	if len(headline) > 0 {
+		languages.width = nameWidth + 2 + barWidest + rest
+		languages.least = languages.width - (barWidest - barNarrowest)
 	}
 	var buckets []string
 	for _, language := range other {
@@ -371,82 +448,194 @@ func (m model) hotProfileSections(author *hotAuthor, now time.Time) []*hotProfil
 		}
 	}
 	if len(buckets) > 0 {
-		languages.notes = append(languages.notes, "also "+strings.Join(buckets, " · "))
+		note := strings.Join(buckets, " · ")
+		languages.notes = append(languages.notes, func(int) string { return note })
+		languages.width = max(languages.width, ansi.StringWidth(note))
+		languages.least = max(languages.least, ansi.StringWidth(note))
 	}
 
 	areas := &hotProfileSection{title: "areas"}
 	dirs := hotAuthorAreas(author)
 	dirs = dirs[:min(hotProfileAreas, len(dirs))]
-	areaWidth := 0
+	spanWidth, areaWidth := 0, 0
 	for _, dir := range dirs {
+		spanWidth = max(spanWidth, ansi.StringWidth(hotSpan(author.areas[dir].first, author.areas[dir].last, now)))
 		areaWidth = max(areaWidth, ansi.StringWidth(syntax.Clean(hotProfileArea(dir))))
 	}
-	areaWidth = min(areaWidth, 24)
+	// Without room for every column, the span of dates goes first.
+	areas.least = areaWidth + 2 + 4 + 2 + hotBuckets
+	areas.width = areas.least + 2 + spanWidth
 	for _, dir := range dirs {
 		area := author.areas[dir]
 		areas.items = append(areas.items, hotProfileItem{
 			row: hotProfileRow{kind: "area", key: dir},
 			text: func(width int) string {
-				name := padCell(syntax.Clean(hotProfileArea(dir)), min(areaWidth, max(4, width-2-5-2-hotBuckets)))
-				text := name + fmt.Sprintf("  %3d%%", area.commits*100/max(1, author.commits)) + "  " + hotAreaStrip(area.timeline, peak, color)
-				if span := "  " + hotSpan(area.first, area.last, now); ansi.StringWidth(text)+ansi.StringWidth(span) <= width {
-					text += span
+				columns := fmt.Sprintf("%4s  ", hotPercent(float64(area.commits)/float64(max(1, author.commits)))) +
+					hotAreaStrip(area.timeline, peak, color)
+				if width >= areas.width {
+					columns += "  " + padCell(hotSpan(area.first, area.last, now), spanWidth)
 				}
-				return text
+				return hotProfileCells(func(room int) string { return padCell(syntax.Clean(hotProfileArea(dir)), room) }, columns, width)
 			},
 		})
 	}
 
-	files := &hotProfileSection{title: "most changed files · their share of the churn"}
-	filePeak, pathWidth := 0.0, 0
+	files := &hotProfileSection{title: "files", label: "commits  share"}
+	filePeak := 0.0
 	for _, file := range data.files {
 		filePeak = max(filePeak, file.file.timeline.peak())
-		pathWidth = max(pathWidth, ansi.StringWidth(syntax.Clean(file.file.path)))
 	}
 	for _, file := range data.files {
 		files.items = append(files.items, hotProfileItem{
 			row: hotProfileRow{kind: "file", key: file.file.path},
 			text: func(width int) string {
-				columns := hotStrip(file.file.timeline, filePeak, "") + fmt.Sprintf("  %12s  %3d%%", hotCommits(file.file.commits), int(math.Round(file.share*100)))
-				return hotPathCell(syntax.Clean(file.file.path), max(8, min(pathWidth, width-2-ansi.StringWidth(columns)))) + "  " + columns
+				columns := hotStrip(file.file.timeline, filePeak, "") + fmt.Sprintf("  %7s  %5s", formatCount(file.file.commits), hotPercent(file.share))
+				return hotProfileCells(func(room int) string { return hotPathCell(syntax.Clean(file.file.path), room) }, columns, width)
 			},
 		})
+		files.width = max(files.width, ansi.StringWidth(syntax.Clean(file.file.path))+2+hotBuckets+2+7+2+5)
 	}
 
-	alongside := &hotProfileSection{title: "works alongside · share of their lines · files"}
-	alongsideWidth := 0
+	// Overlap is drawn against the closest collaborator, since lines shared
+	// with any one person are a small slice of a busy author's work.
+	alongside := &hotProfileSection{title: "alongside", label: "overlap     files"}
+	const overlapWidth = 10
+	closest := 1
 	for _, other := range data.alongside {
-		alongsideWidth = max(alongsideWidth, ansi.StringWidth(syntax.Clean(other.name)))
+		closest = max(closest, other.overlap)
 	}
-	alongsideWidth = min(alongsideWidth, 24)
 	for _, other := range data.alongside {
 		alongside.items = append(alongside.items, hotProfileItem{
 			row: hotProfileRow{kind: "person", key: other.name},
 			text: func(width int) string {
-				badge := styleNormal + m.hotProfileColor(other.name) + authorInitials(other.name) + styleReset
-				count := fmt.Sprintf("  %3d%%  %6s", other.overlap*100/max(1, author.churn), formatCount(other.files))
-				name := padCell(syntax.Clean(other.name), max(4, min(alongsideWidth, width-hotBadgeWidth-len(count))))
-				return badge + " " + name + count
+				otherColor := m.hotProfileColor(other.name)
+				badge := styleNormal + otherColor + authorInitials(other.name) + styleReset
+				filled := max(1, int(math.Round(float64(other.overlap)/float64(closest)*overlapWidth)))
+				columns := styleNormal + otherColor + strings.Repeat("█", filled) + styleReset + strings.Repeat("░", overlapWidth-filled) +
+					fmt.Sprintf("  %5s", formatCount(other.files))
+				return hotProfileCells(func(room int) string {
+					return badge + " " + padCell(syntax.Clean(other.name), max(0, room-hotBadgeWidth))
+				}, columns, width)
 			},
 		})
+		alongside.width = max(alongside.width, hotBadgeWidth+ansi.StringWidth(syntax.Clean(other.name))+2+overlapWidth+2+5)
 	}
 
-	week := &hotProfileSection{title: "when they work · their local time"}
+	week := &hotProfileSection{title: "week", stretch: true}
 	if punchPeak := author.punch.peak(); punchPeak > 0 {
-		hours := []rune(strings.Repeat(" ", 24))
-		for _, hour := range []int{0, 6, 12, 18} {
-			copy(hours[hour:], []rune(fmt.Sprint(hour)))
+		var swatch strings.Builder
+		for step := range 5 {
+			swatch.WriteString(styleNormal + m.hotHeat(float64(step)/4) + "█" + styleReset + styleDim)
 		}
-		week.notes = append(week.notes, "    "+string(hours))
-		for day, name := range []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"} {
-			values := make([]float64, 24)
-			for hour, count := range author.punch[day] {
-				values[hour] = float64(count)
+		week.label = "less " + swatch.String() + " more"
+		columns := author.punch.columns()
+		week.width = 4 + 2*hotPunchColumns
+		week.tall = func(dayRows int) []func(width int) string {
+			notes := []func(width int) string{func(width int) string {
+				grid := max(2*hotPunchColumns, width-4)
+				// Every column is labelled with the hour it starts at once the
+				// labels fit, every other one before that.
+				step := 1
+				if grid/hotPunchColumns < 3 {
+					step = 2
+				}
+				hours := []rune(strings.Repeat(" ", grid))
+				for column := 0; column < hotPunchColumns; column += step {
+					copy(hours[hotPunchStart(column, grid):], []rune(fmt.Sprint(column*hotPunchHours)))
+				}
+				return "    " + string(hours)
+			}}
+			for day, name := range []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"} {
+				for row := range dayRows {
+					notes = append(notes, func(width int) string {
+						label := "   "
+						if row == 0 {
+							label = name
+						}
+						return label + " " + hotPunchRow(columns[day], punchPeak, m.hotHeat, max(2*hotPunchColumns, width-4), row, dayRows)
+					})
+				}
 			}
-			week.notes = append(week.notes, name+" "+hotDrawStrip(values, punchPeak, color, func(v float64) float64 { return math.Sqrt(v / punchPeak) }))
+			return notes
 		}
+		week.notes = week.tall(hotProfileTallest)
 	}
 	return []*hotProfileSection{languages, areas, files, alongside, week}
+}
+
+// hotPunchStart is the cell a column begins at when the day spans grid
+// cells; columns differ by at most one cell so the day fills its row.
+func hotPunchStart(column, grid int) int { return column * grid / hotPunchColumns }
+
+// hotPunchRow draws one line of a day that spans dayRows lines, row 0 at the
+// top, across grid cells: a heat map, each column a solid cell colored by how
+// busy it is against the busiest column, on a square-root scale so quiet hours
+// still separate from empty ones. A day taller than one line ends in a half
+// block, leaving a sliver between days. Every column's cell is the same width;
+// wide columns keep a gap after it, which absorbs the cells left over. An
+// empty column is one dot on the day's first line.
+func hotPunchRow(day [hotPunchColumns]float64, peak float64, heat func(float64) string, grid, row, dayRows int) string {
+	block := grid / hotPunchColumns
+	if block >= 3 {
+		block--
+	}
+	glyph := "█"
+	if dayRows > 1 && row == dayRows-1 {
+		glyph = "▀"
+	}
+	var b strings.Builder
+	for column, count := range day {
+		cell := hotPunchStart(column+1, grid) - hotPunchStart(column, grid)
+		if count == 0 {
+			text := ""
+			if row == 0 {
+				text = strings.Repeat(" ", (block-1)/2) + "·"
+			}
+			b.WriteString(padCell(text, cell))
+			continue
+		}
+		b.WriteString(styleNormal + heat(math.Sqrt(count/peak)) + strings.Repeat(glyph, block) + styleReset + strings.Repeat(" ", cell-block))
+	}
+	return b.String()
+}
+
+// hotHeatRamps run from barely there to hottest. The dark ramp rises from a
+// dim plum through red to yellow; the light one deepens from pale gold to
+// plum, so the hottest cell is always the one that stands out from the
+// background.
+var hotHeatRamps = struct{ dark, light [][3]float64 }{
+	dark:  [][3]float64{{72, 48, 92}, {135, 45, 112}, {205, 62, 72}, {242, 135, 45}, {252, 225, 100}},
+	light: [][3]float64{{250, 232, 168}, {246, 178, 92}, {224, 104, 58}, {176, 46, 72}, {92, 24, 84}},
+}
+
+// hotHeat colors heat t in [0, 1] along the theme's ramp.
+func (m model) hotHeat(t float64) string {
+	ramp := hotHeatRamps.dark
+	if m.lightTheme {
+		ramp = hotHeatRamps.light
+	}
+	t = max(0, min(1, t)) * float64(len(ramp)-1)
+	i := min(int(t), len(ramp)-2)
+	f := t - float64(i)
+	var rgb [3]int
+	for c := range rgb {
+		rgb[c] = int(math.Round(ramp[i][c] + (ramp[i+1][c]-ramp[i][c])*f))
+	}
+	return fmt.Sprintf("\x1b[38;2;%d;%d;%dm", rgb[0], rgb[1], rgb[2])
+}
+
+func hotPercent(share float64) string {
+	return fmt.Sprintf("%d%%", int(math.Round(share*100)))
+}
+
+// hotProfileCells lays a row out as a table: the name fills what the columns
+// leave, and the columns sit flush right under the box's label.
+func hotProfileCells(name func(room int) string, columns string, width int) string {
+	room := width - 2 - ansi.StringWidth(columns)
+	if room < 4 {
+		return ansi.Truncate(columns, width, "")
+	}
+	return name(room) + "  " + columns
 }
 
 func hotProfileArea(dir string) string {
@@ -469,27 +658,105 @@ func hotPathCell(path string, width int) string {
 	return padCell("…"+string(runes), width)
 }
 
-// hotProfileSectionLines renders a section at width, marking the selection.
-func (m model) hotProfileSectionLines(section *hotProfileSection, width int, selected hotProfileRow) []string {
-	if section == nil {
-		return nil
-	}
-	lines := []string{truncateCell(section.title, width)}
-	for _, item := range section.items {
-		text := ansi.Truncate(item.text(max(1, width-2)), max(1, width-2), "")
-		if item.row == selected {
-			lines = append(lines, m.accent()+"▸ "+styleReset+text+styleReset)
+// hotProfileWidths sizes the boxes as a grid fitted to their content: one
+// width per column, and boxes across the screen as wide as both columns or
+// their own content, whichever is wider. Nothing exceeds the screen; when the
+// columns do not fit side by side, each gives up room down to half.
+func (m model) hotProfileWidths(blocks []hotProfileBlock) (left, right, full int) {
+	paired := false
+	leftLeast, rightLeast := 0, 0
+	for _, block := range blocks {
+		if block.full {
+			full = max(full, block.left.natural())
 			continue
 		}
-		lines = append(lines, styleDim+"  "+strings.ReplaceAll(text, styleReset, styleReset+styleDim)+styleReset)
+		paired = true
+		left, leftLeast = max(left, block.left.natural()), max(leftLeast, block.left.narrowest())
+		if block.right != nil {
+			right, rightLeast = max(right, block.right.natural()), max(rightLeast, block.right.narrowest())
+		}
 	}
-	for _, note := range section.notes {
-		lines = append(lines, styleDim+"  "+strings.ReplaceAll(ansi.Truncate(note, max(1, width-2), ""), styleReset, styleReset+styleDim)+styleReset)
+	// Too wide side by side, each column gives up cells in proportion to how
+	// many it can spare.
+	if over := left + 1 + right - m.width; paired && over > 0 {
+		leftSpare, rightSpare := left-leftLeast, right-rightLeast
+		if spare := leftSpare + rightSpare; spare > 0 {
+			give := min(over, spare) * leftSpare / spare
+			left -= give
+			right -= min(over, spare) - give
+		}
+		left = min(left, m.width-1-right)
 	}
-	return lines
+	if paired && right > 0 {
+		full = max(full, left+1+right)
+	} else if paired {
+		full = max(full, left)
+	}
+	for _, block := range blocks {
+		if block.left.stretch {
+			full = m.width
+		}
+	}
+	// Columns widen with the boxes across the screen so the grid's edges
+	// line up.
+	if paired && right > 0 && full > left+1+right {
+		extra := full - (left + 1 + right)
+		left, right = left+extra/2, right+extra-extra/2
+	}
+	return min(left, m.width), min(right, m.width), min(full, m.width)
 }
 
-// hotProfileHeaderLines are the name, totals, activity and merged aliases.
+// hotProfileBox draws a section in a rounded box of width cells and height
+// lines: the title, and any column label, in the top border, rows marked with
+// the selection. The title takes the accent while the selection is inside.
+func (m model) hotProfileBox(section *hotProfileSection, width, height int, selected hotProfileRow) []string {
+	// "│ " before the rows and "  │" after, so they end under the label,
+	// which the border closes with " ─╮".
+	inner := max(1, width-5)
+	active := false
+	var body []string
+	for _, item := range section.items {
+		text := ansi.Truncate(item.text(max(1, inner-2)), max(1, inner-2), "")
+		if item.row == selected {
+			active = true
+			body = append(body, m.accent()+"▸ "+styleReset+text+styleReset)
+			continue
+		}
+		body = append(body, styleDim+"  "+strings.ReplaceAll(text, styleReset, styleReset+styleDim)+styleReset)
+	}
+	for _, note := range section.notes {
+		text := ansi.Truncate(note(max(1, inner-2)), max(1, inner-2), "")
+		body = append(body, styleDim+"  "+strings.ReplaceAll(text, styleReset, styleReset+styleDim)+styleReset)
+	}
+	for len(body) < height-2 {
+		body = append(body, "")
+	}
+	// The top border is "╭─ title " then a rule, closed by the label as
+	// " label ─╮" or by "─╮" alone.
+	title, tail := syntax.Clean(section.title), "─╮"
+	if section.label != "" {
+		tail = " " + section.label + " ─╮"
+	}
+	fill := width - 4 - ansi.StringWidth(title) - ansi.StringWidth(tail)
+	if fill < 1 {
+		tail = "─╮"
+		fill = width - 4 - ansi.StringWidth(title) - 2
+	}
+	if fill < 0 {
+		title = truncateCell(title, max(1, width-6))
+		fill = max(0, width-6-ansi.StringWidth(title))
+	}
+	if active {
+		title = m.accent() + title + styleReset
+	}
+	lines := []string{styleDim + "╭─ " + styleReset + title + styleDim + " " + strings.Repeat("─", fill) + tail + styleReset}
+	for _, line := range body {
+		lines = append(lines, styleDim+"│ "+styleReset+padCell(line, inner)+styleDim+"  │"+styleReset)
+	}
+	return append(lines, styleDim+"╰"+strings.Repeat("─", max(0, width-2))+"╯"+styleReset)
+}
+
+// hotProfileHeaderLines is the name, totals and activity.
 func (m model) hotProfileHeaderLines(author *hotAuthor, now time.Time) []string {
 	color := m.hotProfileColor(author.name)
 	badge := authorInitials(author.name)
@@ -500,29 +767,9 @@ func (m model) hotProfileHeaderLines(author *hotAuthor, now time.Time) []string 
 	if active := hotActive(author, now); active != "" {
 		summary += " · " + active
 	}
-	first := " " + styleNormal + color + badge + styleReset + " " + syntax.Clean(author.name) + styleDim + "  " + summary + styleReset
-	second := styleDim + " activity " + hotAreaStrip(author.timeline, author.timeline.peak(), color) + styleDim
-	if aliases := hotProfileAliases(author); aliases != "" {
-		second += "  also " + syntax.Clean(aliases)
-	}
-	second += styleReset
-	return []string{ansi.Truncate(first, m.width, "") + styleReset, ansi.Truncate(second, m.width, "") + styleReset}
-}
-
-// hotProfileAliases lists the other names and the emails merged into the
-// author, so an identity merge can be checked.
-func hotProfileAliases(author *hotAuthor) string {
-	if author.person == nil {
-		return ""
-	}
-	var aliases []string
-	for _, name := range author.person.names {
-		if name != author.name {
-			aliases = append(aliases, name)
-		}
-	}
-	aliases = append(aliases, author.person.emails...)
-	return strings.Join(aliases, ", ")
+	first := " " + styleNormal + color + badge + styleReset + " " + syntax.Clean(author.name) + styleDim + "  " + summary + "  " +
+		hotAreaStrip(author.timeline, author.timeline.peak(), color) + styleReset
+	return []string{ansi.Truncate(first, m.width, "") + styleReset}
 }
 
 // hotProfilePeople is who ( and ) step through: the authors list the
@@ -543,7 +790,7 @@ func (m model) hotProfileView() string {
 	now := time.Now()
 	name := m.hotspots.profile.author
 	author := m.hotProfileSubject(name)
-	title := fmt.Sprintf(" hotspots · %s · %s", m.hotWindowLabel(), name)
+	title := " hotspots · " + m.hotWindowLabel()
 	position := ""
 	if people := m.hotProfilePeople(); len(people) > 1 {
 		if i := slices.Index(people, name); i >= 0 {
@@ -561,26 +808,24 @@ func (m model) hotProfileView() string {
 		lines = append(lines, m.hotProfileHeaderLines(author, now)...)
 		blocks := m.hotProfileLayout(author, now)
 		selected := m.hotProfileSelected(hotProfileRows(blocks))
+		// Paired boxes share a height so their borders line up.
+		leftWidth, rightWidth, fullWidth := m.hotProfileWidths(blocks)
 		for _, block := range blocks {
-			lines = append(lines, "")
-			if block.right == nil || !m.hotProfileColumns() {
-				for _, line := range m.hotProfileSectionLines(block.left, m.hotProfileColumnWidth(block.right == nil), selected) {
-					lines = append(lines, " "+line)
-				}
+			height := block.height()
+			if block.full {
+				lines = append(lines, m.hotProfileBox(block.left, fullWidth, height, selected)...)
 				continue
 			}
-			width := m.hotProfileColumnWidth(false)
-			left := m.hotProfileSectionLines(block.left, width, selected)
-			right := m.hotProfileSectionLines(block.right, width, selected)
-			for i := 0; i < max(len(left), len(right)); i++ {
-				line := strings.Repeat(" ", width)
-				if i < len(left) {
-					line = padCell(left[i], width)
-				}
+			left := m.hotProfileBox(block.left, leftWidth, height, selected)
+			var right []string
+			if block.right != nil {
+				right = m.hotProfileBox(block.right, rightWidth, height, selected)
+			}
+			for i, line := range left {
 				if i < len(right) {
-					line += "   " + right[i]
+					line += " " + right[i]
 				}
-				lines = append(lines, " "+line)
+				lines = append(lines, line)
 			}
 		}
 	}
