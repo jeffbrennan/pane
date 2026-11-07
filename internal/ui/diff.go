@@ -38,10 +38,14 @@ func displayPath(path string, shortened bool) string {
 }
 
 func buildRowsDisplay(changes []git.Change, width int, wrap bool, expanded map[string]bool, gutterWidth int, shortPaths bool) ([]row, int) {
-	return buildRowsDisplayReuse(changes, width, wrap, expanded, gutterWidth, shortPaths, nil)
+	return buildRowsDisplayReuse(changes, width, wrap, expanded, gutterWidth, shortPaths, nil, nil)
 }
 
-func buildRowsDisplayReuse(changes []git.Change, width int, wrap bool, expanded map[string]bool, gutterWidth int, shortPaths bool, reuse []row) ([]row, int) {
+func buildRowsDisplayCollapsed(changes []git.Change, width int, wrap bool, expanded map[string]bool, gutterWidth int, shortPaths bool, collapsed map[string]bool) ([]row, int) {
+	return buildRowsDisplayReuse(changes, width, wrap, expanded, gutterWidth, shortPaths, collapsed, nil)
+}
+
+func buildRowsDisplayReuse(changes []git.Change, width int, wrap bool, expanded map[string]bool, gutterWidth int, shortPaths bool, collapsed map[string]bool, reuse []row) ([]row, int) {
 	// Share one line number width across files so the number column stays
 	// put when moving between them.
 	widths := make([]int, len(changes))
@@ -54,11 +58,17 @@ func buildRowsDisplayReuse(changes []git.Change, width int, wrap bool, expanded 
 	// Files lay out independently, so large change sets build in parallel.
 	parts := make([][]row, len(changes))
 	parallelEach(len(changes), func(i int) {
-		parts[i] = changeRows(changes[i], i > 0, width, wrap, expanded[changes[i].Path], gutterWidth, shortPaths)
+		parts[i] = changeRows(changes[i], i > 0, width, wrap, expanded[changes[i].Path], collapsed[changes[i].Path], gutterWidth, shortPaths)
 	})
 	total := 0
 	for _, part := range parts {
 		total += len(part)
+	}
+	// A single file needs no concatenation. Returning its rows directly avoids
+	// copying every row, which matters most for a huge one-file diff.
+	if len(parts) == 1 {
+		indexRowHeaders(parts[0])
+		return parts[0], gutterWidth
 	}
 	var rows []row
 	if cap(reuse) >= total {
@@ -99,14 +109,19 @@ func parallelEach(n int, f func(int)) {
 
 // changeRows lays out one file; separated adds the blank row that divides it
 // from the file before.
-func changeRows(c git.Change, separated bool, width int, wrap bool, expanded bool, gutterWidth int, shortPaths bool) []row {
+func changeRows(c git.Change, separated bool, width int, wrap bool, expanded bool, collapsed bool, gutterWidth int, shortPaths bool) []row {
+	deletedFile := strings.Contains(c.Diff, "\ndeleted file mode ") && !strings.Contains(c.Diff, "\nnew file mode ")
+	// A collapsed file only needs its headers, so do not size the row slice
+	// for the file's whole contents.
+	capacity := 16
+	if (!deletedFile || expanded) && !collapsed {
+		capacity = strings.Count(c.Diff, "\n") + 3
+	}
 	// Most lines take one row; sizing for them avoids regrowing large files.
-	rows := make([]row, 0, strings.Count(c.Diff, "\n")+3)
-	oldSyntax, newSyntax := syntax.LinesFor(c.Path, c.SyntaxDiff, c.Diff)
+	rows := make([]row, 0, capacity)
 	if separated {
 		rows = append(rows, row{path: c.Path, lineIndex: -2, kind: 's'})
 	}
-	deletedFile := strings.Contains(c.Diff, "\ndeleted file mode ") && !strings.Contains(c.Diff, "\nnew file mode ")
 	deletedLines := 0
 	if deletedFile {
 		deletedLines = countDeletedLines(c.Diff)
@@ -118,13 +133,14 @@ func changeRows(c git.Change, separated bool, width int, wrap bool, expanded boo
 		name = displayPath(c.OldPath, shortPaths)
 	}
 	_, _, submodule := git.SubmoduleLine(strings.SplitN(c.Diff, "\n", 2)[0])
-	header := row{path: c.Path, oldPath: c.OldPath, lineIndex: -1, text: " " + name, kind: 'f', submodule: submodule, generated: c.Generated}
+	header := row{path: c.Path, lineIndex: -1, text: " " + name, kind: 'f', submodule: submodule, generated: c.Generated}
+	header.setOldPath(c.OldPath)
 	if c.Generated {
 		added, deleted := countGeneratedLines(c.Diff)
 		header.setGeneratedCounts(added, deleted)
 	}
 	if deletedFile && !expanded {
-		header.deletedLines = deletedLines
+		header.deletedLines = int32(deletedLines)
 	}
 	if c.OldPath == "" {
 		rows = append(rows, header)
@@ -144,7 +160,7 @@ func changeRows(c git.Change, separated bool, width int, wrap bool, expanded boo
 			}
 			byteOffset := 0
 			for _, part := range wrapLine(text, max(1, width-5)) {
-				header.text, header.offset = " "+part, offset
+				header.text, header.offset = " "+part, int32(offset)
 				inline := syntax.Clip(spans, byteOffset, byteOffset+len(part))
 				for i := range inline {
 					inline[i].Start++
@@ -174,6 +190,10 @@ func changeRows(c git.Change, separated bool, width int, wrap bool, expanded boo
 			return rows
 		}
 	}
+	if collapsed {
+		return rows
+	}
+	oldSyntax, newSyntax := syntax.LinesFor(c.Path, c.SyntaxDiff, c.Diff)
 	oldLine, newLine, hunks := 0, 0, 0
 	inHunk, hasContent := false, false
 	var metadata []string
@@ -259,7 +279,7 @@ func changeRows(c git.Change, separated bool, width int, wrap bool, expanded boo
 				if syntaxMatches {
 					spans = syntax.Clip(lineSyntax.Spans, byteOffset, byteOffset+len(part))
 				}
-				rows = append(rows, (row{path: c.Path, offset: offset, target: target, sourceLine: number, text: part, kind: kind, spans: newRowSpans(spans, nil, nil), syntaxPresent: spans != nil}).withLineNumber(i))
+				rows = append(rows, (row{path: c.Path, offset: int32(offset), target: target, sourceLine: number, text: part, kind: kind, spans: newRowSpans(spans, nil, nil), syntaxPresent: spans != nil}).withLineNumber(i))
 				byteOffset += len(part)
 				offset += stringWidth(part)
 			}
@@ -370,7 +390,7 @@ func wrapContentRows(base row, text string, limit int) []row {
 	offset := 0
 	for _, part := range parts {
 		clone := base
-		clone.text, clone.offset = part, offset
+		clone.text, clone.offset = part, int32(offset)
 		rows = append(rows, clone)
 		offset += stringWidth(part)
 	}
@@ -383,7 +403,7 @@ func wrapHeaderRows(base row, text string, limit int) []row {
 	offset := 0
 	for _, part := range parts {
 		clone := base
-		clone.text, clone.offset, clone.kind = " "+part, offset, 'f'
+		clone.text, clone.offset, clone.kind = " "+part, int32(offset), 'f'
 		if offset > 0 {
 			clone.kind = 'F'
 		}

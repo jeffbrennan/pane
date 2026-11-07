@@ -197,7 +197,17 @@ func (m *model) rebuildSequence() {
 	if len(m.sequence.gutterWidths) != len(m.sequence.commits) {
 		m.sequence.gutterWidths = make([]int, len(m.sequence.commits))
 	}
+	// Size from the cached per-commit rows so appending every commit does not
+	// repeatedly grow and copy. Allocate a fresh backing array so rows from a
+	// larger previous range are not kept alive past the new length.
+	capacity := 0
+	for _, cached := range m.sequence.rowCache {
+		capacity += len(cached)
+	}
 	var rows []row
+	if capacity > 0 {
+		rows = make([]row, 0, capacity)
+	}
 	now := time.Now()
 	for i := range m.sequence.commits {
 		if len(m.sequence.states) > 0 && m.sequence.states[i] == sequenceFailed {
@@ -222,7 +232,7 @@ func (m *model) rebuildSequence() {
 			view.seedViewedCollapse(m.sequence.changes[i])
 			m.collapsedFiles, m.generatedHandled = view.collapsedFiles, view.generatedHandled
 			changes := m.applySyntaxDemand(git.Context{Commit: m.sequence.commits[i].Hash}, m.sequence.changes[i])
-			files, m.sequence.gutterWidths[i] = buildRowsDisplay(changes, width, m.wrap, expanded, 0, m.shortPaths)
+			files, m.sequence.gutterWidths[i] = buildRowsDisplayCollapsed(changes, width, m.wrap, expanded, 0, m.shortPaths, view.collapsedPaths(changes))
 			if len(files) == 0 {
 				files = append(files, row{kind: '@', text: "  No file changes"})
 			}

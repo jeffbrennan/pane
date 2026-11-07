@@ -5,14 +5,17 @@ import (
 )
 
 type row struct {
-	path, oldPath, text        string
-	spans                      *rowSpans
-	offset, target, sourceLine int
-	deletedLines               int
-	lineIndex, headerIndex     int32
-	commitIndex                uint16
-	renameAdded, submodule     bool
-	generated, viewed          bool
+	path, text string
+	spans      *rowSpans
+	// Line numbers stay native ints so very large source lines are preserved.
+	target, sourceLine int
+	// Offsets and deleted-line counts are small in practice; keeping them
+	// compact lets the four int32 fields pack without padding.
+	offset, deletedLines   int32
+	lineIndex, headerIndex int32
+	commitIndex            uint16
+	renameAdded, submodule bool
+	generated, viewed      bool
 	// A highlighted line can have no spans but still use syntax-aware rendering.
 	syntaxPresent bool
 	kind          byte
@@ -28,6 +31,7 @@ type wideRowIndexes struct {
 	line, header     int
 	generatedAdded   int
 	generatedDeleted int
+	oldPath          string
 	moved            bool
 }
 
@@ -60,6 +64,27 @@ func (r row) wideIndexes() *wideRowIndexes {
 		return nil
 	}
 	return r.spans.wide
+}
+
+// oldPathValue is only set on file headers for renames, so it lives in the
+// optional wide storage rather than costing every content row a string header.
+func (r row) oldPathValue() string {
+	if wide := r.wideIndexes(); wide != nil {
+		return wide.oldPath
+	}
+	return ""
+}
+
+func (r *row) setOldPath(value string) {
+	if value == "" {
+		return
+	}
+	wide := wideRowIndexes{}
+	if old := r.wideIndexes(); old != nil {
+		wide = *old
+	}
+	wide.oldPath = value
+	r.spans = newRowSpans(r.syntaxSpans(), r.inlineSpans(), &wide)
 }
 
 func (r row) generatedCounts() (int, int) {

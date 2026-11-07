@@ -53,8 +53,9 @@ change.
 
 ## Current large-commit results
 
-Measured against a 9,195-file, 1.5M-row commit, except the base review row,
-which uses a 36,008-file, 271 MB working-tree diff:
+Measured on Apple Silicon (the same hardware behind `perf/baseline.tsv`)
+against a 9,195-file, 1.5M-row commit, except the base review row, which uses a
+36,008-file, 271 MB working-tree diff:
 
 | Metric | Result | Initial target | Status |
 |---|---|---|---|
@@ -114,3 +115,76 @@ once more for the in-diff handler. The scan moved to the points where rows are
 built or appended, so a scroll frame now walks only the visible rows. `View()`
 itself was already proportional to the viewport; the remaining cost is inline
 diff spans for visible lines.
+
+## Linux results
+
+The numbers below are from an Intel Core i5-8250U (4C/8T, 2017 ULV) running
+Linux and Go 1.27.3 on 2026-11-05. The Apple column is `perf/baseline.tsv`; it
+will usually stay faster because it is newer silicon. Compare the Linux
+before/after columns when judging a change.
+
+The before column is commit `17502e6` measured in a clean worktree. The now
+column is the code at `4fe1ae1`. Timings are medians of six runs for the
+harness metrics, and each run is already the harness's median of five. This
+ULV laptop shows noticeable run-to-run variance under sustained load, so treat
+differences under 5% or 2 ms as noise, matching `perf-diff`'s rule.
+
+| Metric | Apple baseline | Linux before | Linux now | Change |
+|---|---:|---:|---:|---:|
+| Heap after build, 51k rows | 8.30 MB | 8.21 MB | 7.15 MB | −13% |
+| `row` struct size | 104 B | 104 B | 80 B | −23% |
+| `view_alloc_bytes`, 51k rows | 299 KB | 299 KB | 25.8 KB | −91% |
+| `view_ns`, 51k rows | 207 µs | 228 µs | 68 µs | −70% |
+| `view_ns`, 100k-row file | 170 µs | 238 µs | 73 µs | −69% |
+| `moved_index_ns`, 51k rows | 3.49 ms | 4.95 ms | 2.59 ms | −48% |
+| `moved_index_ns`, 100k-line file | 6.43 ms | 11.26 ms | 4.18 ms | −63% |
+| `synthetic-range rebuild_ns`, 100 commits | 2.07 ms | 6.81 ms | 1.55 ms | −77% |
+| `synthetic-refresh full_rebuild_ns`, 1000 files | 3.19 ms | 11.40 ms | 8.14 ms | −29% |
+| `synthetic-refresh spliced_refresh_ns`, 1000 files | 2.99 ms | 7.30 ms | 5.12 ms | −30% |
+
+Paths that were not the target of this pass are broadly unchanged:
+
+| Metric | Apple baseline | Linux before | Linux now |
+|---|---:|---:|---:|
+| `search_miss_ns`, 51k rows | 1.60 ms | 3.06 ms | 3.31 ms (noise) |
+| `resize_width_apply_ns` | 0.77 ms | 2.34 ms | 1.77 ms |
+| `wrap_toggle_ns` | 1.63 ms | 3.06 ms | 3.33 ms (noise) |
+| `scroll_j_mid_ns` | 20.7 µs | 27.8 µs | 26.8 µs (noise) |
+
+The full harness's `synthetic-many build_ns` is noisy on this machine
+(5.4–7.2 ms across runs). The isolated `BenchmarkRebuild` is the stable
+measure, and a same-session worktree A/B showed no rebuild regression.
+
+### Render and rebuild benchmarks
+
+These direct benchmarks cover the shapes the recent UI work targets:
+all-added rows, paired removed/added rows with inline word diffs, and a
+one-row scroll. `BenchmarkRenderView/additions` started this pass at roughly
+265 µs, 299 KB, and 3,943 allocations per frame.
+
+| Benchmark | Result |
+|---|---:|
+| `BenchmarkRenderView/additions` | 70 µs, 26 KB, 306 allocs |
+| `BenchmarkRenderView/mixed` | 108 µs, 37 KB, 395 allocs |
+| `BenchmarkRenderScroll/additions` | 102 µs, 55 KB, 321 allocs |
+| `BenchmarkRenderScroll/mixed` | 143 µs, 66 KB, 410 allocs |
+| `BenchmarkRebuild/many` | 4.58 ms, 4.95 MB |
+| `BenchmarkRebuild/huge` | 13.0 ms, 8.01 MB |
+| `BenchmarkCollapsedGenerated/expanded` | 10.1 ms, 8.01 MB |
+| `BenchmarkCollapsedGenerated/collapsed` | 2.14 ms, 1.6 KB |
+
+```sh
+go test ./internal/ui -run '^$' -bench 'BenchmarkRender|BenchmarkRebuild|BenchmarkCollapsed' -benchmem
+```
+
+`just perf-check` reports several metrics above twice the Apple baseline on
+this machine. Those are hardware-bound and are not Linux regressions; use the
+same-machine before/after columns or a Linux baseline when adding a new gate.
+
+To add a harness row, run the synthetic harness and append the new medians:
+
+```sh
+PANE_PERF=1 PANE_PERF_RUN=linux-$(date -u +%Y%m%dT%H%M%S) \
+  PANE_PERF_LOG="$PWD/.scratch/perf-linux.tsv" \
+  go test -run '^TestPerf$' -count=1 ./internal/ui
+```

@@ -10,11 +10,11 @@ func (m model) fileHeaderAt(index int) *row {
 	}
 	header := m.rows[index].headerRow() - 1
 	if header >= 0 && header < index && m.rows[header].kind == 'f' {
-		if m.rows[header].oldPath != "" {
+		if m.rows[header].oldPathValue() != "" {
 			pinned := m.rows[header]
 			pinned.renameAdded = true
 			pinned.text = " → " + displayPath(pinned.path, m.shortPaths)
-			_, inline := syntax.RenamePathSpans(pinned.oldPath, pinned.path, m.shortPaths)
+			_, inline := syntax.RenamePathSpans(pinned.oldPathValue(), pinned.path, m.shortPaths)
 			for i := range inline {
 				inline[i].Start += len(" → ")
 				inline[i].End += len(" → ")
