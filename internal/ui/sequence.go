@@ -197,15 +197,12 @@ func (m *model) rebuildSequence() {
 	if len(m.sequence.gutterWidths) != len(m.sequence.commits) {
 		m.sequence.gutterWidths = make([]int, len(m.sequence.commits))
 	}
-	// Reusing the previous size as a capacity hint avoids the repeated
-	// grow-and-copy that appending every commit's rows would otherwise cause.
-	// Allocate a fresh backing array so rows from a larger previous range are
-	// not kept alive past the new length.
-	capacity := len(m.rows)
-	if capacity == 0 {
-		for _, cached := range m.sequence.rowCache {
-			capacity += len(cached)
-		}
+	// Size from the cached per-commit rows so appending every commit does not
+	// repeatedly grow and copy. Allocate a fresh backing array so rows from a
+	// larger previous range are not kept alive past the new length.
+	capacity := 0
+	for _, cached := range m.sequence.rowCache {
+		capacity += len(cached)
 	}
 	var rows []row
 	if capacity > 0 {

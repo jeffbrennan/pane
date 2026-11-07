@@ -446,7 +446,9 @@ func (m model) renderDiffRowWithGutter(r row, inline []syntax.Span, active bool,
 	contentWidth := max(0, m.width-margin)
 	bodyWidth := max(0, contentWidth-stringWidth(gutter))
 	if r.kind == 'f' || r.kind == 'F' || r.kind == 'm' || r.kind == 'M' || r.kind == 'n' {
-		body = fit(body, contentWidth)
+		// Headers and details rows get a relative-number gutter too, so their
+		// body must leave room for it or the line spills past the terminal.
+		body = fit(body, bodyWidth)
 	} else if !m.wrap {
 		body = fit(sliceWidth(body, m.horizontal, bodyWidth), bodyWidth)
 	} else {
@@ -467,11 +469,14 @@ func (m model) renderDiffRowWithGutter(r row, inline []syntax.Span, active bool,
 	case 'f', 'F':
 		if r.kind == 'f' && r.generated && (r.oldPathValue() == "" || r.renameAdded) {
 			suffix := generatedLabel(r)
-			head := fit(body, max(0, contentWidth-stringWidth(suffix)))
-			padding := strings.Repeat(" ", max(0, contentWidth-stringWidth(head)-stringWidth(suffix)))
+			if stringWidth(suffix) > bodyWidth {
+				suffix = fit(suffix, bodyWidth)
+			}
+			head := fit(body, max(0, bodyWidth-stringWidth(suffix)))
+			padding := strings.Repeat(" ", max(0, bodyWidth-stringWidth(head)-stringWidth(suffix)))
 			body = head + padding + styleDim + suffix + styleReset
 		} else {
-			body += strings.Repeat(" ", max(0, contentWidth-stringWidth(body)))
+			body += strings.Repeat(" ", max(0, bodyWidth-stringWidth(body)))
 		}
 		color = renameHeaderDark
 		if m.lightTheme {
@@ -501,36 +506,35 @@ func (m model) renderDiffRowWithGutter(r row, inline []syntax.Span, active bool,
 		text = prefix + color + gutter + syntax.RenderWithHighlight(body, nil, inline, 0, query, color, m.lightTheme, highlight) + "\x1b[0m"
 		prefixed = true
 		color = ""
-	} else if spans != nil || r.kind == '+' || r.kind == '-' || r.kind == 'd' {
-		if !r.isMoved() {
-			start := 0
-			if !m.wrap {
-				start = syntax.SliceStart(r.text, m.horizontal, bodyWidth)
-			}
-			background := ""
-			switch r.kind {
-			case '+':
-				background = darkAddedBackground
-				if m.lightTheme {
-					background = "\x1b[48;2;221;242;224m"
-				}
-			case '-', 'd':
-				background = darkRemovedBackground
-				if m.lightTheme {
-					background = "\x1b[48;2;250;225;225m"
-				}
-			}
-			padding := ""
-			if background != "" {
-				padding = strings.Repeat(" ", max(0, contentWidth-stringWidth(gutter)-stringWidth(body)))
-			}
-			text = prefix + background + gutter + syntax.Render(body, spans, inline, start, query, background, m.lightTheme) + padding + "\x1b[0m"
-			prefixed = true
-			color = ""
+	} else if (spans != nil || r.kind == '+' || r.kind == '-' || r.kind == 'd') && !r.isMoved() {
+		start := 0
+		if !m.wrap {
+			start = syntax.SliceStart(r.text, m.horizontal, bodyWidth)
 		}
-	} else if query != "" {
-		text = prefix + gutter + highlightMatches(body, query)
+		background := ""
+		switch r.kind {
+		case '+':
+			background = darkAddedBackground
+			if m.lightTheme {
+				background = "\x1b[48;2;221;242;224m"
+			}
+		case '-', 'd':
+			background = darkRemovedBackground
+			if m.lightTheme {
+				background = "\x1b[48;2;250;225;225m"
+			}
+		}
+		padding := ""
+		if background != "" {
+			padding = strings.Repeat(" ", max(0, contentWidth-stringWidth(gutter)-stringWidth(body)))
+		}
+		text = prefix + background + gutter + syntax.Render(body, spans, inline, start, query, background, m.lightTheme) + padding + "\x1b[0m"
 		prefixed = true
+		color = ""
+	} else if query != "" {
+		// Fall through to the common gutter/color path so plain rows and moved
+		// lines keep their kind color while search still reverses matches.
+		text = highlightMatches(body, query)
 	}
 	if !prefixed {
 		// Branches that skip syntax rendering still need the gutter on content

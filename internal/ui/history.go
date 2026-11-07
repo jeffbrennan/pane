@@ -127,9 +127,8 @@ func (m *model) appendCommitChanges(changes []git.Change, done bool) {
 	changes = view.applySyntaxDemand(git.Context{Commit: view.contextCommit, Staged: view.staged, Base: view.contextBase}, changes)
 	if len(view.contextFiles) == 0 && len(view.collapsedFiles) == 0 {
 		parts := make([][]row, len(changes))
-		collapsed := view.collapsedPaths(changes)
 		parallelEach(len(changes), func(i int) {
-			parts[i] = changeRows(changes[i], true, view.diffContentWidth(), view.wrap, view.expandedDeleted[changes[i].Path], collapsed[changes[i].Path], width, view.shortPaths)
+			parts[i] = changeRows(changes[i], true, view.diffContentWidth(), view.wrap, view.expandedDeleted[changes[i].Path], false, width, view.shortPaths)
 		})
 		total := 0
 		for _, part := range parts {
