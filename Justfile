@@ -21,6 +21,31 @@ profile:
 pgo:
     if [ -f default.pgo ]; then go tool pprof -proto default.pgo .scratch/session.pprof > .scratch/merged.pprof && mv .scratch/merged.pprof default.pgo; else cp .scratch/session.pprof default.pgo; fi
 
+# Record docs/demo.gif with vhs from a Ghostty clone that has one unstaged edit,
+# then add zooms. Needs vhs, uv, gifsicle and the Obel Mono Masked font.
+demo:
+    #!/usr/bin/env bash
+    set -eu
+    go build -o pane .
+    export DEMO_REPO=.scratch/ghostty
+    if [ -d "$DEMO_REPO" ]; then
+        git -C "$DEMO_REPO" fetch -q origin
+        git -C "$DEMO_REPO" reset -q --hard origin/HEAD
+        git -C "$DEMO_REPO" clean -qfd
+    else
+        git clone -q https://github.com/ghostty-org/ghostty.git "$DEMO_REPO"
+    fi
+    sed -i '' 's/generally much faster?\./generally much faster./' "$DEMO_REPO/src/fastmem.zig"
+    if git -C "$DEMO_REPO" diff --quiet; then echo "demo edit no longer applies; update the sed in the demo recipe" >&2; exit 1; fi
+    export DEMO_REPO="$PWD/$DEMO_REPO"
+    rm -rf .scratch/demo-frames
+    vhs docs/demo.tape
+    uv run docs/demo_zoom.py docs/demo.tape .scratch/demo-frames .scratch/demo-raw.gif
+    gifsicle -O3 --lossy=20 .scratch/demo-raw.gif -o .scratch/demo.gif
+    size=$(wc -c < .scratch/demo.gif)
+    if [ "$size" -ge 10000000 ]; then echo "demo is $size bytes, over GitHub's 10 MB limit; raise --lossy" >&2; exit 1; fi
+    mv .scratch/demo.gif docs/demo.gif
+
 fmt:
     gofmt -w .
 

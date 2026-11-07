@@ -443,6 +443,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			break
 		}
+		m.hotspots.classifier, m.hotspots.settling = msg.plan.classifier, true
 		m.hotspots.head, m.hotspots.cachePath = msg.plan.head, msg.plan.cachePath
 		m.hotspots.cutoff, m.hotspots.commits = msg.plan.cutoff, msg.plan.commits
 		m.hotspots.files, m.hotspots.authors = msg.plan.files, msg.plan.authors
@@ -457,7 +458,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.err != nil {
 			m.hotspots.stream = nil
-			m.hotspots.loading = false
+			m.hotspots.loading, m.hotspots.settling = false, false
 			// A stream closed on purpose, such as leaving for a file's
 			// history, is not a failure to report.
 			if !errors.Is(msg.err, io.ErrClosedPipe) {
@@ -487,8 +488,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.screen != "hotspots" || msg.request != m.hotspots.request {
 			break
 		}
-		m.hotspots.loading = false
-		m.hotspots.stream = nil
+		m.hotspots.loading, m.hotspots.settling = false, false
+		m.hotspots.stream, m.hotspots.classifier = nil, nil
 		if msg.err != nil {
 			m.flash = "Hotspots: " + msg.err.Error()
 			break
@@ -501,7 +502,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(msg.items) > 0 && m.hotFoldsDefault() {
 			m.hotspots.items = &hotItemsCache{items: msg.items, filled: true, dataVersion: m.hotspots.dataVersion, builtAt: time.Now()}
 		}
-		m.hotspots.list.selected, m.hotspots.list.offset = 0, 0
+		// The finished rows match the streamed ones, so the selection stays
+		// where the reader moved it; the view clamps it if rows went away.
 		m.leaveEmptyHotProfile()
 		if m.hotspots.windows == nil {
 			m.hotspots.windows = make(map[string]*hotWindow)
