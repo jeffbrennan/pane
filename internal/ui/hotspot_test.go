@@ -590,6 +590,94 @@ func TestHotspotBotsSortLast(t *testing.T) {
 	}
 }
 
+// The finished window must not reshuffle what the stream showed: streamed
+// pages honor .gitattributes and drop deleted paths, as the final pass does.
+func TestHotspotStreamedPagesMatchTheFinishedWindow(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	r := testRepo(t)
+	writeFile(t, r, ".gitattributes", "gen.txt linguist-generated\n")
+	writeFile(t, r, "gen.txt", strings.Repeat("generated\n", 20))
+	writeFile(t, r, "gone.go", "package gone\n")
+	writeFile(t, r, "keep.go", "package keep\n")
+	if _, err := r.Commit("add"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(r.Root, "gone.go")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Commit("remove"); err != nil {
+		t.Fatal(err)
+	}
+	m := model{width: 120, height: 30, wrap: true, repo: r, viewed: newViewedStore(r.Root)}
+	updated, cmd := m.openHotspots("1.year", "")
+	m = updated.(model)
+	streamed := ""
+	for i := 0; cmd != nil && i < 100; i++ {
+		m, cmd = applyBatch(t, m, cmd)
+		// The last page has landed and the final pass is still pending.
+		if m.hotspots.settling && m.hotspots.stream == nil && streamed == "" {
+			streamed = fmt.Sprintf("%v %v", hotFilePaths(m.hotspots.files), m.hotspots.hidden)
+			m.hotspots.list.selected = 1
+		}
+	}
+	finished := fmt.Sprintf("%v %v", hotFilePaths(m.hotspots.files), m.hotspots.hidden)
+	if streamed == "" || streamed != finished {
+		t.Fatalf("streamed %q, finished %q", streamed, finished)
+	}
+	if m.hotspots.list.selected != 1 {
+		t.Fatalf("finishing moved the selection to %d", m.hotspots.list.selected)
+	}
+}
+
+func hotFilePaths(files []hotFile) []string {
+	paths := make([]string, 0, len(files))
+	for _, file := range files {
+		paths = append(paths, file.path)
+	}
+	return paths
+}
+
+// While rows stream in, the footer stays on the bottom rows and the header
+// already has the columns the finished window shows.
+func TestHotspotLayoutHoldsStillWhileStreaming(t *testing.T) {
+	r := hotFixture(t)
+	m := model{width: 120, height: 30, wrap: true, repo: r, viewed: newViewedStore(r.Root)}
+	updated, cmd := m.openHotspots("2.year", "")
+	m = updated.(model)
+	if planning := m.hotView(); !strings.Contains(planning, "1y → now") || !strings.Contains(planning, "Loading hotspots") {
+		t.Fatalf("view before the plan arrives:\n%s", ansi.Strip(planning))
+	}
+	m, cmd = applyBatch(t, m, cmd)
+	m, cmd = applyBatch(t, m, cmd)
+	if !m.hotPartial() || len(m.hotspots.commits) != 1 {
+		t.Fatalf("expected one streamed commit, got %d (partial %v)", len(m.hotspots.commits), m.hotPartial())
+	}
+	header := func(m model) string { return ansi.Strip(strings.Split(m.hotView(), "\n")[1]) }
+	first, lines := header(m), strings.Split(ansi.Strip(m.hotView()), "\n")
+	if !strings.Contains(lines[len(lines)-1], "help") || strings.TrimSpace(lines[len(lines)-3]) != "" {
+		t.Fatalf("footer is not pinned to the bottom:\n%s", strings.Join(lines, "\n"))
+	}
+	m = drainHotspots(t, m, cmd)
+	last := header(m)
+	for _, column := range []string{"1y → now", "owners"} {
+		if !strings.Contains(first, column) || !strings.Contains(last, column) {
+			t.Fatalf("column %q changed: streaming %q, finished %q", column, first, last)
+		}
+	}
+	if strings.Index(first, "commits") != strings.Index(last, "commits") {
+		t.Fatalf("columns moved: streaming %q, finished %q", first, last)
+	}
+	// A first page with no file changes, such as a merge, is not an empty window.
+	empty := model{width: 120, height: 20, hotspots: hotspotState{settling: true, since: "1.year", items: &hotItemsCache{}, held: newHotHeld()}}
+	if view := ansi.Strip(empty.hotView()); !strings.Contains(view, "Loading hotspots") {
+		t.Fatalf("empty streamed page:\n%s", view)
+	}
+	narrow := model{width: 50, height: 20, hotspots: hotspotState{loading: true, held: newHotHeld()}}
+	if _, width := narrow.steady("tree", 0, 4, hotFixedWidth); width > 12 {
+		t.Fatalf("reserved name width %d overflows a narrow screen", width)
+	}
+}
+
 func TestHotspotsDropDeletedPaths(t *testing.T) {
 	r := testRepo(t)
 	writeFile(t, r, "gone.go", "package gone\n")

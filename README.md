@@ -1,17 +1,11 @@
 # pane
 
-A narrow, keyboard-first terminal viewer for Git changes. Diffs show file
-headers, line numbers, and added and removed lines without Git's patch
-metadata. Run `pane` anywhere inside a Git working tree.
+A minimal, keyboard-first Git TUI. It's built for reading diffs: file headers,
+line numbers, and added and removed lines, without Git's patch metadata. Stage
+hunks, commit, and poke around history without leaving the terminal. Run
+`pane` anywhere inside a Git working tree.
 
-```
- 1  internal/ui/view.go
- 2  @@ -14,7 +14,7 @@
- 3     func (m model) View() string {
- 4 -       return m.render()
- 5 +       return m.render(width)
- 6     }
-```
+![pane demo](docs/demo.gif)
 
 ## Features
 

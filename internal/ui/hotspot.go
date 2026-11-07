@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -200,6 +201,7 @@ type hotspotState struct {
 	hidden           hotHidden
 	commits          []git.HotCacheCommit
 	stream           *git.HotSpotStream
+	classifier       *hotClassifier
 	collapsed        map[string]bool
 	opened           map[string]bool
 	showAll          map[string]bool
@@ -213,10 +215,15 @@ type hotspotState struct {
 	dataVersion      int
 	collapsedVersion int
 	loading          bool
-	sortPath         bool
-	mode             string
-	hiddenShown      bool
-	authorFilter     string
+	// settling is true from the first streamed page until the finished
+	// window replaces it, while rows are still arriving.
+	settling bool
+	sortPath bool
+	// held keeps column widths from narrowing within a window.
+	held         hotHeld
+	mode         string
+	hiddenShown  bool
+	authorFilter string
 	// languageFilter narrows an author filter to one language, as a profile's
 	// language row opens it.
 	languageFilter string
@@ -307,6 +314,7 @@ type hotspotPlan struct {
 	cutoff                         int64
 	commits                        []git.HotCacheCommit
 	stream                         *git.HotSpotStream
+	classifier                     *hotClassifier
 	files                          []hotFile
 	authors                        map[string]*hotAuthor
 	items                          []hotItem
@@ -358,7 +366,11 @@ func planHotspots(r git.Repo, since, author string) (hotspotPlan, error) {
 		plan.cutoff = cutoff
 	}
 	plan.stream = git.NewHotSpotStream(r, since, author, revisionRange)
-	plan.files, plan.authors, plan.dirs, plan.hidden = aggregateHotspots(plan.commits, builtinPathMarks(plan.commits), plan.cutoff, now)
+	plan.classifier = newHotClassifier(r)
+	if len(plan.commits) > 0 {
+		plan.files, plan.authors, plan.dirs, plan.hidden = aggregateHotspots(plan.commits, plan.classifier.marks(plan.commits), plan.cutoff, now)
+		plan.files = plan.classifier.tracked(plan.files)
+	}
 	return plan, nil
 }
 
@@ -449,6 +461,79 @@ func trackedHotFiles(r git.Repo, files []hotFile) []hotFile {
 	kept := files[:0]
 	for _, file := range files {
 		if tracked[file.path] {
+			kept = append(kept, file)
+		}
+	}
+	return kept
+}
+
+// hotClassifier gives streamed pages the same .gitattributes marks and
+// tracked paths that finishHotspots applies, so rows and hidden counts don't
+// change when the walk ends. Pages are read one at a time, so it needs no lock.
+type hotClassifier struct {
+	repo    git.Repo
+	known   git.PathMarks
+	seen    map[string]bool
+	read    int
+	paths   map[string]bool
+	ready   chan struct{}
+	listing sync.Once
+}
+
+func newHotClassifier(r git.Repo) *hotClassifier {
+	return &hotClassifier{repo: r, known: newHotPathMarks(), seen: make(map[string]bool), ready: make(chan struct{})}
+}
+
+// list starts listing the tracked paths in the background. It waits for the
+// first page, so the extra process doesn't slow Git's first commit.
+func (c *hotClassifier) list() {
+	c.listing.Do(func() {
+		go func() {
+			if paths, err := c.repo.TrackedPaths(); err == nil {
+				c.paths = paths
+			}
+			close(c.ready)
+		}()
+	})
+}
+
+// marks covers every path in commits, asking Git only about paths that
+// earlier pages did not have. commits must extend the slice it saw last.
+func (c *hotClassifier) marks(commits []git.HotCacheCommit) git.PathMarks {
+	var fresh []string
+	for _, commit := range commits[min(c.read, len(commits)):] {
+		for _, change := range commit.Changes {
+			if !c.seen[change.Path] {
+				c.seen[change.Path] = true
+				fresh = append(fresh, change.Path)
+			}
+		}
+	}
+	c.read = len(commits)
+	if len(fresh) == 0 {
+		return c.known
+	}
+	marks := c.repo.PathMarks(fresh)
+	for _, pair := range [][2]map[string]bool{
+		{c.known.Generated, marks.Generated}, {c.known.Vendored, marks.Vendored}, {c.known.Documentation, marks.Documentation},
+	} {
+		for path := range pair[1] {
+			pair[0][path] = true
+		}
+	}
+	return c.known
+}
+
+// tracked drops files deleted inside the window, as trackedHotFiles does.
+func (c *hotClassifier) tracked(files []hotFile) []hotFile {
+	c.list()
+	<-c.ready
+	if c.paths == nil {
+		return files
+	}
+	kept := make([]hotFile, 0, len(files))
+	for _, file := range files {
+		if c.paths[file.path] {
 			kept = append(kept, file)
 		}
 	}
@@ -639,7 +724,14 @@ func aggregateHotspots(commits []git.HotCacheCommit, marks git.PathMarks, cutoff
 	for _, file := range files {
 		result = append(result, *file)
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].score > result[j].score })
+	// Ties go by path, as the tree does, so equal rows don't swap between
+	// refreshes.
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].score != result[j].score {
+			return result[i].score > result[j].score
+		}
+		return result[i].path < result[j].path
+	})
 	hidden.generated = len(hiddenGenerated)
 	hidden.vendored = len(hiddenVendored)
 	return result, authors, dirs, hidden
@@ -1034,7 +1126,7 @@ func (m model) waitHotspotPage(stream *git.HotSpotStream, request, limit int) te
 	// The full slice expression makes appends copy instead of writing into
 	// the model's backing array.
 	base := m.hotspots.commits[:len(m.hotspots.commits):len(m.hotspots.commits)]
-	cutoff := m.hotspots.cutoff
+	cutoff, classifier := m.hotspots.cutoff, m.hotspots.classifier
 	sortPath, filter := m.hotspots.sortPath, m.hotFilter()
 	// The tree key is filled in by update, which knows the next data version.
 	budget := max(hotspotRefresh, 2*m.hotspots.aggregateCost)
@@ -1050,7 +1142,20 @@ func (m model) waitHotspotPage(stream *git.HotSpotStream, request, limit int) te
 			// The first page paints at once; later ones batch up to the budget.
 			if done || len(base) == 0 || time.Since(started) >= budget {
 				aggregated := time.Now()
-				files, authors, dirs, hidden := aggregateHotspots(commits, builtinPathMarks(commits), cutoff, time.Now())
+				// The first page paints without waiting on Git for attributes
+				// or tracked paths; the next refresh, at most a budget later,
+				// classifies its rows the way the finished window will.
+				first := len(base) == 0 && !done
+				marks := builtinPathMarks(commits)
+				if !first {
+					marks = classifier.marks(commits)
+				}
+				files, authors, dirs, hidden := aggregateHotspots(commits, marks, cutoff, time.Now())
+				if first {
+					classifier.list()
+				} else {
+					files = classifier.tracked(files)
+				}
 				root := buildHotTree(files, dirs, sortPath, false, filter)
 				return hotspotPageLoaded{
 					commits: commits, files: files, authors: authors, dirs: dirs, hidden: hidden,
@@ -1087,7 +1192,7 @@ func (m model) openHotspots(since, author string) (tea.Model, tea.Cmd) {
 	m.screen = "hotspots"
 	// Requests keep counting up so a reply from the window being replaced is
 	// never mistaken for one from the new window.
-	m.hotspots = hotspotState{loading: true, since: since, author: author, request: m.hotspots.request + 1, authors: make(map[string]*hotAuthor), items: &hotItemsCache{}}
+	m.hotspots = hotspotState{loading: true, since: since, author: author, request: m.hotspots.request + 1, authors: make(map[string]*hotAuthor), items: &hotItemsCache{}, held: newHotHeld()}
 	return m, m.loadHotspots()
 }
 
@@ -1697,7 +1802,50 @@ func (m model) hotItemColumns(item hotItem, peak float64, now time.Time) (string
 	return hotColumns(hotStrip(item.timeline, peak, ""), formatCount(item.commits), people, last, ""), owners
 }
 
-func (m model) showHotOwners() bool { return len(m.hotspots.authors) > 1 }
+// showHotOwners hides the owners column for a single author, but keeps it
+// while rows are still arriving so it doesn't appear mid-load.
+func (m model) showHotOwners() bool {
+	return len(m.hotspots.authors) > 1 || m.hotPartial()
+}
+
+// hotPartial reports whether the window's rows are still arriving.
+func (m model) hotPartial() bool { return m.hotspots.loading || m.hotspots.settling }
+
+// hotHeld is the widest name column and row count each view has shown in the
+// current window. The maps are shared by model copies, so View can update them.
+type hotHeld struct{ names, counts map[string]int }
+
+func newHotHeld() hotHeld {
+	return hotHeld{names: make(map[string]int), counts: make(map[string]int)}
+}
+
+// steady widens count and nameWidth to the most the view has shown in this
+// window, within what the screen allows, so the columns don't shift as pages
+// stream in or folds close. count only sizes the row numbers.
+func (m model) steady(view string, count, nameWidth, fixed int) (int, int) {
+	held := m.hotspots.held
+	if held.names == nil {
+		return count, nameWidth
+	}
+	partial := m.hotPartial()
+	if partial {
+		count = max(count, hotPartialCount)
+	}
+	held.counts[view] = max(held.counts[view], count)
+	count = held.counts[view]
+	room := max(12, m.width-listPrefixWidth(count)-2-fixed)
+	if partial {
+		// Before the rows are known, reserve what a typical tree needs so the
+		// first pages don't each push the columns right.
+		held.names[view] = max(held.names[view], min(hotPartialNameWidth, room))
+	}
+	held.names[view] = max(held.names[view], nameWidth)
+	return count, min(held.names[view], max(nameWidth, room))
+}
+
+// The row count and name width reserved while rows are still arriving: two
+// digits of row numbers and a nested directory name.
+const hotPartialCount, hotPartialNameWidth = 100, 30
 
 // hotAuthorColumns formats the columns that follow an author's name.
 func hotAuthorColumns(activity, commits, active, areas string) string {
@@ -1910,7 +2058,17 @@ func (m model) hotHeaderRow(count, nameWidth int) string {
 // hotSpanLabel heads the activity column with how far back its strips reach.
 // Every commit has one author, so the earliest first commit among them is
 // where the strips start, whether the data came from a stream or the summary.
+// While rows arrive newest first, the window's cutoff stands in for it, so the
+// label doesn't count up as older pages land.
 func (m model) hotSpanLabel() string {
+	if m.hotPartial() {
+		// Measured from now rather than the plan's cutoff, which ages as the
+		// walk runs. A second inside the window is where its oldest commit
+		// usually is.
+		if cutoff, ok := sinceCutoff(m.hotspots.since, time.Now()); ok {
+			return hotAge(time.Unix(cutoff+1, 0), time.Now()) + " → now"
+		}
+	}
 	var start time.Time
 	for _, author := range m.hotspots.authors {
 		if !author.first.IsZero() && (start.IsZero() || author.first.Before(start)) {
@@ -2116,8 +2274,8 @@ func (m model) hotView() string {
 				names = append(names, pad+syntax.Clean(entry.author.name))
 			}
 		}
-		nameWidth := m.listNameWidth(len(entries), append(names, pad+"author"), hotAuthorFixedWidth)
-		header = m.hotHeaderRow(len(entries), nameWidth)
+		count, nameWidth := m.steady("authors", len(entries), m.listNameWidth(len(entries), append(names, pad+"author"), hotAuthorFixedWidth), hotAuthorFixedWidth)
+		header = m.hotHeaderRow(count, nameWidth)
 		peak := 0.0
 		for _, entry := range entries {
 			if entry.area == "" {
@@ -2126,9 +2284,9 @@ func (m model) hotView() string {
 		}
 		for i := offset; i < end; i++ {
 			if entries[i].area != "" {
-				body = append(body, m.hotAreaRow(i, selected, len(entries), entries[i], nameWidth, now))
+				body = append(body, m.hotAreaRow(i, selected, count, entries[i], nameWidth, now))
 			} else {
-				body = append(body, m.hotAuthorRow(i, selected, len(entries), entries[i].author, nameWidth, peak, now))
+				body = append(body, m.hotAuthorRow(i, selected, count, entries[i].author, nameWidth, peak, now))
 			}
 			if i+1 < end && hotAuthorGap(entries, i) {
 				body = append(body, "")
@@ -2155,11 +2313,15 @@ func (m model) hotView() string {
 				names = append(names, syntax.Clean(item.branch+item.name))
 			}
 		}
-		nameWidth := m.listNameWidth(len(items), append(names, "area"), hotFixedWidth)
-		header = m.hotHeaderRow(len(items), nameWidth)
+		view := "tree"
+		if m.hotspots.mode == "files" {
+			view = "files"
+		}
+		count, nameWidth := m.steady(view, len(items), m.listNameWidth(len(items), append(names, "area"), hotFixedWidth), hotFixedWidth)
+		header = m.hotHeaderRow(count, nameWidth)
 		for i := offset; i < end; i++ {
 			columns, owners := m.hotItemColumns(items[i], peak, now)
-			body = append(body, m.hotRow(i, selected, len(items), syntax.Clean(items[i].branch+items[i].name), nameWidth, columns, owners))
+			body = append(body, m.hotRow(i, selected, count, syntax.Clean(items[i].branch+items[i].name), nameWidth, columns, owners))
 		}
 		detail = m.hotDetail(selected, items, now)
 	}
@@ -2170,10 +2332,17 @@ func (m model) hotView() string {
 	}
 	if len(items) == 0 && m.hotspots.mode != "authors" {
 		text := " No changes in the window"
-		if m.hotspots.loading {
+		// The parallel walk's first page can be a commit with no file
+		// changes, which says nothing about the window yet.
+		if m.hotPartial() {
 			text = " Loading hotspots…"
 		}
 		lines = append(lines, fit(text, m.width))
+	}
+	// The detail and status lines stay on the bottom rows, as on other
+	// screens, rather than following the rows down as pages arrive.
+	for len(lines) < m.height-2 {
+		lines = append(lines, "")
 	}
 	// Detail line for the selection answers "how big is this" without widening
 	// the table.
