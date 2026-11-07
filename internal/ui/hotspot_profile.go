@@ -219,7 +219,7 @@ type hotProfileSection struct {
 }
 
 // hotProfileTallest is the most levels a tall section is drawn at.
-const hotProfileTallest = 3
+const hotProfileTallest = 2
 
 // natural is the box width that fits the section without cutting anything:
 // "│ ", the marker, the content, "  │", and room for the border's title and
@@ -539,9 +539,12 @@ func (m model) hotProfileSections(author *hotAuthor, now time.Time) []*hotProfil
 				if grid/hotPunchColumns < 3 {
 					step = 2
 				}
+				// Each label is centered over its column's cell.
 				hours := []rune(strings.Repeat(" ", grid))
+				block := hotPunchBlock(grid)
 				for column := 0; column < hotPunchColumns; column += step {
-					copy(hours[hotPunchStart(column, grid):], []rune(fmt.Sprint(column*hotPunchHours)))
+					label := []rune(fmt.Sprint(column * hotPunchHours))
+					copy(hours[hotPunchStart(column, grid)+max(0, (block-len(label))/2):], label)
 				}
 				return "    " + string(hours)
 			}}
@@ -567,6 +570,16 @@ func (m model) hotProfileSections(author *hotAuthor, now time.Time) []*hotProfil
 // cells; columns differ by at most one cell so the day fills its row.
 func hotPunchStart(column, grid int) int { return column * grid / hotPunchColumns }
 
+// hotPunchBlock is how many cells each column's colored cell spans; columns
+// three or more cells wide keep one free as a gap.
+func hotPunchBlock(grid int) int {
+	block := grid / hotPunchColumns
+	if block >= 3 {
+		block--
+	}
+	return block
+}
+
 // hotPunchRow draws one line of a day that spans dayRows lines, row 0 at the
 // top, across grid cells: a heat map, each column a solid cell colored by how
 // busy it is against the busiest column, on a square-root scale so quiet hours
@@ -575,10 +588,7 @@ func hotPunchStart(column, grid int) int { return column * grid / hotPunchColumn
 // wide columns keep a gap after it, which absorbs the cells left over. An
 // empty column is one dot on the day's first line.
 func hotPunchRow(day [hotPunchColumns]float64, peak float64, heat func(float64) string, grid, row, dayRows int) string {
-	block := grid / hotPunchColumns
-	if block >= 3 {
-		block--
-	}
+	block := hotPunchBlock(grid)
 	glyph := "█"
 	if dayRows > 1 && row == dayRows-1 {
 		glyph = "▀"
