@@ -71,8 +71,12 @@ scale, so a quiet file reads quiet beside a busy directory. The last change is
 highlighted when it is under a day old and brighter when under a week.
 
 The authors view gives each person the initials and color history uses, with
-their own strip. Press `c` on any tree or file row to see who changed that
-path over time; `/` searches the names and `esc` returns to the tree. Bots are
+their own strip. `l` opens an author into one row per top-level directory
+they worked in, each with its own strip, and `h` closes it. Press `c` on any
+tree or file row to see who changed that path over time; `/` searches the
+names and `esc` returns to the tree. Once the view is narrowed to one person —
+an author filter, an author under `c`, or an author's area — `↵` opens only
+that person's commits to the path. Bots are
 not people to ask: they stay listed and dimmed
 in the authors view, but they are left out of the people counts and out of the
 owners column unless an area has no human author at all. Automation is
@@ -163,7 +167,7 @@ and a count such as `3)` jumps three commits.
 | Key | Action |
 | --- | --- |
 | `tab` | Cycle tree, files, authors |
-| `h / l` | Fold a directory / expand the rest |
+| `h / l` | Fold a directory or author / expand the rest or an author's areas |
 | `↵` | Open file history, fold a directory, or filter by author |
 | `L` | Open history for the selected path |
 | `o` | Open the file in `$EDITOR` |

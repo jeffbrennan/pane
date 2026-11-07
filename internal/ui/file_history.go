@@ -119,6 +119,12 @@ func fileHistoryUsage() string {
 // openPathHistory opens file history for a path outside the diff views, as the
 // hotspot screen does.
 func (m model) openPathHistory(path string) (tea.Model, tea.Cmd) {
+	return m.openAuthorPathHistory(path, "")
+}
+
+// openAuthorPathHistory shows one author's commits to path; an empty author
+// shows everyone's.
+func (m model) openAuthorPathHistory(path, author string) (tea.Model, tea.Cmd) {
 	if path == "" {
 		return m, nil
 	}
@@ -126,7 +132,7 @@ func (m model) openPathHistory(path string) (tea.Model, tea.Cmd) {
 	previous.cancelCommitLoad()
 	previous.fileHistoryReturn = nil
 	m.fileHistoryReturn = &previous
-	m.history = historyState{path: path, since: m.hotspots.since, request: m.history.request}
+	m.history = historyState{path: path, since: m.hotspots.since, author: author, request: m.history.request}
 	m.stash.viewing = false
 	m.screen = "history"
 	m.pending, m.count = "", 0

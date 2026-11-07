@@ -465,6 +465,11 @@ func Clean(s string) string {
 		if unicode.IsControl(r) {
 			return '�'
 		}
+		// Terminals disagree on whether a variation selector widens the
+		// character before it, so drop it and keep the narrow text form.
+		if r == '\uFE0E' || r == '\uFE0F' {
+			return -1
+		}
 		return r
 	}, s)
 }

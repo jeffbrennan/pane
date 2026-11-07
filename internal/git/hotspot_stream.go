@@ -200,6 +200,10 @@ func NewHotSpotStream(repo Repo, since, author, revisionRange string) *HotSpotSt
 
 func (s *HotSpotStream) start() error {
 	s.mu.Lock()
+	if s.closedFlag {
+		s.mu.Unlock()
+		return io.ErrClosedPipe
+	}
 	if s.started {
 		s.mu.Unlock()
 		return nil
@@ -339,7 +343,9 @@ func (s *HotSpotStream) NextPage(limit int) ([]HotCacheCommit, bool, error) {
 				}
 			}
 		case <-s.closed:
-			return page, true, nil
+			// A closed stream is cut short, not finished: reporting done
+			// would let a partial walk be cached as the whole window.
+			return page, true, io.ErrClosedPipe
 		}
 	}
 	return page, false, nil

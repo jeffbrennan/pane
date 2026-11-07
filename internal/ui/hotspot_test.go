@@ -166,7 +166,7 @@ func TestHotspotVOpensFilteredSequence(t *testing.T) {
 	if len(items) == 0 {
 		t.Fatal("no hotspot items")
 	}
-	cmd = m.hotspotSequence(items[0].path)
+	cmd = m.hotspotSequence(items[0].path, "")
 	if cmd == nil {
 		t.Fatal("no sequence command")
 	}
@@ -922,5 +922,129 @@ func TestHotspotAuthorBadgeMatchesHistory(t *testing.T) {
 	m := model{}
 	if m.authorNameColor("Jeff  Brennan") != m.authorColor(git.CommitInfo{Author: "jeff brennan", Email: "x@y"}) {
 		t.Fatal("an author's hotspot color must match their history badge")
+	}
+}
+
+func TestHotspotWindowSwitchIgnoresTheCancelledStream(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	previous := hotspotPageSize
+	hotspotPageSize = 1
+	t.Cleanup(func() { hotspotPageSize = previous })
+	r := hotFixture(t)
+	m := model{width: 120, height: 30, wrap: true, repo: r, viewed: newViewedStore(r.Root)}
+	updated, cmd := m.openHotspots("3.months", "")
+	m = updated.(model)
+	m, stale := applyBatch(t, m, cmd)
+	if stale == nil {
+		t.Fatal("the first window did not start streaming")
+	}
+	// Switching windows closes the first stream while its page is pending.
+	updated, cmd = m.switchHotWindow("")
+	m = updated.(model)
+	if msg := stale(); msg != nil {
+		updated, follow := m.Update(msg)
+		m = updated.(model)
+		if follow != nil {
+			t.Fatal("a reply from the replaced window must not continue or finish it")
+		}
+	}
+	m = drainHotspots(t, m, cmd)
+	if m.hotspots.streamLoaded != 2 || len(m.hotspots.files) != 2 {
+		t.Fatalf("all time should hold both commits: commits=%d files=%d", m.hotspots.streamLoaded, len(m.hotspots.files))
+	}
+	// The cached window must be the whole one too.
+	if files, _, err := hotspots(r, "", ""); err != nil || len(files) != 2 {
+		t.Fatalf("cached all-time window: %d files, %v", len(files), err)
+	}
+}
+
+func TestHotspotWindowsAreKeptForTheSession(t *testing.T) {
+	r := hotFixture(t)
+	m := model{width: 120, height: 30, wrap: true, repo: r, viewed: newViewedStore(r.Root)}
+	updated, cmd := m.openHotspots("1.year", "")
+	m = drainHotspots(t, updated.(model), cmd)
+	m.hotspots.mode = "authors"
+	updated, cmd = m.switchHotWindow("")
+	m = drainHotspots(t, updated.(model), cmd)
+	if m.hotspots.mode != "authors" {
+		t.Fatal("switching windows should keep the view")
+	}
+	updated, cmd = m.switchHotWindow("1.year")
+	m = updated.(model)
+	if cmd != nil || m.hotspots.loading || len(m.hotspots.files) != 1 {
+		t.Fatalf("a loaded window should come back without a reload: cmd=%v files=%d", cmd != nil, len(m.hotspots.files))
+	}
+}
+
+func TestHotspotAuthorExpandsIntoAreas(t *testing.T) {
+	now := time.Now()
+	commits := []git.HotCacheCommit{
+		git.NewHotCacheCommit("c1", now.Unix()-100, "A", []git.HotCacheChange{{Path: "src/a.go", Added: 3}, {Path: "src/b.go", Added: 1}}),
+		git.NewHotCacheCommit("c2", now.Unix()-50, "A", []git.HotCacheChange{{Path: "src/a.go", Added: 3}, {Path: "docs/x.md", Added: 1}}),
+		git.NewHotCacheCommit("c3", now.Unix(), "B", []git.HotCacheChange{{Path: "main.go", Added: 1}}),
+	}
+	_, authors, _, _ := aggregateHotspots(commits, builtinPathMarks(commits), 0, now)
+	if area := authors["A"].areas["src"]; area == nil || area.commits != 2 {
+		t.Fatalf("a commit counts once per area however many files it touches: %#v", area)
+	}
+	m := model{width: 120, height: 20, screen: "hotspots", hotspots: hotspotState{mode: "authors", authors: authors, items: &hotItemsCache{}}}
+	key := func(k tea.KeyMsg) {
+		next, _ := m.handleHotspotKey(k)
+		m = next.(model)
+	}
+	key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	entries := m.hotAuthorEntries()
+	if len(entries) != 4 || entries[1].area != "src" || entries[2].area != "docs" || entries[3].author.name != "B" {
+		t.Fatalf("l should list A's areas busiest first: %#v", entries)
+	}
+	view := ansi.Strip(m.hotView())
+	if !strings.Contains(view, "└─ docs/") || !strings.Contains(view, "100% of their commits") {
+		t.Fatalf("area rows: %q", view)
+	}
+	key(tea.KeyMsg{Type: tea.KeyDown})
+	key(tea.KeyMsg{Type: tea.KeyDown})
+	key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	if len(m.hotAuthorEntries()) != 2 || m.hotspots.list.selected != 0 {
+		t.Fatalf("h on an area should close its author and select them: selected %d", m.hotspots.list.selected)
+	}
+}
+
+func TestHotspotEnterNarrowsHistoryToTheAuthor(t *testing.T) {
+	r := hotFixture(t)
+	m := model{width: 120, height: 30, wrap: true, repo: r, viewed: newViewedStore(r.Root)}
+	updated, cmd := m.openHotspots("2.year", "")
+	m = drainHotspots(t, updated.(model), cmd)
+	// An area row opens that author's commits to the area.
+	m.hotspots.mode = "authors"
+	m.hotspots.expanded = map[string]bool{"Other": true}
+	entries := m.hotAuthorEntries()
+	for i, entry := range entries {
+		if entry.author.name == "Other" && entry.area != "" {
+			m.hotspots.list.selected = i
+		}
+	}
+	next, _ := m.handleHotspotKey(tea.KeyMsg{Type: tea.KeyEnter})
+	opened := next.(model)
+	if opened.screen != "history" || opened.history.author != "Other" || opened.history.path != "." {
+		t.Fatalf("area enter: screen %q path %q author %q", opened.screen, opened.history.path, opened.history.author)
+	}
+	// With the tree filtered to an author, a file opens only their commits.
+	m.hotspots.mode, m.hotspots.authorFilter = "files", "Other"
+	m.hotspots.list.reset()
+	next, _ = m.handleHotspotKey(tea.KeyMsg{Type: tea.KeyEnter})
+	opened = next.(model)
+	if opened.history.path != "recent.txt" || opened.history.author != "Other" {
+		t.Fatalf("filtered enter: path %q author %q", opened.history.path, opened.history.author)
+	}
+}
+
+func TestHotspotSelectedRowDropsColors(t *testing.T) {
+	m := model{width: 120, height: 20}
+	row := m.hotRow(0, 0, 2, "\x1b[22m\x1b[38;2;1;2;3m▃\x1b[0m name")
+	if strings.Contains(row, "38;2;1;2;3") {
+		t.Fatalf("reverse video turns colors into blocks: %q", row)
+	}
+	if other := m.hotRow(1, 0, 2, "\x1b[38;2;1;2;3m▃\x1b[0m"); !strings.Contains(other, "38;2;1;2;3") {
+		t.Fatal("unselected rows keep their colors")
 	}
 }

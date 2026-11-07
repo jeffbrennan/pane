@@ -15,6 +15,9 @@ func (m model) historyHeader() []string {
 	badge := ""
 	if m.history.path != "" {
 		title = "history · " + syntax.Clean(m.history.path)
+		if m.history.author != "" {
+			title += " · by " + syntax.Clean(m.history.author)
+		}
 		badge = styleDim + "whole-commit counts" + styleReset
 	}
 	badge = stateBadges(badge, m.mergesBadge(), m.botsBadge(), m.selectionBadge(), m.filterBadge(m.history.list.filter))

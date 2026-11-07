@@ -81,7 +81,7 @@ var shortcutSections = []shortcutSection{
 	}},
 	{"Hotspots", []string{"hotspots"}, []shortcut{
 		hint("Cycle tree, files, authors", "hotspots.switch-view"),
-		hint("Fold a directory / expand the rest", "fold", "unfold"),
+		hint("Fold a directory or author / expand the rest or an author's areas", "fold", "unfold"),
 		hint("Open file history, fold a directory, or filter by author", "open"),
 		hint("Open history for the selected path", "file-history"),
 		hint("Open the file in $EDITOR", "editor"),
