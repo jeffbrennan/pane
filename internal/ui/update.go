@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"runtime/debug"
 	"strings"
@@ -425,6 +427,11 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		next.width, next.height, next.wrap = m.width, m.height, m.wrap
 		next.viewed = m.viewed
 		return next, next.Init()
+	case hotspotScopeLoaded:
+		if m.screen != "hotspots" || msg.request != m.hotspots.request || msg.scope != m.hotspots.scope {
+			break
+		}
+		m.hotspots.scopeAuthors, m.hotspots.scopeLoading = msg.authors, false
 	case hotspotsStarted:
 		if m.screen != "hotspots" || msg.request != m.hotspots.request || msg.err != nil {
 			if msg.plan.stream != nil {
@@ -451,13 +458,25 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.hotspots.stream = nil
 			m.hotspots.loading = false
-			m.flash = "Hotspots: " + msg.err.Error()
+			// A stream closed on purpose, such as leaving for a file's
+			// history, is not a failure to report.
+			if !errors.Is(msg.err, io.ErrClosedPipe) {
+				m.flash = "Hotspots: " + msg.err.Error()
+			}
 			break
 		}
-		m.hotspots.commits = append(m.hotspots.commits, msg.commits...)
+		m.hotspots.commits = msg.commits
 		m.hotspots.streamLoaded = len(m.hotspots.commits)
-		m.hotspots.files, m.hotspots.authors, m.hotspots.dirs, m.hotspots.hidden = aggregateHotspots(m.hotspots.commits, builtinPathMarks(m.hotspots.commits), m.hotspots.cutoff, time.Now())
+		m.hotspots.files, m.hotspots.authors, m.hotspots.dirs, m.hotspots.hidden = msg.files, msg.authors, msg.dirs, msg.hidden
+		m.hotspots.aggregateCost = msg.cost
 		m.hotspots.dataVersion++
+		if cache := m.hotspots.items; cache != nil && msg.root != nil {
+			msg.treeKey.dataVersion = m.hotspots.dataVersion
+			cache.root, cache.rootKey = msg.root, msg.treeKey
+			// The tree is fresh, so let hotItems flatten it now rather than
+			// keep showing the last refresh.
+			cache.filled = false
+		}
 		m.hotspots.loading = false
 		if msg.done {
 			m.hotspots.stream = nil
@@ -477,10 +496,19 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.hotspots.files, m.hotspots.authors = msg.files, msg.authors
 		m.hotspots.dirs, m.hotspots.hidden = msg.dirs, msg.hidden
 		m.hotspots.dataVersion++
-		if len(msg.items) > 0 {
+		// Prebuilt rows assume the default folds, which a window switch may
+		// have carried over.
+		if len(msg.items) > 0 && m.hotFoldsDefault() {
 			m.hotspots.items = &hotItemsCache{items: msg.items, filled: true, dataVersion: m.hotspots.dataVersion, builtAt: time.Now()}
 		}
 		m.hotspots.list.selected, m.hotspots.list.offset = 0, 0
+		if m.hotspots.windows == nil {
+			m.hotspots.windows = make(map[string]*hotWindow)
+		}
+		m.hotspots.windows[m.hotspots.since] = &hotWindow{
+			files: msg.files, authors: msg.authors, dirs: msg.dirs, hidden: msg.hidden,
+			commits: m.hotspots.commits, at: time.Now(),
+		}
 	case blameLoaded:
 		return m.applyBlame(msg)
 	case branchesLoaded:

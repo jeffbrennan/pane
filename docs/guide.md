@@ -63,14 +63,30 @@ navigation works across commits. Press `Esc` or `q` to return to history.
 Activity is scored by attention, not raw churn: each commit's weight is damped
 by its size and by how many files it touched, with a 90-day half-life, so a
 fixture dump does not outrank a file people keep editing. The tree opens one
-level deep and merges single-child directories. Rows show the activity bar,
+level deep and merges single-child directories. Rows show an activity strip,
 distinct commits, people, last change, and the top two owners, with a detail
-line for the selection. Bots are not people to ask: they stay listed and dimmed
+line for the selection. The strip splits the window into twelve slices from
+its oldest commit to now, newest on the right; every row shares one log
+scale, so a quiet file reads quiet beside a busy directory. The last change is
+highlighted when it is under a day old and brighter when under a week.
+
+The authors view gives each person the initials and color history uses, with
+their own strip. `l` opens an author into one row per top-level directory
+they worked in, each with its own strip, and `h` closes it. Press `c` on any
+tree or file row to see who changed that path over time; `/` searches the
+names and `esc` returns to the tree. Once the view is narrowed to one person —
+an author filter, an author under `c`, or an author's area — `↵` opens only
+that person's commits to the path. Bots are
+not people to ask: they stay listed and dimmed
 in the authors view, but they are left out of the people counts and out of the
 owners column unless an area has no human author at all. Automation is
 recognised by convention — a `[bot]` suffix, or a word such as `bot`, `ci`, or
 `automation` in the name. An account a project runs under an ordinary-looking
-handle carries no marker in Git and counts as a person. The hotspot keys below
+handle carries no marker in Git and counts as a person. One person's names
+merge: names that commit with the same email, a name that is itself one of
+those emails, and names differing only in case all show as the most used real
+name. Placeholder addresses such as `root@…` or `you@example.com` never merge
+anyone; a `.mailmap` remains the precise fix and is applied first. The hotspot keys below
 cycle the window and reveal generated and vendored files. Tests and docs rank
 below source, and paths deleted inside the window are dropped.
 
@@ -155,13 +171,14 @@ and a count such as `3)` jumps three commits.
 | Key | Action |
 | --- | --- |
 | `tab` | Cycle tree, files, authors |
-| `h / l` | Fold a directory / expand the rest |
+| `h / l` | Fold a directory or author / expand the rest or an author's areas |
 | `↵` | Open file history, fold a directory, or filter by author |
 | `L` | Open history for the selected path |
 | `o` | Open the file in `$EDITOR` |
 | `V` | Review the selection as a commit range |
 | `w` | Cycle 3 months, 12 months, all time |
 | `a` | Show or hide generated and vendored files |
+| `c` | Show who changed the selection over time |
 | `/` | Filter hotspots |
 
 ### Commit input

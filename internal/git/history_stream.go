@@ -11,9 +11,10 @@ import (
 )
 
 type HistoryStream struct {
-	repo  Repo
-	path  string
-	since string
+	repo    Repo
+	path    string
+	since   string
+	authors []string
 
 	mu      sync.Mutex
 	readMu  sync.Mutex
@@ -23,6 +24,13 @@ type HistoryStream struct {
 	stderr  bytes.Buffer
 	done    bool
 	pending string
+}
+
+// WithAuthors limits the stream to commits by any of patterns, which are
+// AuthorPattern or AuthorEmailPattern results.
+func (s *HistoryStream) WithAuthors(patterns ...string) *HistoryStream {
+	s.authors = patterns
+	return s
 }
 
 func NewHistoryStream(repo Repo, path string, since ...string) *HistoryStream {
@@ -50,12 +58,16 @@ func (s *HistoryStream) start() error {
 		}
 		return CommandError(out, err)
 	}
-	args := []string{"log", "-z", "--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00%P%x00"}
+	args := []string{"log", "-z", "--format=%x00%H%x00%aN%x00%aE%x00%aI%x00%s%x00%B%x00%P%x00"}
 	if s.repo.FirstParent {
 		args = append(args, "--first-parent")
 	}
 	if s.since != "" {
 		args = append(args, "--since="+s.since)
+	}
+	// Git matches a commit whose author fits any one of the patterns.
+	for _, pattern := range s.authors {
+		args = append(args, "--author="+pattern)
 	}
 	if s.path != "" {
 		args = append(args, "--follow", "--name-status", "-M", "--", s.path)
@@ -207,3 +219,25 @@ func (s *HistoryStream) reaped() bool {
 
 // Running reports whether the stream has started a Git process.
 func (s *HistoryStream) running() bool { return s.cmd != nil }
+
+// AuthorPattern matches exactly one author name for git log --author, which
+// otherwise takes a substring regular expression over "Name <email>".
+func AuthorPattern(name string) string {
+	return "^" + quoteBasicRegexp(name) + " <"
+}
+
+// AuthorEmailPattern matches exactly one author email for git log --author.
+func AuthorEmailPattern(email string) string {
+	return "<" + quoteBasicRegexp(email) + ">$"
+}
+
+func quoteBasicRegexp(text string) string {
+	var b strings.Builder
+	for _, r := range text {
+		if strings.ContainsRune(`\.*[^$`, r) {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}

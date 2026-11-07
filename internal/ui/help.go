@@ -81,13 +81,14 @@ var shortcutSections = []shortcutSection{
 	}},
 	{"Hotspots", []string{"hotspots"}, []shortcut{
 		hint("Cycle tree, files, authors", "hotspots.switch-view"),
-		hint("Fold a directory / expand the rest", "fold", "unfold"),
+		hint("Fold a directory or author / expand the rest or an author's areas", "fold", "unfold"),
 		hint("Open file history, fold a directory, or filter by author", "open"),
 		hint("Open history for the selected path", "file-history"),
 		hint("Open the file in $EDITOR", "editor"),
 		hint("Review the selection as a commit range", "hotspots.review-range"),
 		hint("Cycle 3 months, 12 months, all time", "hotspots.window"),
 		hint("Show or hide generated and vendored files", "hotspots.show-hidden"),
+		hint("Show who changed the selection over time", "hotspots.contributors"),
 		hint("Filter hotspots", "search"),
 	}},
 	{"Commit input", []string{"commit-input"}, []shortcut{

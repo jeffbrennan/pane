@@ -227,6 +227,19 @@ func (m model) listTableRow(index, selected, count int, name string, nameWidth i
 // listRow renders one list entry the same way on every screen: relative
 // distance, selection marker, the entry text, then right-aligned columns.
 func (m model) listRow(index, selected, count int, text, right string) string {
+	return m.styledRow(index, selected, count, syntax.Clean(text), syntax.Clean(right))
+}
+
+// styledRow is listRow for text that carries its own colors; the caller
+// cleans anything that came from the repository. Each reset inside the text
+// restores the row's dim or selected style.
+func (m model) styledRow(index, selected, count int, text, right string) string {
+	rowStyle := styleDim
+	if index == selected {
+		rowStyle = "\x1b[7m"
+	}
+	text = strings.ReplaceAll(text, styleReset, styleReset+rowStyle)
+	right = strings.ReplaceAll(right, styleReset, styleReset+rowStyle)
 	distance := index - selected
 	if distance < 0 {
 		distance = -distance
@@ -234,10 +247,10 @@ func (m model) listRow(index, selected, count int, text, right string) string {
 	numberWidth := len(fmt.Sprintf("%d", max(1, count-1)))
 	marker := "  "
 	if index == selected {
-		marker = m.accent() + "▸ " + styleReset
+		marker = m.accent() + "▸ " + styleReset + rowStyle
 	}
-	left := fmt.Sprintf("%*d %s%s", numberWidth, distance, marker, syntax.Clean(text))
-	line := bar(m.width, left, syntax.Clean(right))
+	left := fmt.Sprintf("%*d %s%s", numberWidth, distance, marker, text)
+	line := bar(m.width, left, right)
 	if index == selected {
 		return "\x1b[7m" + line + strings.Repeat(" ", max(0, m.width-ansi.StringWidth(line))) + styleReset
 	}

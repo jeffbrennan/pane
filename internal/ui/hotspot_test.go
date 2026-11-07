@@ -166,7 +166,7 @@ func TestHotspotVOpensFilteredSequence(t *testing.T) {
 	if len(items) == 0 {
 		t.Fatal("no hotspot items")
 	}
-	cmd = m.hotspotSequence(items[0].path)
+	cmd = m.hotspotSequence(items[0].path, "")
 	if cmd == nil {
 		t.Fatal("no sequence command")
 	}
@@ -823,5 +823,374 @@ func TestHotspotBotOnlyAreaStillNamesTheBot(t *testing.T) {
 	owners := hotOwners(dirs["tools"].owners)
 	if len(owners) != 1 || owners[0].name != "dependabot[bot]" {
 		t.Fatalf("owners = %#v, want the bot when there is nobody else", owners)
+	}
+}
+
+func TestHotspotTimelinePlacesRecentWorkOnTheRight(t *testing.T) {
+	now := time.Now()
+	start := now.Add(-365 * 24 * time.Hour)
+	commits := []git.HotCacheCommit{
+		git.NewHotCacheCommit("old", start.Add(time.Hour).Unix(), "A", []git.HotCacheChange{{Path: "src/old.go", Added: 10}}),
+		git.NewHotCacheCommit("new", now.Add(-3*time.Minute).Unix(), "B", []git.HotCacheChange{{Path: "src/new.go", Added: 10}}),
+	}
+	files, authors, _, _ := aggregateHotspots(commits, newHotPathMarks(), start.Unix(), now)
+	byPath := map[string]hotFile{}
+	for _, file := range files {
+		byPath[file.path] = file
+	}
+	if byPath["src/old.go"].timeline[0] == 0 || byPath["src/old.go"].timeline[hotBuckets-1] != 0 {
+		t.Fatalf("old work should sit in the first slice: %v", byPath["src/old.go"].timeline)
+	}
+	if byPath["src/new.go"].timeline[hotBuckets-1] == 0 {
+		t.Fatalf("recent work should sit in the last slice: %v", byPath["src/new.go"].timeline)
+	}
+	if authors["B"].timeline[hotBuckets-1] != 1 {
+		t.Fatalf("author timeline counts commits per slice: %v", authors["B"].timeline)
+	}
+	items := buildHotItems(files, nil, false, hotTreeState{}, "")
+	if items[0].path != "src" || items[0].timeline[0] == 0 || items[0].timeline[hotBuckets-1] == 0 {
+		t.Fatalf("a directory's timeline sums its files: %#v", items[0])
+	}
+}
+
+func TestHotspotStripSharesOneScaleAndKeepsSingleCommits(t *testing.T) {
+	var busy, quiet hotTimeline
+	busy[hotBuckets-1] = 100
+	quiet[0] = 1
+	busyStrip, quietStrip := ansi.Strip(hotStrip(busy, 100, "")), ansi.Strip(hotStrip(quiet, 100, ""))
+	if ansi.StringWidth(busyStrip) != hotBuckets || ansi.StringWidth(quietStrip) != hotBuckets {
+		t.Fatalf("strips must be %d cells: %q %q", hotBuckets, busyStrip, quietStrip)
+	}
+	if !strings.HasSuffix(busyStrip, "█") {
+		t.Fatalf("the busiest slice should be full: %q", busyStrip)
+	}
+	if strings.HasPrefix(quietStrip, "·") || strings.HasPrefix(quietStrip, "█") {
+		t.Fatalf("a single small commit should show low but visible: %q", quietStrip)
+	}
+}
+
+func TestHotspotRecentChangesStandOut(t *testing.T) {
+	m := model{}
+	now := time.Now()
+	if m.hotAgeStyle(now.Add(-3*time.Minute), now) == m.hotAgeStyle(now.Add(-48*time.Hour), now) {
+		t.Fatal("three minutes and two days ago should not look the same")
+	}
+	if m.hotAgeStyle(now.Add(-60*24*time.Hour), now) != "" {
+		t.Fatal("old changes stay dim")
+	}
+}
+
+func TestHotspotScopeAuthorsOnlyCountThePath(t *testing.T) {
+	now := time.Now()
+	commits := []git.HotCacheCommit{
+		git.NewHotCacheCommit("c1", now.Unix(), "A", []git.HotCacheChange{{Path: "internal/ui/view.go", Added: 3}}),
+		git.NewHotCacheCommit("c2", now.Unix(), "B", []git.HotCacheChange{{Path: "internal/git/git.go", Added: 3}}),
+		git.NewHotCacheCommit("c3", now.Unix(), "A", []git.HotCacheChange{{Path: "internal/ui/list.go", Added: 3}, {Path: "main.go", Added: 1}}),
+		git.NewHotCacheCommit("c4", now.Unix(), "C", []git.HotCacheChange{{Path: "internal/uiextra/x.go", Added: 3}}),
+	}
+	authors := hotScopeAuthors(commits, "internal/ui", 0, now)
+	if len(authors) != 1 || authors[0].name != "A" || authors[0].commits != 2 {
+		t.Fatalf("only A changed internal/ui: %#v", authors)
+	}
+	if authors[0].dirs["view.go"] == 0 && authors[0].dirs["."] == 0 {
+		t.Fatalf("areas should be relative to the scope: %v", authors[0].dirs)
+	}
+	if file := hotScopeAuthors(commits, "main.go", 0, now); len(file) != 1 || file[0].commits != 1 {
+		t.Fatalf("a file scope finds who changed that file: %#v", file)
+	}
+}
+
+func TestHotspotContributorsKeyScopesTheAuthorsView(t *testing.T) {
+	m := model{width: 100, height: 20, screen: "hotspots", hotspots: hotspotState{items: &hotItemsCache{}}}
+	m.hotspots.files = []hotFile{{path: "src/a.go", commits: 1, authors: map[string]int{"A": 1}}}
+	next, cmd := m.handleHotspotKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = next.(model)
+	if m.hotspots.mode != "authors" || m.hotspots.scope != "src" || cmd == nil {
+		t.Fatalf("c should open contributors for the selection: mode %q scope %q", m.hotspots.mode, m.hotspots.scope)
+	}
+	if !strings.Contains(ansi.Strip(m.hotView()), "in src/") {
+		t.Fatal("the title should name the scope")
+	}
+	next, _ = m.handleHotspotKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m = next.(model)
+	if m.hotspots.mode != "" || m.hotspots.scope != "" {
+		t.Fatalf("back should return to the tree: mode %q scope %q", m.hotspots.mode, m.hotspots.scope)
+	}
+}
+
+func TestHotspotAuthorBadgeMatchesHistory(t *testing.T) {
+	m := model{}
+	if m.authorNameColor("Jeff  Brennan") != m.authorColor(git.CommitInfo{Author: "jeff brennan", Email: "x@y"}) {
+		t.Fatal("an author's hotspot color must match their history badge")
+	}
+}
+
+func TestHotspotWindowSwitchIgnoresTheCancelledStream(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	previous := hotspotPageSize
+	hotspotPageSize = 1
+	t.Cleanup(func() { hotspotPageSize = previous })
+	r := hotFixture(t)
+	m := model{width: 120, height: 30, wrap: true, repo: r, viewed: newViewedStore(r.Root)}
+	updated, cmd := m.openHotspots("3.months", "")
+	m = updated.(model)
+	m, stale := applyBatch(t, m, cmd)
+	if stale == nil {
+		t.Fatal("the first window did not start streaming")
+	}
+	// Switching windows closes the first stream while its page is pending.
+	updated, cmd = m.switchHotWindow("")
+	m = updated.(model)
+	if msg := stale(); msg != nil {
+		updated, follow := m.Update(msg)
+		m = updated.(model)
+		if follow != nil {
+			t.Fatal("a reply from the replaced window must not continue or finish it")
+		}
+	}
+	m = drainHotspots(t, m, cmd)
+	if m.hotspots.streamLoaded != 2 || len(m.hotspots.files) != 2 {
+		t.Fatalf("all time should hold both commits: commits=%d files=%d", m.hotspots.streamLoaded, len(m.hotspots.files))
+	}
+	// The cached window must be the whole one too.
+	if files, _, err := hotspots(r, "", ""); err != nil || len(files) != 2 {
+		t.Fatalf("cached all-time window: %d files, %v", len(files), err)
+	}
+}
+
+func TestHotspotWindowsAreKeptForTheSession(t *testing.T) {
+	r := hotFixture(t)
+	m := model{width: 120, height: 30, wrap: true, repo: r, viewed: newViewedStore(r.Root)}
+	updated, cmd := m.openHotspots("1.year", "")
+	m = drainHotspots(t, updated.(model), cmd)
+	m.hotspots.mode = "authors"
+	updated, cmd = m.switchHotWindow("")
+	m = drainHotspots(t, updated.(model), cmd)
+	if m.hotspots.mode != "authors" {
+		t.Fatal("switching windows should keep the view")
+	}
+	updated, cmd = m.switchHotWindow("1.year")
+	m = updated.(model)
+	if cmd != nil || m.hotspots.loading || len(m.hotspots.files) != 1 {
+		t.Fatalf("a loaded window should come back without a reload: cmd=%v files=%d", cmd != nil, len(m.hotspots.files))
+	}
+}
+
+func TestHotspotAuthorExpandsIntoAreas(t *testing.T) {
+	now := time.Now()
+	commits := []git.HotCacheCommit{
+		git.NewHotCacheCommit("c1", now.Unix()-100, "A", []git.HotCacheChange{{Path: "src/a.go", Added: 3}, {Path: "src/b.go", Added: 1}}),
+		git.NewHotCacheCommit("c2", now.Unix()-50, "A", []git.HotCacheChange{{Path: "src/a.go", Added: 3}, {Path: "docs/x.md", Added: 1}}),
+		git.NewHotCacheCommit("c3", now.Unix(), "B", []git.HotCacheChange{{Path: "main.go", Added: 1}}),
+	}
+	_, authors, _, _ := aggregateHotspots(commits, builtinPathMarks(commits), 0, now)
+	if area := authors["A"].areas["src"]; area == nil || area.commits != 2 {
+		t.Fatalf("a commit counts once per area however many files it touches: %#v", area)
+	}
+	m := model{width: 120, height: 20, screen: "hotspots", hotspots: hotspotState{mode: "authors", authors: authors, items: &hotItemsCache{}}}
+	key := func(k tea.KeyMsg) {
+		next, _ := m.handleHotspotKey(k)
+		m = next.(model)
+	}
+	key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	entries := m.hotAuthorEntries()
+	if len(entries) != 4 || entries[1].area != "src" || entries[2].area != "docs" || entries[3].author.name != "B" {
+		t.Fatalf("l should list A's areas busiest first: %#v", entries)
+	}
+	view := ansi.Strip(m.hotView())
+	if !strings.Contains(view, "└─ docs/") || !strings.Contains(view, "100% of their commits") {
+		t.Fatalf("area rows: %q", view)
+	}
+	key(tea.KeyMsg{Type: tea.KeyDown})
+	key(tea.KeyMsg{Type: tea.KeyDown})
+	key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	if len(m.hotAuthorEntries()) != 2 || m.hotspots.list.selected != 0 {
+		t.Fatalf("h on an area should close its author and select them: selected %d", m.hotspots.list.selected)
+	}
+}
+
+func TestHotspotEnterNarrowsHistoryToTheAuthor(t *testing.T) {
+	r := hotFixture(t)
+	m := model{width: 120, height: 30, wrap: true, repo: r, viewed: newViewedStore(r.Root)}
+	updated, cmd := m.openHotspots("2.year", "")
+	m = drainHotspots(t, updated.(model), cmd)
+	// An area row opens that author's commits to the area.
+	m.hotspots.mode = "authors"
+	m.hotspots.expanded = map[string]bool{"Other": true}
+	entries := m.hotAuthorEntries()
+	for i, entry := range entries {
+		if entry.author.name == "Other" && entry.area != "" {
+			m.hotspots.list.selected = i
+		}
+	}
+	next, _ := m.handleHotspotKey(tea.KeyMsg{Type: tea.KeyEnter})
+	opened := next.(model)
+	if opened.screen != "history" || opened.history.author != "Other" || opened.history.path != "." {
+		t.Fatalf("area enter: screen %q path %q author %q", opened.screen, opened.history.path, opened.history.author)
+	}
+	// With the tree filtered to an author, a file opens only their commits.
+	m.hotspots.mode, m.hotspots.authorFilter = "files", "Other"
+	m.hotspots.list.reset()
+	next, _ = m.handleHotspotKey(tea.KeyMsg{Type: tea.KeyEnter})
+	opened = next.(model)
+	if opened.history.path != "recent.txt" || opened.history.author != "Other" {
+		t.Fatalf("filtered enter: path %q author %q", opened.history.path, opened.history.author)
+	}
+}
+
+func TestHotspotSelectedRowKeepsColorsWithoutReverseVideo(t *testing.T) {
+	m := model{width: 120, height: 20}
+	badge, strip := "\x1b[38;2;9;9;9mAB\x1b[0m", "\x1b[22m\x1b[38;2;1;2;3m▃\x1b[0m"
+	row := m.hotRow(0, 0, 2, badge+" name", 10, strip, "src 50%")
+	if strings.Contains(row, "\x1b[7m") || strings.Contains(row, styleDim) {
+		t.Fatalf("the selection is full-strength text, not reverse video: %q", row)
+	}
+	if !strings.Contains(row, badge) || !strings.Contains(row, strip) {
+		t.Fatalf("badge and strip keep their colors: %q", row)
+	}
+	if plain := ansi.Strip(row); !strings.Contains(plain, "0 ▸ AB name     ▃  src 50%") {
+		t.Fatalf("columns must line up with unselected rows: %q", plain)
+	}
+	if other := m.hotRow(1, 0, 2, "name", 10, strip, ""); !strings.HasPrefix(other, styleDim) {
+		t.Fatalf("other rows stay dim: %q", other)
+	}
+}
+
+func TestHotspotAuthorsAreSpacedApart(t *testing.T) {
+	a, b := &hotAuthor{name: "A"}, &hotAuthor{name: "B"}
+	entries := []hotAuthorEntry{{author: a}, {author: a, area: "src"}, {author: a, area: "docs", last: true}, {author: b}, {author: &hotAuthor{name: "C"}}}
+	// Areas sit under their author; a gap follows each group.
+	if hotAuthorGap(entries, 0) || hotAuthorGap(entries, 1) || !hotAuthorGap(entries, 2) || !hotAuthorGap(entries, 3) || hotAuthorGap(entries, 4) {
+		t.Fatal("gaps belong between authors only")
+	}
+	// Five lines fit A's group, the gap and B.
+	if offset, end := hotAuthorViewport(entries, listState{}, 5); offset != 0 || end != 4 {
+		t.Fatalf("viewport [%d,%d)", offset, end)
+	}
+	if offset, end := hotAuthorViewport(entries, listState{selected: 4}, 3); end != 5 || offset != 3 {
+		t.Fatalf("the selection stays on screen: [%d,%d)", offset, end)
+	}
+}
+
+func TestHotspotNameColumnHoldsStillWhileScrolling(t *testing.T) {
+	authors := map[string]*hotAuthor{}
+	for i := 0; i < 30; i++ {
+		name := fmt.Sprintf("A%02d", i)
+		if i == 29 {
+			name = "A Much Longer Name At The Bottom"
+		}
+		authors[name] = &hotAuthor{name: name, commits: 100 - i}
+	}
+	m := model{width: 120, height: 10, screen: "hotspots", hotspots: hotspotState{mode: "authors", authors: authors, items: &hotItemsCache{}}}
+	header := func() string { return strings.Split(ansi.Strip(m.hotView()), "\n")[1] }
+	top := header()
+	m.hotspots.list.selected = 29
+	if bottom := header(); bottom != top {
+		t.Fatalf("columns moved while scrolling:\n%q\n%q", top, bottom)
+	}
+	for _, mode := range []string{"", "files"} {
+		m = model{width: 120, height: 6, screen: "hotspots", hotspots: hotspotState{mode: mode, items: &hotItemsCache{}}}
+		for i := 0; i < 20; i++ {
+			path := fmt.Sprintf("f%02d.go", i)
+			if i == 19 {
+				path = "a/very/long/path/that/sits/last.go"
+			}
+			m.hotspots.files = append(m.hotspots.files, hotFile{path: path, score: float64(100 - i), commits: 1, authors: map[string]int{"A": 1}})
+		}
+		top = header()
+		m.hotspots.list.selected = 19
+		if bottom := header(); bottom != top {
+			t.Fatalf("%q view columns moved while scrolling:\n%q\n%q", mode, top, bottom)
+		}
+	}
+}
+
+func TestHotspotMergesOnePersonsNames(t *testing.T) {
+	now := time.Now().Unix()
+	commit := func(hash, name, email string) git.HotCacheCommit {
+		c := git.NewHotCacheCommit(hash, now, name, []git.HotCacheChange{{Path: "src/a.go", Added: 1}})
+		c.Email = email
+		return c
+	}
+	commits := []git.HotCacheCommit{
+		commit("c1", "John Doe", "John.Doe@company.com"),
+		commit("c2", "John Doe", "john.doe@company.com"),
+		commit("c3", "john.doe@company.com", "john.doe@company.com"),
+		commit("c4", "john.doe@company.com", "jd@laptop.local"),
+		commit("c5", "john doe", "jdoe@users.noreply.github.com"),
+		// A shared placeholder address must not merge different people.
+		commit("c6", "Alice", "you@example.com"),
+		commit("c7", "Bob", "you@example.com"),
+		commit("c8", "Carol", "root@build.company.com"),
+		commit("c9", "Dan", "root@build.company.com"),
+	}
+	_, authors, _, _ := aggregateHotspots(commits, builtinPathMarks(commits), 0, time.Now())
+	john := authors["John Doe"]
+	if john == nil || john.commits != 5 || len(authors) != 5 {
+		names := []string{}
+		for name := range authors {
+			names = append(names, name)
+		}
+		t.Fatalf("John's three names should be one person: %v", names)
+	}
+	if len(john.person.names) != 3 || john.person.names[0] != "John Doe" {
+		t.Fatalf("the most used real name leads: %v", john.person.names)
+	}
+	m := model{hotspots: hotspotState{authors: authors}}
+	patterns := strings.Join(m.hotAuthorPatterns("John Doe"), "\n")
+	for _, want := range []string{`^John Doe <`, `^john\.doe@company\.com <`, `^john doe <`, `<jdoe@users\.noreply\.github\.com>$`} {
+		if !strings.Contains(patterns, want) {
+			t.Fatalf("history should match %q:\n%s", want, patterns)
+		}
+	}
+}
+
+func TestHotspotMergedAuthorHistoryFindsEveryName(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	r := testRepo(t)
+	t.Setenv("GIT_AUTHOR_EMAIL", "john.doe@company.com")
+	for i, name := range []string{"John Doe", "john.doe@company.com", "John Doe"} {
+		t.Setenv("GIT_AUTHOR_NAME", name)
+		if err := os.MkdirAll(filepath.Join(r.Root, "src"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, r, "src/a.go", strings.Repeat("x\n", i+1))
+		if _, err := r.Commit(fmt.Sprintf("change %d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, authors, err := hotspots(r, "1.year", "")
+	if err != nil || authors["John Doe"] == nil || authors["John Doe"].commits != 3 {
+		t.Fatalf("the two names should merge: %v %#v", err, authors)
+	}
+	m := model{width: 120, height: 30, wrap: true, repo: r, viewed: newViewedStore(r.Root), screen: "hotspots"}
+	m.hotspots.authors = authors
+	next, cmd := m.openAuthorPathHistory("src", "John Doe")
+	m = next.(model)
+	for i := 0; cmd != nil && i < 20 && (m.history.loading || len(m.history.commits) == 0); i++ {
+		m, cmd = applyBatch(t, m, cmd)
+	}
+	if len(m.history.commits) != 3 {
+		t.Fatalf("history should show all three commits, got %d", len(m.history.commits))
+	}
+}
+
+func TestHotspotAreasDropStrayEditsAndScaleWithinTheAuthor(t *testing.T) {
+	author := &hotAuthor{name: "A", commits: 200, areas: map[string]*hotArea{
+		"src":    {commits: 150},
+		"test":   {commits: 60},
+		".cargo": {commits: 1},
+	}}
+	if areas := hotAuthorAreas(author); len(areas) != 2 || areas[0] != "src" || areas[1] != "test" {
+		t.Fatalf("areas under 1%% of commits are left out: %v", areas)
+	}
+	// On the list's log scale a third of the peak is already most of the
+	// height; within one author it stays near the middle.
+	strip := ansi.Strip(hotAreaStrip(hotTimeline{30, 90, 1}, 90, ""))
+	if !strings.HasPrefix(strip, "▅█▁") {
+		t.Fatalf("linear strip: %q", strip)
+	}
+	if log := ansi.Strip(hotStrip(hotTimeline{30, 90}, 90, "")); !strings.HasPrefix(log, "▇") {
+		t.Fatalf("log strip should lift the smaller slice: %q", log)
 	}
 }

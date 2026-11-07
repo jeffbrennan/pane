@@ -132,3 +132,9 @@ func TestLinesSkipUnlexablePaths(t *testing.T) {
 		t.Fatalf("unexpected syntax for unknown lexer: %#v %#v", old, new)
 	}
 }
+
+func TestCleanDropsVariationSelectors(t *testing.T) {
+	if got := Clean("Darwin ❤️❤️"); got != "Darwin ❤❤" {
+		t.Fatalf("Clean = %q", got)
+	}
+}

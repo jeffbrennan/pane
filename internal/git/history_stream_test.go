@@ -200,3 +200,9 @@ func TestHistoryStreamFirstParentCollapsesMerges(t *testing.T) {
 		t.Fatalf("merged counts = %v, %v", counts, err)
 	}
 }
+
+func TestAuthorPatternMatchesOneName(t *testing.T) {
+	if got := AuthorPattern("A. B [x]"); got != `^A\. B \[x] <` {
+		t.Fatalf("pattern %q", got)
+	}
+}

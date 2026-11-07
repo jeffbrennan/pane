@@ -138,6 +138,10 @@ func (s *hotSpotReader) nextPage(limit int) ([]HotCacheCommit, bool, error) {
 		if err != nil {
 			return page, true, err
 		}
+		email, err := s.readField()
+		if err != nil {
+			return page, true, err
+		}
 		s.header = false
 		var fields []string
 		eof := false
@@ -160,6 +164,7 @@ func (s *hotSpotReader) nextPage(limit int) ([]HotCacheCommit, bool, error) {
 		if err != nil {
 			return page, true, err
 		}
+		commit.Email = email
 		page = append(page, commit)
 		if eof {
 			if err := s.finish(false); err != nil {
@@ -200,6 +205,10 @@ func NewHotSpotStream(repo Repo, since, author, revisionRange string) *HotSpotSt
 
 func (s *HotSpotStream) start() error {
 	s.mu.Lock()
+	if s.closedFlag {
+		s.mu.Unlock()
+		return io.ErrClosedPipe
+	}
 	if s.started {
 		s.mu.Unlock()
 		return nil
@@ -258,7 +267,7 @@ var (
 
 func (s *HotSpotStream) buildReaders() ([]*hotSpotReader, error) {
 	single := func() []*hotSpotReader {
-		args := []string{"log", "--numstat", "-M", "-z", "--format=%x00%H%x00%ct%x00%aN"}
+		args := []string{"log", "--numstat", "-M", "-z", "--format=%x00%H%x00%ct%x00%aN%x00%aE"}
 		if s.since != "" {
 			args = append(args, "--since="+s.since)
 		}
@@ -308,7 +317,7 @@ func (s *HotSpotStream) buildReaders() ([]*hotSpotReader, error) {
 	var readers []*hotSpotReader
 	for start := 0; start < len(hashes); start += group {
 		end := min(start+group, len(hashes))
-		logArgs := []string{"log", "--no-walk=unsorted", "--numstat", "-M", "-z", "--format=%x00%H%x00%ct%x00%aN"}
+		logArgs := []string{"log", "--no-walk=unsorted", "--numstat", "-M", "-z", "--format=%x00%H%x00%ct%x00%aN%x00%aE"}
 		logArgs = append(logArgs, hashes[start:end]...)
 		logArgs = append(logArgs, "--")
 		readers = append(readers, newHotSpotReader(s.repo, logArgs))
@@ -339,7 +348,9 @@ func (s *HotSpotStream) NextPage(limit int) ([]HotCacheCommit, bool, error) {
 				}
 			}
 		case <-s.closed:
-			return page, true, nil
+			// A closed stream is cut short, not finished: reporting done
+			// would let a partial walk be cached as the whole window.
+			return page, true, io.ErrClosedPipe
 		}
 	}
 	return page, false, nil

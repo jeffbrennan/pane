@@ -41,6 +41,8 @@ type historyState struct {
 	stashCount                        int
 	path                              string
 	since                             string
+	author                            string
+	authorPatterns                    []string
 	loading, stale, more, fetching    bool
 	commitLoadingVisible              bool
 	statsFetching                     bool
@@ -295,7 +297,7 @@ func (m model) reloadHistory() (model, tea.Cmd) {
 		m.history.stream = prefetch.stream
 		return m, prefetch.loadHistory(m.history.request)
 	}
-	m.history.stream = git.NewHistoryStream(m.repo, m.history.path, m.history.since)
+	m.history.stream = git.NewHistoryStream(m.repo, m.history.path, m.history.since).WithAuthors(m.history.authorPatterns...)
 	return m, m.fetchHistory(0, max(git.HistoryPage, len(m.history.commits)))
 }
 
@@ -400,11 +402,12 @@ func (m model) loadHistoryBackground() (model, tea.Cmd) {
 
 func (m model) fetchHistory(skip, limit int) tea.Cmd {
 	repo, request, path := m.repo, m.history.request, m.history.path
+	since, authors := m.history.since, m.history.authorPatterns
 	requestStream := m.history.stream
 	return func() tea.Msg {
 		stream := requestStream
 		if stream == nil {
-			stream = git.NewHistoryStream(repo, path)
+			stream = git.NewHistoryStream(repo, path, since).WithAuthors(authors...)
 			defer stream.Close()
 			if skip > 0 {
 				if _, err := stream.NextPage(skip); err != nil {

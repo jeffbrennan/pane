@@ -44,7 +44,7 @@ func (r Repo) ResolveCommit(revision string) (CommitInfo, error) {
 // parents, refs and the full message. It runs alongside the patch stream.
 func (r Repo) CommitDetail(hash string) (CommitInfo, error) {
 	out, err := r.CommandStdout("show", "-s", "--decorate=short", "-z",
-		"--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00%P%x00%cn%x00%ce%x00%cI%x00%D%x00", hash, "--")
+		"--format=%x00%H%x00%aN%x00%aE%x00%aI%x00%s%x00%B%x00%P%x00%cn%x00%ce%x00%cI%x00%D%x00", hash, "--")
 	if err != nil {
 		return CommitInfo{}, CommandError(out, err)
 	}
@@ -86,7 +86,7 @@ func (r Repo) historyWithPath(skip, limit int, dateFormat, path string) ([]Commi
 		}
 		return nil, CommandError(out, err)
 	}
-	format := "--format=%x00%H%x00%an%x00%ae%x00" + dateFormat + "%x00%s%x00%B%x00"
+	format := "--format=%x00%H%x00%aN%x00%aE%x00" + dateFormat + "%x00%s%x00%B%x00"
 	logSkip, logLimit := skip, limit
 	if path != "" {
 		logSkip, logLimit = 0, skip+limit
@@ -153,7 +153,7 @@ func parseFileHistory(out []byte, path string) ([]CommitInfo, error) {
 }
 
 func (r Repo) HistoryStats(hashes []string) ([]CommitInfo, error) {
-	args := []string{"log", "--no-walk=unsorted", "-z", "--numstat", "-M", "--no-ext-diff", "--no-textconv", "--diff-merges=first-parent", "--format=%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%B%x00"}
+	args := []string{"log", "--no-walk=unsorted", "-z", "--numstat", "-M", "--no-ext-diff", "--no-textconv", "--diff-merges=first-parent", "--format=%x00%H%x00%aN%x00%aE%x00%aI%x00%s%x00%B%x00"}
 	args = append(args, hashes...)
 	args = append(args, "--")
 	out, err := r.CommandStdout(args...)
