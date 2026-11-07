@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -114,6 +115,10 @@ type hotAuthor struct {
 	areas       map[string]*hotArea
 	first, last time.Time
 	timeline    hotTimeline
+	// languages is what the author writes in, keyed by hotLanguage's name.
+	languages map[string]*hotLanguageStat
+	// punch is when in their week the author commits.
+	punch hotPunch
 	// person lists the names and emails merged into this author.
 	person *hotPerson
 }
@@ -144,7 +149,7 @@ type hotItemsCache struct {
 	dataVersion      int
 	collapsedVersion int
 	sortPath         bool
-	authorFilter     string
+	filter           hotFilter
 	// root is the aggregated tree items are flattened from, so folding only
 	// walks the open rows instead of rebuilding every file.
 	root    *hotNode
@@ -161,16 +166,31 @@ type hotItemsCache struct {
 }
 
 type hotTreeKey struct {
-	dataVersion  int
-	sortPath     bool
-	authorFilter string
+	dataVersion int
+	sortPath    bool
+	filter      hotFilter
 }
 
 type hotFilesKey struct {
-	dataVersion  int
-	authorFilter string
-	hiddenShown  bool
-	query        string
+	dataVersion int
+	filter      hotFilter
+	hiddenShown bool
+	query       string
+}
+
+// hotFilter narrows the tree and files views to one person's work, and
+// optionally to one language of it.
+type hotFilter struct{ author, language string }
+
+func (f hotFilter) keep(file hotFile) bool {
+	if f.author != "" && file.authors[f.author] == 0 {
+		return false
+	}
+	return f.language == "" || hotLanguage(file.path) == f.language
+}
+
+func (m model) hotFilter() hotFilter {
+	return hotFilter{author: m.hotspots.authorFilter, language: m.hotspots.languageFilter}
 }
 
 type hotspotState struct {
@@ -197,8 +217,11 @@ type hotspotState struct {
 	mode             string
 	hiddenShown      bool
 	authorFilter     string
-	since            string
-	author           string
+	// languageFilter narrows an author filter to one language, as a profile's
+	// language row opens it.
+	languageFilter string
+	since          string
+	author         string
 	// scope limits the authors view to who changed one path; scopeReturn is
 	// the view to go back to.
 	scope        string
@@ -208,6 +231,8 @@ type hotspotState struct {
 	scopeLoading bool
 	// expanded lists the authors opened into per-area rows.
 	expanded map[string]bool
+	// profile is the person shown when mode is "profile".
+	profile hotProfile
 	// windows keeps each finished window so cycling back to it is instant.
 	windows map[string]*hotWindow
 	// aggregateCost is how long the last streamed refresh took to aggregate;
@@ -303,7 +328,7 @@ func planHotspots(r git.Repo, since, author string) (hotspotPlan, error) {
 		if files, authors, items, dirs, hidden, cachedAt, ok := readHotSummary(hotSummaryPath(r.Root, since, author), head, since, author); ok && len(items) > 0 && now.Unix()-cachedAt <= int64(hotSummaryTTL.Seconds()) {
 			if kept := trackedHotFiles(r, files); len(kept) != len(files) {
 				files = kept
-				items = buildHotItems(files, nil, false, hotTreeState{}, "")
+				items = buildHotItems(files, nil, false, hotTreeState{}, hotFilter{})
 			}
 			plan.files, plan.authors, plan.items, plan.dirs, plan.hidden = files, authors, items, dirs, hidden
 			plan.cacheHit = true
@@ -319,7 +344,7 @@ func planHotspots(r git.Repo, since, author string) (hotspotPlan, error) {
 		plan.files, plan.authors, plan.dirs, hidden = aggregateHotspots(plan.commits, marks, plan.cutoff, now)
 		plan.files = trackedHotFiles(r, plan.files)
 		plan.hidden = hidden
-		plan.items = buildHotItems(plan.files, plan.dirs, false, hotTreeState{}, "")
+		plan.items = buildHotItems(plan.files, plan.dirs, false, hotTreeState{}, hotFilter{})
 		writeHotSummary(hotSummaryPath(r.Root, since, author), head, since, author, plan.cutoff, now.Unix(), plan.files, plan.authors, plan.items, plan.dirs, plan.hidden)
 		plan.cacheHit = true
 		return plan, nil
@@ -394,7 +419,7 @@ func finishHotspots(r git.Repo, plan hotspotPlan, commits []git.HotCacheCommit) 
 	marks := r.PathMarks(hotspotPaths(commits))
 	files, authors, dirs, hidden := aggregateHotspots(commits, marks, cutoff, now)
 	files = trackedHotFiles(r, files)
-	items := buildHotItems(files, dirs, false, hotTreeState{}, "")
+	items := buildHotItems(files, dirs, false, hotTreeState{}, hotFilter{})
 	writeHotCache(plan.cachePath, plan.head, plan.since, plan.author, cutoff, now.Unix(), commits)
 	writeHotSummary(hotSummaryPath(r.Root, plan.since, plan.author), plan.head, plan.since, plan.author, cutoff, now.Unix(), files, authors, items, dirs, hidden)
 	return files, authors, items, dirs, hidden, nil
@@ -508,6 +533,9 @@ func aggregateHotspots(commits []git.HotCacheCommit, marks git.PathMarks, cutoff
 	hiddenVendored := make(map[string]bool)
 	start := hotWindowStart(commits, cutoff)
 	canonical, people := hotIdentities(commits)
+	// The same paths recur across thousands of commits.
+	languageOf := make(map[string]string)
+	var spoken []*hotLanguageStat
 	for _, commit := range commits {
 		if commit.Time < cutoff {
 			continue
@@ -521,11 +549,12 @@ func aggregateHotspots(commits []git.HotCacheCommit, marks git.PathMarks, cutoff
 		name := canonical[commit.Author]
 		author := authors[name]
 		if author == nil {
-			author = &hotAuthor{name: name, dirs: make(map[string]int), areas: make(map[string]*hotArea), person: people[name]}
+			author = &hotAuthor{name: name, dirs: make(map[string]int), areas: make(map[string]*hotArea), languages: make(map[string]*hotLanguageStat), person: people[name]}
 			authors[name] = author
 		}
 		author.commits++
 		author.timeline[bucket]++
+		author.punch.record(commit.Slot)
 		if author.first.IsZero() || when.Before(author.first) {
 			author.first = when
 		}
@@ -533,6 +562,7 @@ func aggregateHotspots(commits []git.HotCacheCommit, marks git.PathMarks, cutoff
 			author.last = when
 		}
 		touched := make(map[string]bool, 4)
+		spoken = spoken[:0]
 		for _, change := range commit.Changes {
 			class := classifyHotPath(change.Path, marks)
 			switch class {
@@ -572,6 +602,25 @@ func aggregateHotspots(commits []git.HotCacheCommit, marks git.PathMarks, cutoff
 			file.authors[name] += change.Added + change.Deleted
 			file.commits++
 			author.churn += change.Added + change.Deleted
+			language, known := languageOf[change.Path]
+			if !known {
+				language = hotLanguage(change.Path)
+				languageOf[change.Path] = language
+			}
+			if language != "" {
+				stat := author.languages[language]
+				if stat == nil {
+					stat = &hotLanguageStat{}
+					author.languages[language] = stat
+				}
+				stat.churn += change.Added + change.Deleted
+				// Undecayed, like the timeline: the strip already shows when.
+				stat.attention += attention
+				if !slices.Contains(spoken, stat) {
+					spoken = append(spoken, stat)
+					stat.record(when, bucket)
+				}
+			}
 			if dir := topDir(change.Path); dir != "" {
 				author.dirs[dir]++
 				if !touched[dir] {
@@ -691,7 +740,9 @@ func topDir(path string) string {
 // 7: authors carry per-area activity; drops caches a cancelled walk could
 // have written as a whole window.
 // 8: commits carry the author's email so one person's names merge.
-const hotCacheVersion = 8
+// 9: authors carry per-language activity, and commits the author's weekday
+// and hour.
+const hotCacheVersion = 9
 
 type hotCache struct {
 	Version  int                  `json:"version"`
@@ -715,16 +766,18 @@ type hotCacheFile struct {
 }
 
 type hotCacheAuthor struct {
-	Name     string         `json:"name"`
-	Commits  int            `json:"commits"`
-	Churn    int            `json:"churn"`
-	Dirs     map[string]int `json:"dirs"`
-	First    int64          `json:"first"`
-	Last     int64          `json:"last"`
-	Timeline hotTimeline    `json:"timeline"`
-	Areas    []hotCacheArea `json:"areas"`
-	Names    []string       `json:"names"`
-	Emails   []string       `json:"emails"`
+	Name      string             `json:"name"`
+	Commits   int                `json:"commits"`
+	Churn     int                `json:"churn"`
+	Dirs      map[string]int     `json:"dirs"`
+	First     int64              `json:"first"`
+	Last      int64              `json:"last"`
+	Timeline  hotTimeline        `json:"timeline"`
+	Areas     []hotCacheArea     `json:"areas"`
+	Languages []hotCacheLanguage `json:"languages"`
+	Punch     hotPunch           `json:"punch"`
+	Names     []string           `json:"names"`
+	Emails    []string           `json:"emails"`
 }
 
 type hotCacheArea struct {
@@ -733,6 +786,13 @@ type hotCacheArea struct {
 	First    int64       `json:"first"`
 	Last     int64       `json:"last"`
 	Timeline hotTimeline `json:"timeline"`
+}
+
+type hotCacheLanguage struct {
+	Name      string       `json:"name"`
+	Churn     int          `json:"churn"`
+	Attention float64      `json:"attention"`
+	Area      hotCacheArea `json:"area"`
 }
 
 type hotSummary struct {
@@ -834,11 +894,16 @@ func readHotSummary(path, head, since, author string) ([]hotFile, map[string]*ho
 	for _, author := range summary.Authors {
 		areas := make(map[string]*hotArea, len(author.Areas))
 		for _, area := range author.Areas {
-			areas[area.Dir] = &hotArea{commits: area.Commits, first: unixOrZero(area.First), last: unixOrZero(area.Last), timeline: area.Timeline}
+			restored := area.area()
+			areas[area.Dir] = &restored
+		}
+		languages := make(map[string]*hotLanguageStat, len(author.Languages))
+		for _, language := range author.Languages {
+			languages[language.Name] = &hotLanguageStat{hotArea: language.Area.area(), churn: language.Churn, attention: language.Attention}
 		}
 		authors[author.Name] = &hotAuthor{
-			name: author.Name, commits: author.Commits, churn: author.Churn, dirs: author.Dirs, areas: areas,
-			first: unixOrZero(author.First), last: unixOrZero(author.Last), timeline: author.Timeline,
+			name: author.Name, commits: author.Commits, churn: author.Churn, dirs: author.Dirs, areas: areas, languages: languages,
+			first: unixOrZero(author.First), last: unixOrZero(author.Last), timeline: author.Timeline, punch: author.Punch,
 			person: &hotPerson{names: author.Names, emails: author.Emails},
 		}
 	}
@@ -870,6 +935,14 @@ func readHotSummary(path, head, since, author string) ([]hotFile, map[string]*ho
 	return files, authors, items, dirs, hotHidden{generated: summary.HiddenGenerated, vendored: summary.HiddenVendored}, summary.CachedAt, true
 }
 
+func (a hotCacheArea) area() hotArea {
+	return hotArea{commits: a.Commits, first: unixOrZero(a.First), last: unixOrZero(a.Last), timeline: a.Timeline}
+}
+
+func cachedHotArea(dir string, area hotArea) hotCacheArea {
+	return hotCacheArea{Dir: dir, Commits: area.commits, First: area.first.Unix(), Last: area.last.Unix(), Timeline: area.timeline}
+}
+
 func unixOrZero(seconds int64) time.Time {
 	if seconds <= 0 {
 		return time.Time{}
@@ -892,12 +965,15 @@ func writeHotSummary(path, head, since, author string, cutoff, cachedAt int64, f
 		summary.Files = append(summary.Files, hotCacheFile{Path: file.path, Added: file.added, Deleted: file.deleted, Commits: file.commits, Score: file.score, Last: file.last.Unix(), Authors: file.authors, Timeline: file.timeline})
 	}
 	for _, item := range authors {
-		cached := hotCacheAuthor{Name: item.name, Commits: item.commits, Churn: item.churn, Dirs: item.dirs, First: item.first.Unix(), Last: item.last.Unix(), Timeline: item.timeline}
+		cached := hotCacheAuthor{Name: item.name, Commits: item.commits, Churn: item.churn, Dirs: item.dirs, First: item.first.Unix(), Last: item.last.Unix(), Timeline: item.timeline, Punch: item.punch}
 		if item.person != nil {
 			cached.Names, cached.Emails = item.person.names, item.person.emails
 		}
 		for dir, area := range item.areas {
-			cached.Areas = append(cached.Areas, hotCacheArea{Dir: dir, Commits: area.commits, First: area.first.Unix(), Last: area.last.Unix(), Timeline: area.timeline})
+			cached.Areas = append(cached.Areas, cachedHotArea(dir, *area))
+		}
+		for name, language := range item.languages {
+			cached.Languages = append(cached.Languages, hotCacheLanguage{Name: name, Churn: language.churn, Attention: language.attention, Area: cachedHotArea("", language.hotArea)})
 		}
 		summary.Authors = append(summary.Authors, cached)
 	}
@@ -959,7 +1035,7 @@ func (m model) waitHotspotPage(stream *git.HotSpotStream, request, limit int) te
 	// the model's backing array.
 	base := m.hotspots.commits[:len(m.hotspots.commits):len(m.hotspots.commits)]
 	cutoff := m.hotspots.cutoff
-	sortPath, authorFilter := m.hotspots.sortPath, m.hotspots.authorFilter
+	sortPath, filter := m.hotspots.sortPath, m.hotFilter()
 	// The tree key is filled in by update, which knows the next data version.
 	budget := max(hotspotRefresh, 2*m.hotspots.aggregateCost)
 	return func() tea.Msg {
@@ -975,10 +1051,10 @@ func (m model) waitHotspotPage(stream *git.HotSpotStream, request, limit int) te
 			if done || len(base) == 0 || time.Since(started) >= budget {
 				aggregated := time.Now()
 				files, authors, dirs, hidden := aggregateHotspots(commits, builtinPathMarks(commits), cutoff, time.Now())
-				root := buildHotTree(files, dirs, sortPath, false, authorFilter)
+				root := buildHotTree(files, dirs, sortPath, false, filter)
 				return hotspotPageLoaded{
 					commits: commits, files: files, authors: authors, dirs: dirs, hidden: hidden,
-					root: root, treeKey: hotTreeKey{sortPath: sortPath, authorFilter: authorFilter},
+					root: root, treeKey: hotTreeKey{sortPath: sortPath, filter: filter},
 					cost: time.Since(aggregated), stream: stream, request: request, done: done,
 				}
 			}
@@ -1020,12 +1096,16 @@ func (m model) openHotspots(since, author string) (tea.Model, tea.Cmd) {
 func (m model) switchHotWindow(since string) (tea.Model, tea.Cmd) {
 	previous := m.hotspots
 	mode := previous.mode
-	if previous.scope != "" {
+	if previous.scope != "" && mode != "profile" {
 		mode = previous.scopeReturn
 	}
 	next, cmd := m.openHotspots(since, previous.author)
 	m = next.(model)
 	m.hotspots.mode, m.hotspots.authorFilter, m.hotspots.expanded = mode, previous.authorFilter, previous.expanded
+	m.hotspots.languageFilter = previous.languageFilter
+	if mode == "profile" {
+		m.hotspots.profile = newHotProfile(previous.profile.author)
+	}
 	m.hotspots.collapsed, m.hotspots.opened, m.hotspots.showAll = previous.collapsed, previous.opened, previous.showAll
 	m.hotspots.hiddenShown, m.hotspots.sortPath = previous.hiddenShown, previous.sortPath
 	m.hotspots.windows = previous.windows
@@ -1040,7 +1120,18 @@ func (m model) switchHotWindow(since string) (tea.Model, tea.Cmd) {
 	m.hotspots.files, m.hotspots.authors, m.hotspots.dirs, m.hotspots.hidden = saved.files, saved.authors, saved.dirs, saved.hidden
 	m.hotspots.commits, m.hotspots.streamLoaded = saved.commits, len(saved.commits)
 	m.hotspots.dataVersion++
+	m.leaveEmptyHotProfile()
 	return m, nil
+}
+
+// leaveEmptyHotProfile returns to the authors list when a new window has no
+// commits by the person the profile showed.
+func (m *model) leaveEmptyHotProfile() {
+	if m.hotspots.mode != "profile" || m.hotProfileSubject(m.hotspots.profile.author) != nil {
+		return
+	}
+	m.flash = "No commits by " + m.hotspots.profile.author + " in " + m.hotWindowLabel()
+	m.closeHotProfile()
 }
 
 type hotNode struct {
@@ -1061,20 +1152,20 @@ type hotNode struct {
 
 func (m model) hotItems() []hotItem {
 	cache := m.hotspots.items
-	if cache != nil && cache.filled && cache.dataVersion == m.hotspots.dataVersion && cache.collapsedVersion == m.hotspots.collapsedVersion && cache.sortPath == m.hotspots.sortPath && cache.authorFilter == m.hotspots.authorFilter {
+	if cache != nil && cache.filled && cache.dataVersion == m.hotspots.dataVersion && cache.collapsedVersion == m.hotspots.collapsedVersion && cache.sortPath == m.hotspots.sortPath && cache.filter == m.hotFilter() {
 		return cache.items
 	}
 	// While pages stream in, keep the previous tree until the rebuild budget
 	// expires instead of rebuilding tens of thousands of nodes per page.
-	if cache != nil && cache.filled && cache.dataVersion != m.hotspots.dataVersion && cache.collapsedVersion == m.hotspots.collapsedVersion && cache.sortPath == m.hotspots.sortPath && cache.authorFilter == m.hotspots.authorFilter && time.Since(cache.builtAt) < 250*time.Millisecond {
+	if cache != nil && cache.filled && cache.dataVersion != m.hotspots.dataVersion && cache.collapsedVersion == m.hotspots.collapsedVersion && cache.sortPath == m.hotspots.sortPath && cache.filter == m.hotFilter() && time.Since(cache.builtAt) < 250*time.Millisecond {
 		return cache.items
 	}
-	key := hotTreeKey{dataVersion: m.hotspots.dataVersion, sortPath: m.hotspots.sortPath, authorFilter: m.hotspots.authorFilter}
+	key := hotTreeKey{dataVersion: m.hotspots.dataVersion, sortPath: m.hotspots.sortPath, filter: m.hotFilter()}
 	var root *hotNode
 	if cache != nil && cache.root != nil && cache.rootKey == key {
 		root = cache.root
 	} else {
-		root = buildHotTree(m.hotspots.files, m.hotspots.dirs, m.hotspots.sortPath, false, m.hotspots.authorFilter)
+		root = buildHotTree(m.hotspots.files, m.hotspots.dirs, m.hotspots.sortPath, false, m.hotFilter())
 		if cache != nil {
 			cache.root, cache.rootKey = root, key
 		}
@@ -1087,14 +1178,14 @@ func (m model) hotItems() []hotItem {
 		cache.dataVersion = m.hotspots.dataVersion
 		cache.collapsedVersion = m.hotspots.collapsedVersion
 		cache.sortPath = m.hotspots.sortPath
-		cache.authorFilter = m.hotspots.authorFilter
+		cache.filter = m.hotFilter()
 	}
 	return items
 }
 
 func (m model) hotFoldsDefault() bool {
 	return len(m.hotspots.collapsed) == 0 && len(m.hotspots.opened) == 0 && len(m.hotspots.showAll) == 0 &&
-		!m.hotspots.sortPath && m.hotspots.authorFilter == ""
+		!m.hotspots.sortPath && m.hotFilter() == hotFilter{}
 }
 
 func (m model) hotTreeState() hotTreeState {
@@ -1204,13 +1295,13 @@ func hotHumanCount[T any](authors map[string]T) int {
 	return count
 }
 
-func buildHotItems(files []hotFile, dirs map[string]*hotDirStat, sortPath bool, state hotTreeState, authorFilter string) []hotItem {
-	return flattenHotTree(buildHotTree(files, dirs, sortPath, state.showHidden, authorFilter), state)
+func buildHotItems(files []hotFile, dirs map[string]*hotDirStat, sortPath bool, state hotTreeState, filter hotFilter) []hotItem {
+	return flattenHotTree(buildHotTree(files, dirs, sortPath, state.showHidden, filter), state)
 }
 
 // buildHotTree aggregates files into directories and sorts them. The result
 // is read-only afterwards, so models can share it.
-func buildHotTree(files []hotFile, dirs map[string]*hotDirStat, sortPath, showHidden bool, authorFilter string) *hotNode {
+func buildHotTree(files []hotFile, dirs map[string]*hotDirStat, sortPath, showHidden bool, filter hotFilter) *hotNode {
 	if !showHidden {
 		var visible []hotFile
 		for _, file := range files {
@@ -1221,10 +1312,10 @@ func buildHotTree(files []hotFile, dirs map[string]*hotDirStat, sortPath, showHi
 		}
 		files = visible
 	}
-	if authorFilter != "" {
+	if filter != (hotFilter{}) {
 		var filtered []hotFile
 		for _, file := range files {
-			if file.authors[authorFilter] > 0 {
+			if filter.keep(file) {
 				filtered = append(filtered, file)
 			}
 		}
@@ -1467,7 +1558,7 @@ var hotLevels = []rune("▁▂▃▄▅▆▇█")
 // lost. Active cells are drawn at full strength so they stand out of the dim
 // row; quiet slices are a faint dot.
 func hotStrip(t hotTimeline, peak float64, color string) string {
-	return hotDrawStrip(t, peak, color, func(v float64) float64 { return math.Log1p(v) / math.Log1p(peak) })
+	return hotDrawStrip(t[:], peak, color, func(v float64) float64 { return math.Log1p(v) / math.Log1p(peak) })
 }
 
 // hotAreaStrip scales heights by square root instead. Within one person a
@@ -1475,12 +1566,12 @@ func hotStrip(t hotTimeline, peak float64, color string) string {
 // busiest areas look alike, while a linear one flattens everything but the
 // top area; the square root keeps both ends readable.
 func hotAreaStrip(t hotTimeline, peak float64, color string) string {
-	return hotDrawStrip(t, peak, color, func(v float64) float64 { return math.Sqrt(v / peak) })
+	return hotDrawStrip(t[:], peak, color, func(v float64) float64 { return math.Sqrt(v / peak) })
 }
 
-func hotDrawStrip(t hotTimeline, peak float64, color string, scale func(float64) float64) string {
+func hotDrawStrip(values []float64, peak float64, color string, scale func(float64) float64) string {
 	var b strings.Builder
-	for _, v := range t {
+	for _, v := range values {
 		if v <= 0 || peak <= 0 {
 			b.WriteString("·")
 			continue
@@ -1849,8 +1940,8 @@ func (m model) hotWindowLabel() string {
 func (m model) hotFileItems() []hotItem {
 	files := m.hotspots.files
 	query := strings.ToLower(strings.TrimSpace(m.hotspots.list.filter))
-	author := m.hotspots.authorFilter
-	key := hotFilesKey{dataVersion: m.hotspots.dataVersion, authorFilter: author, hiddenShown: m.hotspots.hiddenShown, query: query}
+	filter := m.hotFilter()
+	key := hotFilesKey{dataVersion: m.hotspots.dataVersion, filter: filter, hiddenShown: m.hotspots.hiddenShown, query: query}
 	cache := m.hotspots.items
 	if cache != nil && cache.filesReady && cache.filesKey == key {
 		return cache.files
@@ -1860,7 +1951,7 @@ func (m model) hotFileItems() []hotItem {
 		if !m.hotspots.hiddenShown && (file.class == hotGenerated || file.class == hotVendored) {
 			continue
 		}
-		if author != "" && file.authors[author] == 0 {
+		if !filter.keep(file) {
 			continue
 		}
 		if query != "" && !matchesPicker(file.path, query) {
@@ -1965,6 +2056,9 @@ func (m model) hotFilteredAuthors() []*hotAuthor {
 }
 
 func (m model) hotView() string {
+	if m.hotspots.mode == "profile" {
+		return m.hotProfileView()
+	}
 	commits := m.hotspots.streamLoaded
 	if commits == 0 {
 		commits = len(m.hotspots.commits)
@@ -1978,6 +2072,9 @@ func (m model) hotView() string {
 	title := fmt.Sprintf(" hotspots · %s · %s commits · %s", m.hotWindowLabel(), formatCount(commits), hotPeople(hotHumanCount(m.hotspots.authors)))
 	if m.hotspots.authorFilter != "" {
 		title = fmt.Sprintf(" hotspots · %s · %s commits · by %s", m.hotWindowLabel(), formatCount(commits), m.hotspots.authorFilter)
+		if m.hotspots.languageFilter != "" {
+			title += " in " + m.hotspots.languageFilter
+		}
 	}
 	view := "tree"
 	switch m.hotspots.mode {
@@ -1999,11 +2096,14 @@ func (m model) hotView() string {
 	var items []hotItem
 	selected := m.hotspots.list.selected
 	var body []string
-	var header string
+	var header, detail string
 	switch m.hotspots.mode {
 	case "authors":
 		entries := m.hotAuthorEntries()
 		selected = min(selected, max(0, len(entries)-1))
+		if len(entries) > 0 {
+			detail = hotAuthorDetail(entries[selected].author, now)
+		}
 		offset, end := hotAuthorViewport(entries, m.hotspots.list, rows)
 		// The column fits every entry, not just the visible ones, so it holds
 		// still while scrolling.
@@ -2061,6 +2161,7 @@ func (m model) hotView() string {
 			columns, owners := m.hotItemColumns(items[i], peak, now)
 			body = append(body, m.hotRow(i, selected, len(items), syntax.Clean(items[i].branch+items[i].name), nameWidth, columns, owners))
 		}
+		detail = m.hotDetail(selected, items, now)
 	}
 	lines = append(lines, header)
 	lines = append(lines, body...)
@@ -2076,7 +2177,6 @@ func (m model) hotView() string {
 	}
 	// Detail line for the selection answers "how big is this" without widening
 	// the table.
-	detail := m.hotDetail(selected, items, now)
 	if detail == "" {
 		detail = " "
 	}
@@ -2125,6 +2225,31 @@ func (m model) hotDetail(selected int, items []hotItem, now time.Time) string {
 	return strings.Join(parts, " · ")
 }
 
+// hotAuthorDetail sums up the selected author: what they write, how much and
+// when.
+func hotAuthorDetail(author *hotAuthor, now time.Time) string {
+	parts := []string{syntax.Clean(author.name)}
+	parts = append(parts, hotLanguageSummary(author.languages, 3)...)
+	parts = append(parts, hotCommits(author.commits))
+	if active := hotActive(author, now); active != "" {
+		parts = append(parts, active)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// hotLanguageSummary names the top headline languages with their shares,
+// leaving out anything under 1%.
+func hotLanguageSummary(languages map[string]*hotLanguageStat, limit int) []string {
+	headline, _ := hotLanguageShares(languages)
+	var parts []string
+	for _, language := range headline[:min(limit, len(headline))] {
+		if percent := int(math.Round(language.share * 100)); percent >= 1 {
+			parts = append(parts, fmt.Sprintf("%s %d%%", language.name, percent))
+		}
+	}
+	return parts
+}
+
 func (m model) hotFooter() string {
 	view := "tree"
 	switch m.hotspots.mode {
@@ -2140,7 +2265,7 @@ func (m model) hotFooter() string {
 	}
 	actions := []shortcut{hint(view, "hotspots.switch-view"), hint("window", "hotspots.window"), hint(a, "hotspots.show-hidden"), hint("who", "hotspots.contributors")}
 	if m.hotspots.mode == "authors" {
-		actions = []shortcut{hint(view, "hotspots.switch-view"), hint("window", "hotspots.window"), hint("filter", "open")}
+		actions = []shortcut{hint(view, "hotspots.switch-view"), hint("profile", "hotspots.profile"), hint("filter", "open")}
 		if m.hotspots.scope != "" {
 			actions[2] = hint("history", "open")
 		}
@@ -2290,6 +2415,9 @@ func (m model) hotVisible() []hotItem {
 }
 
 func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.hotspots.mode == "profile" {
+		return m.handleHotProfileKey(key)
+	}
 	count := 0
 	if m.hotspots.mode == "authors" {
 		count = len(m.hotAuthorEntries())
@@ -2317,7 +2445,7 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			break
 		}
 		if m.hotspots.authorFilter != "" {
-			m.hotspots.authorFilter = ""
+			m.hotspots.authorFilter, m.hotspots.languageFilter = "", ""
 			m.hotspots.list.reset()
 			resetItems()
 			break
@@ -2357,13 +2485,10 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.hotspots.list.reset()
 		resetItems()
 	case actShowHidden:
-		m.hotspots.hiddenShown = !m.hotspots.hiddenShown
-		m.hotspots.collapsedVersion++
-		resetItems()
-		if m.hotspots.hiddenShown {
-			m.flash = "Showing generated and vendored files"
-		} else {
-			m.flash = "Hiding generated and vendored files"
+		m.toggleHotHidden()
+	case actProfile:
+		if m.hotspots.mode == "authors" {
+			m.openHotProfile()
 		}
 	case actWindow:
 		return m.switchHotWindow(nextHotWindow(m.hotspots.since))
@@ -2446,7 +2571,7 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.closeHotspotStream()
 				return m.openAuthorPathHistory(path, entry.author.name)
 			}
-			m.hotspots.authorFilter = entry.author.name
+			m.hotspots.authorFilter, m.hotspots.languageFilter = entry.author.name, ""
 			m.hotspots.scope, m.hotspots.scopeAuthors = "", nil
 			m.hotspots.mode = ""
 			m.hotspots.list.reset()
@@ -2489,6 +2614,19 @@ func (m model) handleHotspotKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openAuthorPathHistory(item.path, m.hotspots.authorFilter)
 	}
 	return m, nil
+}
+
+func (m *model) toggleHotHidden() {
+	m.hotspots.hiddenShown = !m.hotspots.hiddenShown
+	m.hotspots.collapsedVersion++
+	if m.hotspots.items != nil {
+		m.hotspots.items.filled = false
+	}
+	if m.hotspots.hiddenShown {
+		m.flash = "Showing generated and vendored files"
+	} else {
+		m.flash = "Hiding generated and vendored files"
+	}
 }
 
 // foldHotAuthor opens the selected author into their areas or closes them.

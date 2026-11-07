@@ -142,6 +142,10 @@ func (s *hotSpotReader) nextPage(limit int) ([]HotCacheCommit, bool, error) {
 		if err != nil {
 			return page, true, err
 		}
+		authored, err := s.readField()
+		if err != nil {
+			return page, true, err
+		}
 		s.header = false
 		var fields []string
 		eof := false
@@ -165,6 +169,7 @@ func (s *hotSpotReader) nextPage(limit int) ([]HotCacheCommit, bool, error) {
 			return page, true, err
 		}
 		commit.Email = email
+		commit.Slot = HotSlot(authored)
 		page = append(page, commit)
 		if eof {
 			if err := s.finish(false); err != nil {
@@ -267,7 +272,7 @@ var (
 
 func (s *HotSpotStream) buildReaders() ([]*hotSpotReader, error) {
 	single := func() []*hotSpotReader {
-		args := []string{"log", "--numstat", "-M", "-z", "--format=%x00%H%x00%ct%x00%aN%x00%aE"}
+		args := []string{"log", "--numstat", "-M", "-z", "--format=%x00%H%x00%ct%x00%aN%x00%aE%x00%ai"}
 		if s.since != "" {
 			args = append(args, "--since="+s.since)
 		}
@@ -317,7 +322,7 @@ func (s *HotSpotStream) buildReaders() ([]*hotSpotReader, error) {
 	var readers []*hotSpotReader
 	for start := 0; start < len(hashes); start += group {
 		end := min(start+group, len(hashes))
-		logArgs := []string{"log", "--no-walk=unsorted", "--numstat", "-M", "-z", "--format=%x00%H%x00%ct%x00%aN%x00%aE"}
+		logArgs := []string{"log", "--no-walk=unsorted", "--numstat", "-M", "-z", "--format=%x00%H%x00%ct%x00%aN%x00%aE%x00%ai"}
 		logArgs = append(logArgs, hashes[start:end]...)
 		logArgs = append(logArgs, "--")
 		readers = append(readers, newHotSpotReader(s.repo, logArgs))
@@ -416,4 +421,16 @@ func parseHotCommitFields(hash, timestamp, author string, fields []string) (HotC
 	}
 	sort.Slice(commit.Changes, func(i, j int) bool { return commit.Changes[i].Path < commit.Changes[j].Path })
 	return commit, nil
+}
+
+// HotSlot places an author date, as %ai prints it in the author's own time
+// zone, on the weekday-by-hour grid: 1 + weekday from Monday × 24 + hour, or
+// 0 when the date does not parse.
+func HotSlot(authored string) uint8 {
+	when, err := time.Parse("2006-01-02 15:04:05 -0700", strings.TrimSpace(authored))
+	if err != nil {
+		return 0
+	}
+	weekday := (int(when.Weekday()) + 6) % 7
+	return uint8(1 + weekday*24 + when.Hour())
 }

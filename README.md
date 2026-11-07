@@ -23,7 +23,7 @@ metadata. Run `pane` anywhere inside a Git working tree.
 - **Blame:** open the commit that last touched the line under the cursor.
 - **Branches and worktrees:** switch, create, delete, copy, filter, and move this pane into a worktree.
 - **Stash:** push, list, inspect, pop, and drop stashes.
-- **Hotspots:** explore an unfamiliar repository by attention-weighted activity, by tree, file, or author.
+- **Hotspots:** explore an unfamiliar repository by attention-weighted activity, by tree, file, or author, with a profile of what each person writes and where.
 - **Review state:** line wrapping, whitespace toggling, short paths, viewed marks, search, and an editor hand-off.
 
 ## Install
