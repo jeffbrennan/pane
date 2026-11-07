@@ -482,10 +482,10 @@ func TestHotspotClassificationHidesVendoredAndGenerated(t *testing.T) {
 		t.Fatalf("vendored classes: %#v", paths)
 	}
 	dirs := map[string]*hotDirStat{}
-	if items := buildHotItems(files, dirs, false, hotTreeState{}, ""); strings.Contains(hotItemPaths(items), "vendor/") {
+	if items := buildHotItems(files, dirs, false, hotTreeState{}, hotFilter{}); strings.Contains(hotItemPaths(items), "vendor/") {
 		t.Fatalf("vendored files shown by default: %v", hotItemPaths(items))
 	}
-	if items := buildHotItems(files, dirs, false, hotTreeState{showHidden: true}, ""); !strings.Contains(hotItemPaths(items), "vendor/") {
+	if items := buildHotItems(files, dirs, false, hotTreeState{showHidden: true}, hotFilter{}); !strings.Contains(hotItemPaths(items), "vendor/") {
 		t.Fatalf("vendored files not shown after toggling: %v", hotItemPaths(items))
 	}
 }
@@ -500,7 +500,7 @@ func TestHotspotTreeOpensOneLevelAndMergesChains(t *testing.T) {
 		hotTestFile("src/bun.js/api/b.go", 9, hotSource, "A", 9),
 		hotTestFile("test/heavy_test.go", 100, hotTests, "A", 100),
 	}
-	items := buildHotItems(files, nil, false, hotTreeState{}, "")
+	items := buildHotItems(files, nil, false, hotTreeState{}, hotFilter{})
 	if len(items) == 0 || items[0].path != "src/bun.js/api" || !items[0].directory {
 		t.Fatalf("single-child chain was not merged: %#v", items)
 	}
@@ -530,7 +530,7 @@ func TestHotspotTreeShowsFiveChildrenThenMore(t *testing.T) {
 	for i := 0; i < 8; i++ {
 		files = append(files, hotTestFile(fmt.Sprintf("pkg/f%d.go", i), float64(100-i), hotSource, "A", i+1))
 	}
-	items := buildHotItems(files, nil, false, hotTreeState{}, "")
+	items := buildHotItems(files, nil, false, hotTreeState{}, hotFilter{})
 	var more *hotItem
 	for i := range items {
 		if items[i].more {
@@ -540,7 +540,7 @@ func TestHotspotTreeShowsFiveChildrenThenMore(t *testing.T) {
 	if more == nil || more.remaining != 3 || more.path != "pkg" {
 		t.Fatalf("missing more row: %#v", items)
 	}
-	expanded := buildHotItems(files, nil, false, hotTreeState{showAll: map[string]bool{"pkg": true}}, "")
+	expanded := buildHotItems(files, nil, false, hotTreeState{showAll: map[string]bool{"pkg": true}}, hotFilter{})
 	for _, item := range expanded {
 		if item.more {
 			t.Fatalf("showAll still truncated: %#v", expanded)
@@ -658,7 +658,8 @@ func TestHotspotAuthorHeaderLinesUpWithValues(t *testing.T) {
 		switch {
 		case strings.HasPrefix(strings.TrimSpace(line), "author") && strings.Contains(line, "commits"):
 			header = line
-		case strings.Contains(line, "Alexandria Montgomery"):
+		case strings.Contains(line, "Alexandria Montgomery") && row == "":
+			// The detail line below the list names the author too.
 			row = line
 		}
 	}
@@ -847,7 +848,7 @@ func TestHotspotTimelinePlacesRecentWorkOnTheRight(t *testing.T) {
 	if authors["B"].timeline[hotBuckets-1] != 1 {
 		t.Fatalf("author timeline counts commits per slice: %v", authors["B"].timeline)
 	}
-	items := buildHotItems(files, nil, false, hotTreeState{}, "")
+	items := buildHotItems(files, nil, false, hotTreeState{}, hotFilter{})
 	if items[0].path != "src" || items[0].timeline[0] == 0 || items[0].timeline[hotBuckets-1] == 0 {
 		t.Fatalf("a directory's timeline sums its files: %#v", items[0])
 	}

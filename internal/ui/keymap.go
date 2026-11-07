@@ -106,6 +106,7 @@ const (
 	actWindow         action = "window"
 	actShowHidden     action = "show-hidden"
 	actContributors   action = "contributors"
+	actProfile        action = "profile"
 	actReviewRange    action = "review-range"
 	actEditKeys       action = "edit-keys"
 	actAddKey         action = "add-key"
@@ -266,6 +267,7 @@ var defaultBindings = []binding{
 	{scopeHotspots, actWindow, []string{"w"}, "Cycle 3 months, 12 months, all time"},
 	{scopeHotspots, actShowHidden, []string{"a"}, "Show or hide generated and vendored files"},
 	{scopeHotspots, actContributors, []string{"c"}, "Show who changed the selection over time"},
+	{scopeHotspots, actProfile, []string{"p"}, "Open the selected author's profile"},
 
 	{scopeFiles, actDown, []string{"ctrl+j", "tab"}, "Down"},
 	{scopeFiles, actUp, []string{"ctrl+k", "shift+tab"}, "Up"},

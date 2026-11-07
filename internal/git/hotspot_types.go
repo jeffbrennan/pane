@@ -9,10 +9,12 @@ type HotCacheChange struct {
 
 // HotCacheCommit is one commit in the hotspot cache.
 type HotCacheCommit struct {
-	Hash    string           `json:"hash"`
-	Time    int64            `json:"time"`
-	Author  string           `json:"author"`
-	Email   string           `json:"email,omitempty"`
+	Hash   string `json:"hash"`
+	Time   int64  `json:"time"`
+	Author string `json:"author"`
+	Email  string `json:"email,omitempty"`
+	// Slot is when in the author's week the commit was written; see HotSlot.
+	Slot    uint8            `json:"slot,omitempty"`
 	Changes []HotCacheChange `json:"changes"`
 }
 

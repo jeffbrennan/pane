@@ -90,6 +90,20 @@ anyone; a `.mailmap` remains the precise fix and is applied first. The hotspot k
 cycle the window and reveal generated and vendored files. Tests and docs rank
 below source, and paths deleted inside the window are dropped.
 
+The detail line under the authors view names the selected person's top
+languages. `p` opens their profile: the languages they write (ranked by the same
+attention files are, so one bulk import does not define anyone, with their
+share of the repository's work in each), the areas they work in, their most
+changed files, who changes the same files, and a heat map of their week in
+two-hour slots, in their own time zone.
+`(` and `)` step to the previous or next person in the list, `w` keeps the
+same person in another window, and `↵` opens the selected row: a language
+narrows the files view to that person and language, an area or file opens their
+history there, and a collaborator opens that person's profile. Languages and areas
+sit side by side whenever both fit, shrinking the share bar and dropping date
+spans first; on a short terminal the lowest sections drop first.
+Config, data and docs files are listed under the language bar rather than in it.
+
 Results are cached in `~/Library/Caches/pane` as per-commit numstat, so
 reopening is instant and after HEAD moves only the new commits are read.
 
@@ -179,6 +193,8 @@ and a count such as `3)` jumps three commits.
 | `w` | Cycle 3 months, 12 months, all time |
 | `a` | Show or hide generated and vendored files |
 | `c` | Show who changed the selection over time |
+| `p` | Open the selected author's profile |
+| `( / )` | Previous / next person in a profile |
 | `/` | Filter hotspots |
 
 ### Commit input

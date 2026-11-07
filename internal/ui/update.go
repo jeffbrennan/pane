@@ -502,6 +502,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.hotspots.items = &hotItemsCache{items: msg.items, filled: true, dataVersion: m.hotspots.dataVersion, builtAt: time.Now()}
 		}
 		m.hotspots.list.selected, m.hotspots.list.offset = 0, 0
+		m.leaveEmptyHotProfile()
 		if m.hotspots.windows == nil {
 			m.hotspots.windows = make(map[string]*hotWindow)
 		}

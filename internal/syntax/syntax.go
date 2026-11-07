@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -563,4 +564,45 @@ func Warm(files []File) {
 		}()
 	}
 	wg.Wait()
+}
+
+// languageIndex maps the extensions and file names chroma's lexers claim to
+// their language. Matching a name against every lexer's globs is too slow to
+// repeat for each path in a long history, and most of those globs are plain
+// "*.ext" patterns, so one pass over them answers nearly every lookup.
+var languageIndex = sync.OnceValue(func() (index struct{ byExt, byName map[string]string }) {
+	index.byExt, index.byName = make(map[string]string), make(map[string]string)
+	ranked := append(chroma.PrioritisedLexers(nil), lexers.GlobalLexerRegistry.Lexers...)
+	sort.Sort(ranked)
+	for _, lexer := range ranked {
+		config := lexer.Config()
+		if config == nil || config.Name == "plaintext" || config.Name == "Text only" {
+			continue
+		}
+		for _, glob := range config.Filenames {
+			glob = strings.ToLower(glob)
+			switch ext, isExt := strings.CutPrefix(glob, "*"); {
+			case isExt && strings.HasPrefix(ext, ".") && !strings.ContainsAny(ext, "*?[\\"):
+				if _, taken := index.byExt[ext]; !taken {
+					index.byExt[ext] = config.Name
+				}
+			case !strings.ContainsAny(glob, "*?[\\"):
+				if _, taken := index.byName[glob]; !taken {
+					index.byName[glob] = config.Name
+				}
+			}
+		}
+	}
+	return index
+})
+
+// LanguageName names the language chroma recognizes for a file name, or ""
+// for plain text and unknown files.
+func LanguageName(name string) string {
+	index := languageIndex()
+	base := strings.ToLower(filepath.Base(name))
+	if language, ok := index.byName[base]; ok {
+		return language
+	}
+	return index.byExt[filepath.Ext(base)]
 }
